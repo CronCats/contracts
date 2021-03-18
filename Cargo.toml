@@ -1,0 +1,7 @@
+manager = { path = "./manager" }
+
+[workspace]
+# include a member for each contract
+members = [
+  "manager"
+]
