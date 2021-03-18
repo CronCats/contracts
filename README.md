@@ -2,6 +2,9 @@
   <h1>
     Cron.near Contracts
   </h1>
+  <p>
+  But i really really wanted to name this repo "crontracts"
+  </p>
 </div>
 
 ## Building
