@@ -1,12 +1,14 @@
-manager = { path = "./manager" }
-counter = { path = "./examples/counter" }
+[package]
+name = "rust-counter-tutorial"
+version = "0.1.0"
+authors = ["Near Inc <hello@near.org>"]
+edition = "2018"
 
-[workspace]
-# include a member for each contract
-members = [
-  "manager",
-  "examples/counter"
-]
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "2.0.0"
 
 [profile.release]
 codegen-units = 1
