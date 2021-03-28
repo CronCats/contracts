@@ -115,8 +115,8 @@ impl CronManager {
             paused: false,
             owner_id: env::signer_account_id(),
             owner_pk: env::signer_account_pk(),
-            tasks: LookupMap::new(b"s".to_vec()),
-            agents: LookupMap::new(b"a".to_vec()),
+            tasks: LookupMap::new(vec![1]),
+            agents: LookupMap::new(vec![2]),
             tabs: TreeMap::new(vec![0]),
             available_balance: 0,
             staked_balance: 0,
@@ -140,13 +140,13 @@ impl CronManager {
         recurring: Option<bool>,
         fn_allowance: Option<Balance>,
         gas_allowance: Option<Balance>
-    ) -> Task {
+    ) -> Vec<u8> {
         // TODO: Add asserts, should check that balance can cover 1 task, and storage for a task
         let item = Task {
             owner_id: env::signer_account_id(),
             contract_id,
             function_id,
-            tick,
+            tick: tick.clone(),
             recurring: Some(recurring).unwrap_or(Some(false)).unwrap(),
             status: TaskStatus::Ready,
             balance: env::attached_deposit(),
@@ -154,6 +154,8 @@ impl CronManager {
             gas_allowance: Some(gas_allowance).unwrap_or(Some(GAS_BASE_FEE)).unwrap(),
             next_tick: "".to_string()
         };
+
+        log!("tick {}", &tick);
 
         // Generate hash
         let input = format!(
@@ -169,9 +171,9 @@ impl CronManager {
         self.tasks.insert(&hash, &item);
 
         // TODO: Parse tick, insert in tabs where necessary
-        self.tabs.insert(&0, &hash);
+        self.tabs.insert(&1, &hash);
 
-        item
+        hash
     }
 
     // #[payable]
@@ -197,18 +199,11 @@ impl CronManager {
     pub fn proxy_call(&mut self) {
         // TODO: Add asserts
         // TODO: get task based on current slot
-        let task = self.tasks.get(&b"0".to_vec())
+        // TODO: Get current slot based on block or timestamp
+        let task = self.tasks.get(&vec![1])
             .expect("No tasks found in slot");
 
         // TODO: Call external contract with task variables
-        // Promise::new(task.contract_id)
-        //     .function_call(
-        //         task.function_id.try_to_vec().unwrap(),
-        //         json!({}).to_string().as_bytes().clone(),
-        //         Some(task.fn_allowance).unwrap_or(0),
-        //         env::prepaid_gas()
-        //     )
-
         env::promise_create(
             task.contract_id,
             &task.function_id.as_bytes(),
@@ -226,7 +221,7 @@ impl CronManager {
     pub fn register_agent(
         &mut self,
         payable_account_id: Option<ValidAccountId>
-    ) -> Agent {
+    ) {
         // check that account isnt already added
         if let Some(a) = self.agents.get(&env::signer_account_pk()) {
             panic!("Agent {} already exists", a.account_id);
@@ -251,8 +246,6 @@ impl CronManager {
         };
 
         self.agents.insert(&pk.into(), &agent);
-
-        agent
     }
 
     pub fn update_agent(
@@ -280,7 +273,7 @@ impl CronManager {
         let pk = env::signer_account_pk();
 
         // check that signer agent exists
-        if let Some(acct) = self.agents.get(&pk) {
+        if let Some(_acct) = self.agents.get(&pk) {
             self.agents.remove(&pk);
         } else {
             panic!("No Agent");
