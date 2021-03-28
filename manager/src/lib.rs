@@ -24,6 +24,7 @@ pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 pub const MAX_BLOCK_RANGE: u32 = 1_000_000;
 pub const MAX_EPOCH_RANGE: u32 = 10_000;
 pub const MAX_SECOND_RANGE: u32 = 600_000_000;
+pub const SLOT_GRANULARITY: u64 = 100;
 
 /// Allows tasks to be executed in async env
 #[derive(BorshDeserialize, BorshSerialize)]
@@ -108,6 +109,9 @@ pub struct Agent {
 
 #[near_bindgen]
 impl CronManager {
+    /// ```bash
+    /// near call cron.testnet new --accountId cron.testnet
+    /// ```
     #[init]
     #[payable]
     pub fn new() -> Self {
@@ -124,6 +128,9 @@ impl CronManager {
         }
     }
 
+    /// ```bash
+    /// near view cron.testnet get_tasks --accountId YOU.testnet
+    /// ```
     // /// Gets next tick immediate tasks. Limited to return only next set of available ex
     // // TODO: finish
     // pub fn get_tasks(&self) -> UnorderedSet<Task> {
@@ -131,6 +138,9 @@ impl CronManager {
     //     self.tabs
     // }
 
+    /// ```bash
+    /// near call cron.testnet create_task '{"contract_id": "counter.in.testnet","function_id": "increment","tick": "@epoch","recurring": true,"fn_allowance": 0,"gas_allowance": 2400000000000}' --accountId YOU.testnet
+    /// ```
     #[payable]
     pub fn create_task(
         &mut self,
@@ -156,15 +166,7 @@ impl CronManager {
         };
 
         log!("tick {}", &tick);
-
-        // Generate hash
-        let input = format!(
-                "{:?}{:?}{:?}",
-                item.contract_id,
-                item.function_id,
-                item.tick
-            );
-        let hash = env::keccak256(input.as_bytes());
+        let hash = self.hash(&item);
         log!("Task Hash {:?}", &hash);
 
         // Add tast to catalog
@@ -176,6 +178,9 @@ impl CronManager {
         hash
     }
 
+    /// ```bash
+    /// near call cron.testnet update_task '{TBD}' --accountId YOU.testnet
+    /// ```
     // #[payable]
     // pub fn update_task(
     //     &mut self,
@@ -187,6 +192,9 @@ impl CronManager {
     //     // TODO: 
     // }
 
+    /// ```bash
+    /// near call cron.testnet remove_task '{"task_hash": ""}' --accountId YOU.testnet
+    /// ```
     pub fn remove_task(
         &mut self,
         task_hash: u128,
@@ -196,14 +204,42 @@ impl CronManager {
     }
 
     /// Called directly by a registered agent
+    /// ```bash
+    /// near call cron.testnet proxy_call --accountId YOU.testnet
+    /// ```
     pub fn proxy_call(&mut self) {
-        // TODO: Add asserts
-        // TODO: get task based on current slot
-        // TODO: Get current slot based on block or timestamp
-        let task = self.tasks.get(&vec![1])
-            .expect("No tasks found in slot");
+        // only registered agent signed, because micropayments will benefit long term
+        let mut agent = self.agents.get(&env::signer_account_pk())
+            .expect("Agent not registered");
 
-        // TODO: Call external contract with task variables
+        // TODO: Get current slot based on block or timestamp
+        let current_slot = self.current_slot_id();
+        log!("current slot {:?}", current_slot);
+        let slot = vec![1];
+
+        // get task based on current slot
+        let mut task = self.tasks.get(&slot)
+            .expect("No tasks found in slot");
+        let hash = self.hash(&task);
+        let call_balance_used = task.fn_allowance + task.gas_allowance + self.agent_fee;
+
+        assert!(call_balance_used < task.balance, "Not enough task balance to execute job");
+            
+        // Increment agent rewards
+        agent.balance += self.agent_fee;
+
+        // Increment agent task count
+        agent.balance += 1;
+
+        // Decrease task balance
+        // TODO: Change to real gas used
+        task.balance -= call_balance_used;
+
+        // Update storage in both places
+        self.agents.insert(&env::signer_account_pk(), &agent);
+        self.tasks.insert(&hash, &task);
+
+        // Call external contract with task variables
         env::promise_create(
             task.contract_id,
             &task.function_id.as_bytes(),
@@ -211,13 +247,13 @@ impl CronManager {
             Some(task.fn_allowance).unwrap_or(0),
             env::prepaid_gas()
         );
-            
-        // TODO: Increment agent rewards
-        // TODO: Increment agent task count
-        // TODO: Decrease task balance
     }
 
     /// Keep track of this agent, allows for rewards tracking
+    ///
+    /// ```bash
+    /// near call cron.testnet remove_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
+    /// ```
     pub fn register_agent(
         &mut self,
         payable_account_id: Option<ValidAccountId>
@@ -248,6 +284,9 @@ impl CronManager {
         self.agents.insert(&pk.into(), &agent);
     }
 
+    /// ```bash
+    /// near call cron.testnet update_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
+    /// ```
     pub fn update_agent(
         &mut self,
         payable_account_id: Option<ValidAccountId>
@@ -269,6 +308,9 @@ impl CronManager {
         };
     }
 
+    /// ```bash
+    /// near call cron.testnet unregister_agent --accountId YOUR_AGENT.testnet
+    /// ```
     pub fn unregister_agent(&mut self) {
         let pk = env::signer_account_pk();
 
@@ -280,6 +322,9 @@ impl CronManager {
         };
     }
 
+    /// ```bash
+    /// near call cron.testnet withdraw_task_balance --accountId YOUR_AGENT.testnet
+    /// ```
     pub fn withdraw_task_balance(&mut self) -> Promise {
         let pk = env::signer_account_pk();
 
@@ -292,6 +337,28 @@ impl CronManager {
             panic!("No Agent");
         }
 
+    }
+
+    // TODO: Get agent stats
+
+    fn hash(&self, item: &Task) -> Vec<u8> {
+        // Generate hash
+        let input = format!(
+                "{:?}{:?}{:?}",
+                item.contract_id,
+                item.function_id,
+                item.tick
+            );
+        env::keccak256(input.as_bytes())
+    }
+
+    // TODO: this will need a major overhaul, for now simplify!
+    /// Returns current slot based on current block height
+    /// rounded to nearest granularity (~every 60 blocks)
+    fn current_slot_id(&self) -> Vec<u8> {
+        let block = env::block_index();
+        let rem = block % SLOT_GRANULARITY;
+        (block - rem).try_to_vec().unwrap()
     }
 }
 
