@@ -2,7 +2,7 @@ use near_sdk::{
     near_bindgen,
     log,
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, TreeMap, Vector},
+    collections::{LookupMap, TreeMap},
     json_types::{ValidAccountId, Base58PublicKey},
     serde_json::json,
     AccountId,
@@ -45,7 +45,7 @@ pub struct Task {
     owner_id: AccountId,
 
     /// Account to direct all execution calls against
-    contract_id: String,
+    contract_id: AccountId,
 
     /// Contract method this task will be executing
     function_id: String,
@@ -141,9 +141,9 @@ impl CronManager {
             paused: false,
             owner_id: env::signer_account_id(),
             owner_pk: env::signer_account_pk(),
-            tasks: LookupMap::new(vec![4]),
+            tasks: LookupMap::new(vec![5]),
             agents: LookupMap::new(vec![2]),
-            tabs: TreeMap::new(vec![0]),
+            tabs: TreeMap::new(vec![6]),
             available_balance: 0,
             staked_balance: 0,
             agent_fee: u128::from(GAS_BASE_FEE)
@@ -156,7 +156,6 @@ impl CronManager {
     /// Gets next set of immediate tasks. Limited to return only next set of available ex
     pub fn get_tasks(&self) -> Vec<Vec<u8>> {
         let current_slot = self.current_slot_id();
-        log!("current slot {:?}", current_slot);
         let default_vec: Vec<Vec<u8>> = Vec::new();
 
         // get tasks based on current slot
@@ -174,6 +173,10 @@ impl CronManager {
         task.to_string()
     }
 
+    /// Allows any user or contract to pay for future txns based on a specific schedule
+    /// contract, function id & other settings. When the task runs out of balance
+    /// the task is no longer executed, any additional funds will be returned to task owner.
+    ///
     /// ```bash
     /// near call cron.testnet create_task '{"contract_id": "counter.in.testnet","function_id": "increment","cadence": "@epoch","recurring": true,"fn_allowance": 0,"gas_allowance": 2400000000000}' --accountId YOU.testnet
     /// ```
@@ -251,45 +254,45 @@ impl CronManager {
     //     self.tabs.remove(&task_hash)
     // }
 
+    /// Executes a task based on the current task slot
+    /// Computes whether a task should continue further or not
+    /// Makes a cross-contract call with the task configuration
     /// Called directly by a registered agent
+    ///
     /// ```bash
     /// near call cron.testnet proxy_call --accountId YOU.testnet
     /// ```
     // TODO: Change OOP, be careful on rewind execution!
+    // TODO: How can this promise execute and allow panics?
     pub fn proxy_call(&mut self) {
         // only registered agent signed, because micropayments will benefit long term
         let mut agent = self.agents.get(&env::signer_account_pk())
             .expect("Agent not registered");
 
-        // TODO: Get current slot based on block or timestamp
+        // Get current slot based on block or timestamp
         let current_slot = self.current_slot_id();
         log!("current slot {:?}", current_slot);
-        // let slot = vec![1];
-        let slot = &1;
 
         // get task based on current slot
-        let mut tab = self.tabs.get(&slot)
+        let mut tab = self.tabs.get(&current_slot)
             .expect("No tasks found in slot");
         log!("tab {:?}", &tab);
+
         // TODO: update state, post pop
-        let task_hash = tab.pop().expect("No tasks available");
-        let mut task = self.tasks.get(&task_hash)
+        // Get a single task hash, then retrieve task details
+        let hash = tab.pop().expect("No tasks available");
+        let mut task = self.tasks.get(&hash)
             .expect("No task found by hash");
         log!("Found Task {}", &task.to_string());
-        let hash = self.hash(&task);
+
+        // let hash = self.hash(&task);
         let call_balance_used = self.task_balance_uses(&task);
 
         assert!(call_balance_used < task.balance, "Not enough task balance to execute job");
 
-        // Increment agent rewards
+        // Increment agent reward & task count
         agent.balance += self.agent_fee;
-
-        // Increment agent task count
-        agent.balance += 1;
-
-        // Decrease task balance
-        // TODO: Change to real gas used
-        task.balance -= call_balance_used;
+        agent.total_tasks_executed += 1;
 
         // TODO: Process task exit, if no future task can execute
 
@@ -306,18 +309,25 @@ impl CronManager {
             self.tabs.insert(&next_slot, &slot_tabs);
         }
 
-        // Update storage in both places
+        // Update agent storage
         self.agents.insert(&env::signer_account_pk(), &agent);
-        self.tasks.insert(&hash, &task);
 
         // Call external contract with task variables
         env::promise_create(
-            task.contract_id,
+            task.contract_id.clone(),
             &task.function_id.as_bytes(),
             json!({}).to_string().as_bytes(),
+            // NOTE: Does this work if signer sends NO amount? Who pays??
             Some(task.fn_allowance).unwrap_or(0),
             Some(task.gas_allowance).unwrap_or(env::prepaid_gas() - env::used_gas())
         );
+
+        // Decrease task balance
+        // TODO: Change to real gas used
+        task.balance -= self.task_balance_used();
+
+        // Update task storage
+        self.tasks.insert(&hash, &task);
     }
 
     // TODO: Need to have an "exit" flow for tasks that are out of balance
@@ -412,10 +422,11 @@ impl CronManager {
 
     }
 
+    /// Gets the agent data stats
+    ///
     /// ```bash
     /// near view cron.testnet get_agent '{"pk": "ed25519:AGENT_PUBLIC_KEY"}' --accountId YOU.testnet
     /// ```
-    /// Gets the agent data stats
     pub fn get_agent(&self, pk: Base58PublicKey) -> String {
         let agent = self.agents.get(&pk.into())
             .expect("No agent found");
@@ -433,6 +444,11 @@ impl CronManager {
                 item.cadence
             );
         env::keccak256(input.as_bytes())
+    }
+
+    /// Returns the base amount required to execute 1 task
+    fn task_balance_used(&self) -> u128 {
+        u128::from(env::used_gas()) + self.agent_fee
     }
 
     /// Returns the base amount required to execute 1 task
