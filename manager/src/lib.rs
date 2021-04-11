@@ -153,22 +153,28 @@ impl CronManager {
         }
     }
 
+    /// Gets a set of tasks.
+    /// Default: Returns the next executable set of tasks hashs.
+    /// 
+    /// Optional Parameters:
+    /// "offset" - An unsigned integer specifying how far in the future to check for tasks that are slotted.
+    /// 
     /// ```bash
     /// near view cron.testnet get_tasks --accountId YOU.testnet
     /// ```
-    /// Gets next set of immediate tasks. Limited to return only next set of available ex
-    pub fn get_tasks(&self) -> Vec<Vec<u8>> {
-        let current_slot = self.get_slot_id(None);
+    pub fn get_tasks(&self, offset: Option<u64>) -> Vec<Vec<u8>> {
+        let current_slot = self.get_slot_id(offset);
         let default_vec: Vec<Vec<u8>> = Vec::new();
 
         // get tasks based on current slot
         self.slots.get(&current_slot).unwrap_or(default_vec)
     }
 
+    /// Gets the data payload of a single task by hash
+    ///
     /// ```bash
     /// near view cron.testnet get_task '{"task_hash": [0,102,143...]}' --accountId YOU.testnet
     /// ```
-    /// Gets the data payload of a single task
     pub fn get_task(&self, task_hash: Vec<u8>) -> String {
         let task = self.tasks.get(&task_hash)
             .expect("No task found by hash");
@@ -247,17 +253,37 @@ impl CronManager {
     //     // TODO: 
     // }
 
-    // TODO: Finish
-    // /// ```bash
-    // /// near call cron.testnet remove_task '{"task_hash": ""}' --accountId YOU.testnet
-    // /// ```
-    // pub fn remove_task(
-    //     &mut self,
-    //     task_hash: u128,
-    // ) -> Option<Vec<u8>> {
-    //     // TODO: Add asserts: owner only, 
-    //     self.slots.remove(&task_hash)
-    // }
+    /// Deletes a task in its entirety, returning any remaining balance to task owner.
+    /// 
+    /// ```bash
+    /// near call cron.testnet remove_task '{"task_hash": ""}' --accountId YOU.testnet
+    /// ```
+    pub fn remove_task(&mut self, task_hash: Vec<u8>) {
+        let task = self.tasks.get(&task_hash)
+            .expect("No task found by hash");
+
+        assert_ne!(task.owner_id, env::signer_account_id(), "Only owner can remove their task.");
+
+        // If owner, allow to remove task
+        self.exit_task(task_hash);
+    }
+
+    /// Internal management of finishing a task.
+    /// Responsible for cleaning up storage &
+    /// returning any remaining balance to task owner.
+    fn exit_task(&mut self, task_hash: Vec<u8>) {
+        let task = self.tasks.get(&task_hash)
+            .expect("No task found by hash");
+        
+        // return any balance
+        if task.balance > 0 {
+            Promise::new(task.owner_id.to_string())
+                .transfer(task.balance);
+        }
+
+        // remove task
+        self.tasks.remove(&task_hash);
+    }
 
     /// Executes a task based on the current task slot
     /// Computes whether a task should continue further or not
@@ -335,17 +361,21 @@ impl CronManager {
         self.tasks.insert(&hash, &task);
     }
 
-    // TODO: Need to have an "exit" flow for tasks that are out of balance
-
-    /// Keep track of this agent, allows for rewards tracking
+    /// Add any account as an agent that will be able to execute tasks.
+    /// Registering allows for rewards accruing with micro-payments which will accumulate to more long-term.
+    /// 
+    /// Optional Parameters:
+    /// "payable_account_id" - Allows a different account id to be specified, so a user can receive funds at a different account than the agent account.
     ///
     /// ```bash
     /// near call cron.testnet register_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
     /// ```
+    #[payable]
     pub fn register_agent(
         &mut self,
         payable_account_id: Option<ValidAccountId>
     ) {
+        // TODO: assert that attached deposit is enough to cover storage cost. This is to protect from storage attack.
         // check that account isnt already added
         if let Some(a) = self.agents.get(&env::signer_account_pk()) {
             panic!("Agent {} already exists", a.account_id);
@@ -372,6 +402,8 @@ impl CronManager {
         self.agents.insert(&pk.into(), &agent);
     }
 
+    /// Update agent details, specifically the payable account id for an agent.
+    ///
     /// ```bash
     /// near call cron.testnet update_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
     /// ```
@@ -396,6 +428,9 @@ impl CronManager {
         };
     }
 
+    /// Removes the agent from the active set of agents.
+    /// Withdraws all reward balances to the agent payable account id.
+    ///
     /// ```bash
     /// near call cron.testnet unregister_agent --accountId YOUR_AGENT.testnet
     /// ```
@@ -404,12 +439,21 @@ impl CronManager {
 
         // check that signer agent exists
         if let Some(_acct) = self.agents.get(&pk) {
+            // Check if there is balance, if any pay rewards to payable account id.
+            if _acct.balance > 0 {
+                Promise::new(_acct.payable_account_id.to_string())
+                    .transfer(_acct.balance);
+            }
+
+            // Remove from active agents
             self.agents.remove(&pk);
         } else {
             panic!("No Agent");
         };
     }
 
+    /// Allows an agent to withdraw all rewards, paid to the specified payable account id.
+    ///
     /// ```bash
     /// near call cron.testnet withdraw_task_balance --accountId YOUR_AGENT.testnet
     /// ```
@@ -452,6 +496,17 @@ impl CronManager {
     }
 
     /// Returns the base amount required to execute 1 task
+    /// Fee breakdown:
+    /// - Used Gas: Task Txn Fee Cost
+    /// - Agent Fee: Incentivize Execution SLA
+    /// 
+    /// Task Fee Example:
+    /// Gas: 50 Tgas
+    /// Agent: 100 Tgas
+    /// Total: 150 Tgas
+    ///
+    /// NOTE: Gas cost includes the cross-contract call & internal logic of this contract.
+    /// Direct contract gas fee will be lower than task execution costs.
     fn task_balance_used(&self) -> u128 {
         u128::from(env::used_gas()) + self.agent_fee
     }
