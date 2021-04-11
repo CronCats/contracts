@@ -3,7 +3,7 @@ use near_sdk::{
     log,
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{LookupMap, TreeMap},
-    json_types::{ValidAccountId, Base58PublicKey},
+    json_types::{ValidAccountId, Base58PublicKey, Base64VecU8},
     serde_json::json,
     AccountId,
     Balance,
@@ -12,6 +12,7 @@ use near_sdk::{
     PublicKey,
     PanicOnDefault
 };
+use near_sdk::json_types::U128;
 
 near_sdk::setup_alloc!();
 
@@ -154,7 +155,7 @@ impl CronManager {
     }
 
     /// Gets a set of tasks.
-    /// Default: Returns the next executable set of tasks hashs.
+    /// Default: Returns the next executable set of tasks hashes.
     /// 
     /// Optional Parameters:
     /// "offset" - An unsigned integer specifying how far in the future to check for tasks that are slotted.
@@ -170,12 +171,34 @@ impl CronManager {
         self.slots.get(&current_slot).unwrap_or(default_vec)
     }
 
+    /// Most useful for debugging at this point.
+    pub fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Base64VecU8> {
+        let mut ret: Vec<Base64VecU8> = Vec::new();
+        if let Some(slot_number) = slot {
+            // User specified a slot number, only return tasks in there.
+            let tasks_in_slot = self.slots.get(&slot_number.0).expect("Couldn't find tasks for given slot.");
+            for task in tasks_in_slot.iter() {
+                ret.push(Base64VecU8::from(task.to_vec()));
+            }
+        } else {
+            // Return all slots
+            for slot in self.slots.iter() {
+                let tasks_in_slot = slot.1;
+                for task in tasks_in_slot.iter() {
+                    ret.push(Base64VecU8::from(task.to_vec()));
+                }
+            }
+        }
+        ret
+    }
+
     /// Gets the data payload of a single task by hash
     ///
     /// ```bash
     /// near view cron.testnet get_task '{"task_hash": [0,102,143...]}' --accountId YOU.testnet
     /// ```
-    pub fn get_task(&self, task_hash: Vec<u8>) -> String {
+    pub fn get_task(&self, task_hash: Base64VecU8) -> String {
+        let task_hash = task_hash.0;
         let task = self.tasks.get(&task_hash)
             .expect("No task found by hash");
 
@@ -199,7 +222,7 @@ impl CronManager {
         fn_deposit: Option<u128>,
         gas_allowance: Option<u64>,
         arguments: Option<Vec<u8>>
-    ) -> Vec<u8> {
+    ) -> Base64VecU8 {
         // TODO: Add asserts to check cadence can be parsed
         log!("cadence {}", &cadence.clone());
         let item = Task {
@@ -207,12 +230,12 @@ impl CronManager {
             contract_id,
             function_id,
             cadence,
-            recurring: Some(recurring).unwrap_or(Some(false)).unwrap(),
+            recurring: recurring.unwrap_or(false),
             status: TaskStatus::Ready,
             balance: env::attached_deposit(),
-            fn_deposit: Some(fn_deposit).unwrap_or(Some(0)).unwrap(),
-            gas_allowance: Some(gas_allowance).unwrap_or(Some(GAS_BASE_FEE)).unwrap(),
-            arguments: Some(arguments).unwrap_or(Some(b"".to_vec())).unwrap()
+            fn_deposit: fn_deposit.unwrap_or(0), // for Ⓝ only?
+            gas_allowance: gas_allowance.unwrap_or(GAS_BASE_FEE),
+            arguments: arguments.unwrap_or(b"".to_vec())
         };
 
         // Check that balance is sufficient for 1 execution minimum
@@ -220,23 +243,24 @@ impl CronManager {
         assert!(call_balance_used < item.balance, "Not enough task balance to execute job");
 
         let hash = self.hash(&item);
-        log!("Task Hash {:?}", &hash);
+        log!("Task Hash (as bytes) {:?}", &hash);
         // log!("Task data {:?}", &item.to_string());
 
         // TODO: Parse cadence, insert in slots where necessary
         // TODO: Change! testing with 200 blocks
         let next_slot = self.get_slot_id(Some(200));
 
-        // Add tast to catalog
+        // Add task to catalog
         self.tasks.insert(&hash, &item);
 
         // Get previous task hashes in slot, add as needed
         let default_vec: Vec<Vec<u8>> = Vec::new();
         let mut slot_slots = self.slots.get(&next_slot).unwrap_or(default_vec);
         slot_slots.push(hash.clone());
+        log!("Inserting into slot: {}", next_slot);
         self.slots.insert(&next_slot, &slot_slots);
 
-        hash
+        Base64VecU8::from(hash)
     }
 
     /// ```bash
@@ -258,11 +282,12 @@ impl CronManager {
     /// ```bash
     /// near call cron.testnet remove_task '{"task_hash": ""}' --accountId YOU.testnet
     /// ```
-    pub fn remove_task(&mut self, task_hash: Vec<u8>) {
+    pub fn remove_task(&mut self, task_hash: Base64VecU8) {
+        let task_hash = task_hash.0;
         let task = self.tasks.get(&task_hash)
             .expect("No task found by hash");
 
-        assert_ne!(task.owner_id, env::signer_account_id(), "Only owner can remove their task.");
+        assert_eq!(task.owner_id, env::predecessor_account_id(), "Only owner can remove their task.");
 
         // If owner, allow to remove task
         self.exit_task(task_hash);
@@ -376,7 +401,7 @@ impl CronManager {
         payable_account_id: Option<ValidAccountId>
     ) {
         // TODO: assert that attached deposit is enough to cover storage cost. This is to protect from storage attack.
-        // check that account isnt already added
+        // check that account isn't already added
         if let Some(a) = self.agents.get(&env::signer_account_pk()) {
             panic!("Agent {} already exists", a.account_id);
         };
