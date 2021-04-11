@@ -37,6 +37,8 @@ near view cron.in.testnet get_task '{"task_hash": [103, 236, 102, 89, 237, 21, 1
 
 near view cron.in.testnet get_task '{"task_hash": [95, 18, 65, 232, 183, 57, 173, 22, 28, 105, 176, 87, 148, 18, 111, 148, 106, 12, 90, 109, 32, 223, 36, 101, 68, 227, 216, 115, 160, 172, 77, 194]}' --accountId counter.in.testnet
 
+near call cron.in.testnet get_tasks --accountId agent.in.testnet
+
 near call cron.in.testnet proxy_call --accountId agent.in.testnet
 
 # Agents
@@ -45,6 +47,8 @@ near call cron.in.testnet register_agent '{"payable_account_id": "user.in.testne
 near call cron.in.testnet update_agent '{"payable_account_id": "user.in.testnet"}' --accountId agent.in.testnet
 
 near call cron.in.testnet unregister_agent --accountId agent.in.testnet
+
+near view cron.testnet get_agent '{"pk": "ed25519:AGENT_PUBLIC_KEY"}' --accountId YOU.testnet
 
 near call cron.in.testnet withdraw_task_balance --accountId agent.in.testnet
 

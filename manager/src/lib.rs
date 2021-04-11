@@ -65,13 +65,13 @@ pub struct Task {
     balance: Balance,
 
     /// Configuration of NEAR balance to send to each function call. This is the "amount" for a function call.
-    fn_allowance: Balance,
+    fn_deposit: Balance,
 
-    /// Configuration of NEAR balance to send to each function call. This is the "amount" for a function call.
-    gas_allowance: u64
+    /// Configuration of NEAR balance to attach to each function call. This is the "gas" for a function call.
+    gas_allowance: u64,
 
-    // TODO: Test if this is "safe"
-    // arguments: String
+    // NOTE: Only allow static pre-defined bytes
+    arguments: Vec<u8>
 }
 
 impl ToString for Task {
@@ -84,8 +84,9 @@ impl ToString for Task {
             "recurring": self.recurring.to_string(),
             "status": format!("{:?}", self.status), // FYI, prolly better way to do this
             "balance": self.balance.to_string(),
-            "fn_allowance": self.function_id,
+            "fn_deposit": self.function_id,
             "gas_allowance": self.gas_allowance,
+            "arguments": self.arguments,
         }).to_string()
     }
 }
@@ -121,12 +122,13 @@ pub struct CronManager {
     // Basic management
     tasks: LookupMap<Vec<u8>, Task>,
     agents: LookupMap<PublicKey, Agent>,
-    tabs: TreeMap<u128, Vec<Vec<u8>>>,
+    slots: TreeMap<u128, Vec<Vec<u8>>>,
 
     // Economics
     available_balance: Balance,
     staked_balance: Balance,
-    agent_fee: Balance
+    agent_fee: Balance,
+    slot_granularity: u64
 }
 
 #[near_bindgen]
@@ -143,10 +145,11 @@ impl CronManager {
             owner_pk: env::signer_account_pk(),
             tasks: LookupMap::new(vec![5]),
             agents: LookupMap::new(vec![2]),
-            tabs: TreeMap::new(vec![6]),
+            slots: TreeMap::new(vec![6]),
             available_balance: 0,
             staked_balance: 0,
-            agent_fee: u128::from(GAS_BASE_FEE)
+            agent_fee: u128::from(GAS_BASE_FEE),
+            slot_granularity: SLOT_GRANULARITY
         }
     }
 
@@ -155,11 +158,11 @@ impl CronManager {
     /// ```
     /// Gets next set of immediate tasks. Limited to return only next set of available ex
     pub fn get_tasks(&self) -> Vec<Vec<u8>> {
-        let current_slot = self.current_slot_id();
+        let current_slot = self.get_slot_id(None);
         let default_vec: Vec<Vec<u8>> = Vec::new();
 
         // get tasks based on current slot
-        self.tabs.get(&current_slot).unwrap_or(default_vec)
+        self.slots.get(&current_slot).unwrap_or(default_vec)
     }
 
     /// ```bash
@@ -178,7 +181,7 @@ impl CronManager {
     /// the task is no longer executed, any additional funds will be returned to task owner.
     ///
     /// ```bash
-    /// near call cron.testnet create_task '{"contract_id": "counter.in.testnet","function_id": "increment","cadence": "@epoch","recurring": true,"fn_allowance": 0,"gas_allowance": 2400000000000}' --accountId YOU.testnet
+    /// near call cron.testnet create_task '{"contract_id": "counter.in.testnet","function_id": "increment","cadence": "@epoch","recurring": true,"fn_deposit": 0,"gas_allowance": 2400000000000}' --accountId YOU.testnet
     /// ```
     #[payable]
     pub fn create_task(
@@ -187,8 +190,9 @@ impl CronManager {
         function_id: String,
         cadence: String, // TODO: Change to the time parser type
         recurring: Option<bool>,
-        fn_allowance: Option<u128>,
-        gas_allowance: Option<u64>
+        fn_deposit: Option<u128>,
+        gas_allowance: Option<u64>,
+        arguments: Option<Vec<u8>>
     ) -> Vec<u8> {
         // TODO: Add asserts to check cadence can be parsed
         log!("cadence {}", &cadence.clone());
@@ -200,8 +204,9 @@ impl CronManager {
             recurring: Some(recurring).unwrap_or(Some(false)).unwrap(),
             status: TaskStatus::Ready,
             balance: env::attached_deposit(),
-            fn_allowance: Some(fn_allowance).unwrap_or(Some(0)).unwrap(),
+            fn_deposit: Some(fn_deposit).unwrap_or(Some(0)).unwrap(),
             gas_allowance: Some(gas_allowance).unwrap_or(Some(GAS_BASE_FEE)).unwrap(),
+            arguments: Some(arguments).unwrap_or(Some(b"".to_vec())).unwrap()
         };
 
         // Check that balance is sufficient for 1 execution minimum
@@ -212,18 +217,18 @@ impl CronManager {
         log!("Task Hash {:?}", &hash);
         // log!("Task data {:?}", &item.to_string());
 
-        // TODO: Parse cadence, insert in tabs where necessary
+        // TODO: Parse cadence, insert in slots where necessary
         // TODO: Change! testing with 200 blocks
-        let next_slot = self.next_slot_id(200);
+        let next_slot = self.get_slot_id(Some(200));
 
         // Add tast to catalog
         self.tasks.insert(&hash, &item);
 
         // Get previous task hashes in slot, add as needed
         let default_vec: Vec<Vec<u8>> = Vec::new();
-        let mut slot_tabs = self.tabs.get(&next_slot).unwrap_or(default_vec);
-        slot_tabs.push(hash.clone());
-        self.tabs.insert(&next_slot, &slot_tabs);
+        let mut slot_slots = self.slots.get(&next_slot).unwrap_or(default_vec);
+        slot_slots.push(hash.clone());
+        self.slots.insert(&next_slot, &slot_slots);
 
         hash
     }
@@ -251,7 +256,7 @@ impl CronManager {
     //     task_hash: u128,
     // ) -> Option<Vec<u8>> {
     //     // TODO: Add asserts: owner only, 
-    //     self.tabs.remove(&task_hash)
+    //     self.slots.remove(&task_hash)
     // }
 
     /// Executes a task based on the current task slot
@@ -270,11 +275,11 @@ impl CronManager {
             .expect("Agent not registered");
 
         // Get current slot based on block or timestamp
-        let current_slot = self.current_slot_id();
+        let current_slot = self.get_slot_id(None);
         log!("current slot {:?}", current_slot);
 
         // get task based on current slot
-        let mut tab = self.tabs.get(&current_slot)
+        let mut tab = self.slots.get(&current_slot)
             .expect("No tasks found in slot");
         log!("tab {:?}", &tab);
 
@@ -299,14 +304,14 @@ impl CronManager {
         // TODO: finish!
         if task.recurring == true {
             // TODO: Change! testing with 200 blocks
-            let next_slot = self.next_slot_id(200);
+            let next_slot = self.get_slot_id(Some(200));
             assert!(&current_slot < &next_slot, "Cannot execute task in the past");
 
             // Get previous task hashes in slot, add as needed
             let default_vec: Vec<Vec<u8>> = Vec::new();
-            let mut slot_tabs = self.tabs.get(&next_slot).unwrap_or(default_vec);
-            slot_tabs.push(hash.clone());
-            self.tabs.insert(&next_slot, &slot_tabs);
+            let mut slot_slots = self.slots.get(&next_slot).unwrap_or(default_vec);
+            slot_slots.push(hash.clone());
+            self.slots.insert(&next_slot, &slot_slots);
         }
 
         // Update agent storage
@@ -318,7 +323,7 @@ impl CronManager {
             &task.function_id.as_bytes(),
             json!({}).to_string().as_bytes(),
             // NOTE: Does this work if signer sends NO amount? Who pays??
-            Some(task.fn_allowance).unwrap_or(0),
+            Some(task.fn_deposit).unwrap_or(0),
             Some(task.gas_allowance).unwrap_or(env::prepaid_gas() - env::used_gas())
         );
 
@@ -453,25 +458,21 @@ impl CronManager {
 
     /// Returns the base amount required to execute 1 task
     fn task_balance_uses(&self, task: &Task) -> u128 {
-        task.fn_allowance + u128::from(task.gas_allowance) + self.agent_fee
+        task.fn_deposit + u128::from(task.gas_allowance) + self.agent_fee
     }
 
     // TODO: this will need a major overhaul, for now simplify! (needs to work with timestamps as well)
-    /// Returns current slot based on current block height
+    /// If no offset, Returns current slot based on current block height
+    /// If offset, Returns next slot based on current block height & integer offset
     /// rounded to nearest granularity (~every 60 blocks)
-    fn current_slot_id(&self) -> u128 {
+    fn get_slot_id(&self, offset: Option<u64>) -> u128 {
         let block = env::block_index();
-        let rem = block % SLOT_GRANULARITY;
-        u128::from(block - rem)
-    }
+        let rem = block % self.slot_granularity;
 
-    // TODO: this will need a major overhaul, for now simplify! (needs to work with timestamps as well)
-    /// Returns next slot based on current block height & integer offset
-    /// rounded to nearest granularity (~every 60 blocks)
-    fn next_slot_id(&self, offset: u64) -> u128 {
-        let block = env::block_index();
-        let rem = block % SLOT_GRANULARITY;
-        u128::from(block - rem + offset)
+        match Some(offset).unwrap() {
+            Some(o) => u128::from(block - rem + o),
+            None => u128::from(block - rem)
+        }
     }
 }
 
