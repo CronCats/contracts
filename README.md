@@ -54,13 +54,13 @@ near deploy --wasmFile ./res/manager.wasm --accountId cron.$NEAR_ACCT --initFunc
 near deploy --wasmFile ./res/rust_counter_tutorial.wasm --accountId counter.$NEAR_ACCT
 
 # Tasks
-near call cron.$NEAR_ACCT create_task '{"contract_id": "counter.'$NEAR_ACCT'","function_id": "increment","cadence": "@epoch","recurring": true,"fn_deposit": 0,"gas_allowance": 2400000000000}' --accountId counter.$NEAR_ACCT --amount 1
+near call cron.$NEAR_ACCT create_task '{"contract_id": "counter.'$NEAR_ACCT'","function_id": "increment","cadence": "@epoch","recurring": true,"deposit": 0,"gas": 2400000000000}' --accountId counter.$NEAR_ACCT --amount 1
 
 near view cron.$NEAR_ACCT get_task '{"task_hash": "r2JvrGPvDkFUuqdF4x1+L93aYKGmgp4GqXT4UAK3AE4="}'
 
 near call cron.$NEAR_ACCT remove_task '{"task_hash": "r2JvrGPvDkFUuqdF4x1+L93aYKGmgp4GqXT4UAK3AE4="}' --accountId counter.$NEAR_ACCT
 
-near view cron.$NEAR_ACCT get_tasks '{"offset": 43613900}'
+near view cron.$NEAR_ACCT get_tasks '{"offset": 999}'
 
 near call cron.$NEAR_ACCT proxy_call --accountId agent.$NEAR_ACCT
 
@@ -71,7 +71,7 @@ near call cron.$NEAR_ACCT update_agent '{"payable_account_id": "user.'$NEAR_ACCT
 
 near call cron.$NEAR_ACCT unregister_agent --accountId agent.$NEAR_ACCT
 
-near view $NEAR_ACCT get_agent '{"pk": "ed25519:AGENT_PUBLIC_KEY"}'
+near view cron.$NEAR_ACCT get_agent '{"pk": "ed25519:AGENT_PUBLIC_KEY"}'
 
 near call cron.$NEAR_ACCT withdraw_task_balance --accountId agent.$NEAR_ACCT
 
