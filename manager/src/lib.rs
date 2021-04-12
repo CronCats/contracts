@@ -63,13 +63,13 @@ pub struct Task {
     status: TaskStatus,
 
     /// Total balance of NEAR available for current and future executions
-    balance: Balance,
+    total_deposit: Balance,
 
     /// Configuration of NEAR balance to send to each function call. This is the "amount" for a function call.
-    fn_deposit: Balance,
+    deposit: Balance,
 
     /// Configuration of NEAR balance to attach to each function call. This is the "gas" for a function call.
-    gas_allowance: u64,
+    gas: u64,
 
     // NOTE: Only allow static pre-defined bytes
     arguments: Vec<u8>
@@ -84,9 +84,9 @@ impl ToString for Task {
             "cadence": self.cadence,
             "recurring": self.recurring.to_string(),
             "status": format!("{:?}", self.status), // FYI, prolly better way to do this
-            "balance": self.balance.to_string(),
-            "fn_deposit": self.function_id,
-            "gas_allowance": self.gas_allowance,
+            "balance": self.total_deposit.to_string(),
+            "deposit": U128(self.deposit),
+            "gas": self.gas,
             "arguments": self.arguments,
         }).to_string()
     }
@@ -232,15 +232,15 @@ impl CronManager {
             cadence,
             recurring: recurring.unwrap_or(false),
             status: TaskStatus::Ready,
-            balance: env::attached_deposit(),
-            fn_deposit: fn_deposit.unwrap_or(0), // for Ⓝ only?
-            gas_allowance: gas_allowance.unwrap_or(GAS_BASE_FEE),
+            total_deposit: env::attached_deposit(),
+            deposit: fn_deposit.unwrap_or(0), // for Ⓝ only?
+            gas: gas_allowance.unwrap_or(GAS_BASE_FEE),
             arguments: arguments.unwrap_or(b"".to_vec())
         };
 
         // Check that balance is sufficient for 1 execution minimum
         let call_balance_used = self.task_balance_uses(&item);
-        assert!(call_balance_used < item.balance, "Not enough task balance to execute job");
+        assert!(call_balance_used < item.total_deposit, "Not enough task balance to execute job");
 
         let hash = self.hash(&item);
         log!("Task Hash (as bytes) {:?}", &hash);
@@ -301,9 +301,9 @@ impl CronManager {
             .expect("No task found by hash");
         
         // return any balance
-        if task.balance > 0 {
+        if task.total_deposit > 0 {
             Promise::new(task.owner_id.to_string())
-                .transfer(task.balance);
+                .transfer(task.total_deposit);
         }
 
         // remove task
@@ -344,7 +344,7 @@ impl CronManager {
         // let hash = self.hash(&task);
         let call_balance_used = self.task_balance_uses(&task);
 
-        assert!(call_balance_used < task.balance, "Not enough task balance to execute job");
+        assert!(call_balance_used < task.total_deposit, "Not enough task balance to execute job");
 
         // Increment agent reward & task count
         agent.balance += self.agent_fee;
@@ -374,13 +374,13 @@ impl CronManager {
             &task.function_id.as_bytes(),
             json!({}).to_string().as_bytes(),
             // NOTE: Does this work if signer sends NO amount? Who pays??
-            Some(task.fn_deposit).unwrap_or(0),
-            Some(task.gas_allowance).unwrap_or(env::prepaid_gas() - env::used_gas())
+            Some(task.deposit).unwrap_or(0),
+            Some(task.gas).unwrap_or(env::prepaid_gas() - env::used_gas())
         );
 
         // Decrease task balance
         // TODO: Change to real gas used
-        task.balance -= self.task_balance_used();
+        task.total_deposit -= self.task_balance_used();
 
         // Update task storage
         self.tasks.insert(&hash, &task);
@@ -538,7 +538,7 @@ impl CronManager {
 
     /// Returns the base amount required to execute 1 task
     fn task_balance_uses(&self, task: &Task) -> u128 {
-        task.fn_deposit + u128::from(task.gas_allowance) + self.agent_fee
+        task.deposit + u128::from(task.gas) + self.agent_fee
     }
 
     // TODO: this will need a major overhaul, for now simplify! (needs to work with timestamps as well)
