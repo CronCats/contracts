@@ -3,7 +3,7 @@ use near_sdk::{
     log,
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{LookupMap, TreeMap},
-    json_types::{ValidAccountId, Base58PublicKey, Base64VecU8},
+    json_types::{ValidAccountId, Base58PublicKey, Base64VecU8, U128},
     serde_json::json,
     AccountId,
     Balance,
@@ -13,7 +13,6 @@ use near_sdk::{
     PanicOnDefault,
     serde::{Deserialize, Serialize}
 };
-use near_sdk::json_types::U128;
 
 near_sdk::setup_alloc!();
 
