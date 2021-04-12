@@ -3,14 +3,15 @@ use near_sdk::{
     log,
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{LookupMap, TreeMap},
-    json_types::{ValidAccountId, Base58PublicKey},
+    json_types::{ValidAccountId, Base58PublicKey, Base64VecU8, U128},
     serde_json::json,
     AccountId,
     Balance,
     env,
     Promise,
     PublicKey,
-    PanicOnDefault
+    PanicOnDefault,
+    serde::{Deserialize, Serialize}
 };
 
 near_sdk::setup_alloc!();
@@ -27,7 +28,8 @@ pub const MAX_SECOND_RANGE: u32 = 600_000_000;
 pub const SLOT_GRANULARITY: u64 = 100;
 
 /// Allows tasks to be executed in async env
-#[derive(BorshDeserialize, BorshSerialize, Debug)]
+#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
 pub enum TaskStatus {
     /// Shows a task is not currently active, ready for an agent to take
     Ready,
@@ -39,7 +41,8 @@ pub enum TaskStatus {
     Complete
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Debug)]
+#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct Task {
     /// Entity responsible for this task, can change task details
     owner_id: AccountId,
@@ -62,52 +65,28 @@ pub struct Task {
     status: TaskStatus,
 
     /// Total balance of NEAR available for current and future executions
-    balance: Balance,
+    total_deposit: Balance,
 
     /// Configuration of NEAR balance to send to each function call. This is the "amount" for a function call.
-    fn_deposit: Balance,
+    deposit: Balance,
 
     /// Configuration of NEAR balance to attach to each function call. This is the "gas" for a function call.
-    gas_allowance: u64,
+    gas: u64,
 
     // NOTE: Only allow static pre-defined bytes
     arguments: Vec<u8>
 }
 
-impl ToString for Task {
-    fn to_string(&self) -> String {
-        json!({
-            "owner_id": self.owner_id,
-            "contract_id": self.contract_id,
-            "function_id": self.function_id,
-            "cadence": self.cadence,
-            "recurring": self.recurring.to_string(),
-            "status": format!("{:?}", self.status), // FYI, prolly better way to do this
-            "balance": self.balance.to_string(),
-            "fn_deposit": self.function_id,
-            "gas_allowance": self.gas_allowance,
-            "arguments": self.arguments,
-        }).to_string()
-    }
-}
-
-#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault, Debug)]
+#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault, Debug, Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct Agent {
+    #[serde(skip_serializing)]
     pk: PublicKey,
+    #[serde(skip_serializing)]
     account_id: AccountId,
     payable_account_id: AccountId,
     balance: Balance,
     total_tasks_executed: u128
-}
-
-impl ToString for Agent {
-    fn to_string(&self) -> String {
-        json!({
-            "payable_account_id": self.payable_account_id,
-            "balance": self.balance.to_string(),
-            "total_tasks_executed": self.total_tasks_executed.to_string()
-        }).to_string()
-    }
 }
 
 #[near_bindgen]
@@ -143,9 +122,9 @@ impl CronManager {
             paused: false,
             owner_id: env::signer_account_id(),
             owner_pk: env::signer_account_pk(),
-            tasks: LookupMap::new(vec![5]),
-            agents: LookupMap::new(vec![2]),
-            slots: TreeMap::new(vec![6]),
+            tasks: LookupMap::new(b"t"),
+            agents: LookupMap::new(b"a"),
+            slots: TreeMap::new(b"s"),
             available_balance: 0,
             staked_balance: 0,
             agent_fee: u128::from(GAS_BASE_FEE),
@@ -154,32 +133,63 @@ impl CronManager {
     }
 
     /// Gets a set of tasks.
-    /// Default: Returns the next executable set of tasks hashs.
+    /// Default: Returns the next executable set of tasks hashes.
     /// 
     /// Optional Parameters:
     /// "offset" - An unsigned integer specifying how far in the future to check for tasks that are slotted.
     /// 
     /// ```bash
-    /// near view cron.testnet get_tasks --accountId YOU.testnet
+    /// near view cron.testnet get_tasks
     /// ```
-    pub fn get_tasks(&self, offset: Option<u64>) -> Vec<Vec<u8>> {
+    pub fn get_tasks(&self, offset: Option<u64>) -> Vec<Base64VecU8> {
         let current_slot = self.get_slot_id(offset);
-        let default_vec: Vec<Vec<u8>> = Vec::new();
 
-        // get tasks based on current slot
-        self.slots.get(&current_slot).unwrap_or(default_vec)
+        // Get tasks based on current slot.
+        // (Or closest past slot if there are leftovers.)
+        let slot_ballpark = self.slots.floor_key(&current_slot);
+        if let Some(k) = slot_ballpark {
+            let mut ret: Vec<Base64VecU8> = Vec::new();
+            let tasks = self.slots.get(&k).unwrap();
+            for task in tasks.iter() {
+                ret.push(Base64VecU8::from(task.to_vec()));
+            }
+            ret
+        } else {
+            vec![Base64VecU8::from(vec![])]
+        }
+    }
+
+    /// Most useful for debugging at this point.
+    pub fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Base64VecU8> {
+        let mut ret: Vec<Base64VecU8> = Vec::new();
+        if let Some(slot_number) = slot {
+            // User specified a slot number, only return tasks in there.
+            let tasks_in_slot = self.slots.get(&slot_number.0).expect("Couldn't find tasks for given slot.");
+            for task in tasks_in_slot.iter() {
+                ret.push(Base64VecU8::from(task.to_vec()));
+            }
+        } else {
+            // Return all slots
+            for slot in self.slots.iter() {
+                let tasks_in_slot = slot.1;
+                for task in tasks_in_slot.iter() {
+                    ret.push(Base64VecU8::from(task.to_vec()));
+                }
+            }
+        }
+        ret
     }
 
     /// Gets the data payload of a single task by hash
     ///
     /// ```bash
-    /// near view cron.testnet get_task '{"task_hash": [0,102,143...]}' --accountId YOU.testnet
+    /// near view cron.testnet get_task '{"task_hash": "r2Jv…T4U4="}'
     /// ```
-    pub fn get_task(&self, task_hash: Vec<u8>) -> String {
+    pub fn get_task(&self, task_hash: Base64VecU8) -> Task {
+        let task_hash = task_hash.0;
         let task = self.tasks.get(&task_hash)
             .expect("No task found by hash");
-
-        task.to_string()
+        task
     }
 
     /// Allows any user or contract to pay for future txns based on a specific schedule
@@ -187,7 +197,7 @@ impl CronManager {
     /// the task is no longer executed, any additional funds will be returned to task owner.
     ///
     /// ```bash
-    /// near call cron.testnet create_task '{"contract_id": "counter.in.testnet","function_id": "increment","cadence": "@epoch","recurring": true,"fn_deposit": 0,"gas_allowance": 2400000000000}' --accountId YOU.testnet
+    /// near call cron.testnet create_task '{"contract_id": "counter.in.testnet","function_id": "increment","cadence": "@epoch","recurring": true,"deposit": 0,"gas": 2400000000000}' --accountId YOU.testnet
     /// ```
     #[payable]
     pub fn create_task(
@@ -196,10 +206,10 @@ impl CronManager {
         function_id: String,
         cadence: String, // TODO: Change to the time parser type
         recurring: Option<bool>,
-        fn_deposit: Option<u128>,
-        gas_allowance: Option<u64>,
+        deposit: Option<u128>,
+        gas: Option<u64>,
         arguments: Option<Vec<u8>>
-    ) -> Vec<u8> {
+    ) -> Base64VecU8 {
         // TODO: Add asserts to check cadence can be parsed
         log!("cadence {}", &cadence.clone());
         let item = Task {
@@ -207,36 +217,37 @@ impl CronManager {
             contract_id,
             function_id,
             cadence,
-            recurring: Some(recurring).unwrap_or(Some(false)).unwrap(),
+            recurring: recurring.unwrap_or(false),
             status: TaskStatus::Ready,
-            balance: env::attached_deposit(),
-            fn_deposit: Some(fn_deposit).unwrap_or(Some(0)).unwrap(),
-            gas_allowance: Some(gas_allowance).unwrap_or(Some(GAS_BASE_FEE)).unwrap(),
-            arguments: Some(arguments).unwrap_or(Some(b"".to_vec())).unwrap()
+            total_deposit: env::attached_deposit(),
+            deposit: deposit.unwrap_or(0), // for Ⓝ only?
+            gas: gas.unwrap_or(GAS_BASE_FEE),
+            arguments: arguments.unwrap_or(b"".to_vec())
         };
 
         // Check that balance is sufficient for 1 execution minimum
         let call_balance_used = self.task_balance_uses(&item);
-        assert!(call_balance_used < item.balance, "Not enough task balance to execute job");
+        assert!(call_balance_used < item.total_deposit, "Not enough task balance to execute job");
 
         let hash = self.hash(&item);
-        log!("Task Hash {:?}", &hash);
+        log!("Task Hash (as bytes) {:?}", &hash);
         // log!("Task data {:?}", &item.to_string());
 
         // TODO: Parse cadence, insert in slots where necessary
         // TODO: Change! testing with 200 blocks
+        let default_vec: Vec<Vec<u8>> = Vec::new();
         let next_slot = self.get_slot_id(Some(200));
 
-        // Add tast to catalog
+        // Add task to catalog
         self.tasks.insert(&hash, &item);
 
         // Get previous task hashes in slot, add as needed
-        let default_vec: Vec<Vec<u8>> = Vec::new();
         let mut slot_slots = self.slots.get(&next_slot).unwrap_or(default_vec);
         slot_slots.push(hash.clone());
+        log!("Inserting into slot: {}", next_slot);
         self.slots.insert(&next_slot, &slot_slots);
 
-        hash
+        Base64VecU8::from(hash)
     }
 
     /// ```bash
@@ -258,11 +269,12 @@ impl CronManager {
     /// ```bash
     /// near call cron.testnet remove_task '{"task_hash": ""}' --accountId YOU.testnet
     /// ```
-    pub fn remove_task(&mut self, task_hash: Vec<u8>) {
+    pub fn remove_task(&mut self, task_hash: Base64VecU8) {
+        let task_hash = task_hash.0;
         let task = self.tasks.get(&task_hash)
             .expect("No task found by hash");
 
-        assert_ne!(task.owner_id, env::signer_account_id(), "Only owner can remove their task.");
+        assert_eq!(task.owner_id, env::predecessor_account_id(), "Only owner can remove their task.");
 
         // If owner, allow to remove task
         self.exit_task(task_hash);
@@ -276,9 +288,9 @@ impl CronManager {
             .expect("No task found by hash");
         
         // return any balance
-        if task.balance > 0 {
+        if task.total_deposit > 0 {
             Promise::new(task.owner_id.to_string())
-                .transfer(task.balance);
+                .transfer(task.total_deposit);
         }
 
         // remove task
@@ -314,12 +326,12 @@ impl CronManager {
         let hash = tab.pop().expect("No tasks available");
         let mut task = self.tasks.get(&hash)
             .expect("No task found by hash");
-        log!("Found Task {}", &task.to_string());
+        log!("Found Task {:?}", &task);
 
         // let hash = self.hash(&task);
         let call_balance_used = self.task_balance_uses(&task);
 
-        assert!(call_balance_used < task.balance, "Not enough task balance to execute job");
+        assert!(call_balance_used < task.total_deposit, "Not enough task balance to execute job");
 
         // Increment agent reward & task count
         agent.balance += self.agent_fee;
@@ -349,13 +361,13 @@ impl CronManager {
             &task.function_id.as_bytes(),
             json!({}).to_string().as_bytes(),
             // NOTE: Does this work if signer sends NO amount? Who pays??
-            Some(task.fn_deposit).unwrap_or(0),
-            Some(task.gas_allowance).unwrap_or(env::prepaid_gas() - env::used_gas())
+            Some(task.deposit).unwrap_or(0),
+            Some(task.gas).unwrap_or(env::prepaid_gas() - env::used_gas())
         );
 
         // Decrease task balance
         // TODO: Change to real gas used
-        task.balance -= self.task_balance_used();
+        task.total_deposit -= self.task_balance_used();
 
         // Update task storage
         self.tasks.insert(&hash, &task);
@@ -376,7 +388,7 @@ impl CronManager {
         payable_account_id: Option<ValidAccountId>
     ) {
         // TODO: assert that attached deposit is enough to cover storage cost. This is to protect from storage attack.
-        // check that account isnt already added
+        // check that account isn't already added
         if let Some(a) = self.agents.get(&env::signer_account_pk()) {
             panic!("Agent {} already exists", a.account_id);
         };
@@ -474,20 +486,19 @@ impl CronManager {
     /// Gets the agent data stats
     ///
     /// ```bash
-    /// near view cron.testnet get_agent '{"pk": "ed25519:AGENT_PUBLIC_KEY"}' --accountId YOU.testnet
+    /// near view cron.testnet get_agent '{"pk": "ed25519:AGENT_PUBLIC_KEY"}'
     /// ```
-    pub fn get_agent(&self, pk: Base58PublicKey) -> String {
+    pub fn get_agent(&self, pk: Base58PublicKey) -> Agent {
         let agent = self.agents.get(&pk.into())
             .expect("No agent found");
 
-        agent.to_string()
+        agent
     }
 
     fn hash(&self, item: &Task) -> Vec<u8> {
         // Generate hash
         let input = format!(
                 "{:?}{:?}{:?}",
-                // "{:?}{:?}",
                 item.contract_id,
                 item.function_id,
                 item.cadence
@@ -513,7 +524,7 @@ impl CronManager {
 
     /// Returns the base amount required to execute 1 task
     fn task_balance_uses(&self, task: &Task) -> u128 {
-        task.fn_deposit + u128::from(task.gas_allowance) + self.agent_fee
+        task.deposit + u128::from(task.gas) + self.agent_fee
     }
 
     // TODO: this will need a major overhaul, for now simplify! (needs to work with timestamps as well)
@@ -524,9 +535,10 @@ impl CronManager {
         let block = env::block_index();
         let rem = block % self.slot_granularity;
 
-        match Some(offset).unwrap() {
-            Some(o) => u128::from(block - rem + o),
-            None => u128::from(block - rem)
+        if let Some(o) = offset {
+            u128::from(block - rem + o)
+        } else {
+            u128::from(block - rem)
         }
     }
 }
