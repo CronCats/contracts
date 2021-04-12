@@ -161,7 +161,7 @@ impl CronManager {
     /// "offset" - An unsigned integer specifying how far in the future to check for tasks that are slotted.
     /// 
     /// ```bash
-    /// near view cron.testnet get_tasks --accountId YOU.testnet
+    /// near view cron.testnet get_tasks
     /// ```
     pub fn get_tasks(&self, offset: Option<u64>) -> Vec<Vec<u8>> {
         let current_slot = self.get_slot_id(offset);
@@ -195,7 +195,7 @@ impl CronManager {
     /// Gets the data payload of a single task by hash
     ///
     /// ```bash
-    /// near view cron.testnet get_task '{"task_hash": [0,102,143...]}' --accountId YOU.testnet
+    /// near view cron.testnet get_task '{"task_hash": "r2Jv…T4U4="}'
     /// ```
     pub fn get_task(&self, task_hash: Base64VecU8) -> String {
         let task_hash = task_hash.0;
@@ -499,7 +499,7 @@ impl CronManager {
     /// Gets the agent data stats
     ///
     /// ```bash
-    /// near view cron.testnet get_agent '{"pk": "ed25519:AGENT_PUBLIC_KEY"}' --accountId YOU.testnet
+    /// near view cron.testnet get_agent '{"pk": "ed25519:AGENT_PUBLIC_KEY"}'
     /// ```
     pub fn get_agent(&self, pk: Base58PublicKey) -> String {
         let agent = self.agents.get(&pk.into())
