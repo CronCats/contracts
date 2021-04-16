@@ -1,18 +1,20 @@
 use near_sdk::{
-    near_bindgen,
-    log,
-    borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, TreeMap},
-    json_types::{ValidAccountId, Base58PublicKey, Base64VecU8, U128},
-    serde_json::json,
     AccountId,
     Balance,
-    env,
+    PanicOnDefault,
     Promise,
     PublicKey,
-    PanicOnDefault,
-    serde::{Deserialize, Serialize}
+    borsh::{self, BorshDeserialize, BorshSerialize},
+    collections::{LookupMap, TreeMap},
+    env,
+    json_types::{ValidAccountId, Base58PublicKey, Base64VecU8, U128},
+    log,
+    near_bindgen,
+    serde::{Deserialize, Serialize},
+    serde_json::json
 };
+use cron_schedule::Schedule;
+use std::str::FromStr;
 
 near_sdk::setup_alloc!();
 
@@ -143,6 +145,8 @@ impl CronManager {
     /// ```
     pub fn get_tasks(&self, offset: Option<u64>) -> Vec<Base64VecU8> {
         let current_slot = self.get_slot_id(offset);
+        let current_schedule = self.schedule_slot_id(offset);
+        log!("current_schedule {:?}",current_schedule);
 
         // Get tasks based on current slot.
         // (Or closest past slot if there are leftovers.)
@@ -534,6 +538,26 @@ impl CronManager {
     fn get_slot_id(&self, offset: Option<u64>) -> u128 {
         let block = env::block_index();
         let rem = block % self.slot_granularity;
+
+        if let Some(o) = offset {
+            u128::from(block - rem + o)
+        } else {
+            u128::from(block - rem)
+        }
+    }
+
+    // TODO: this will need a major overhaul, for now simplify! (needs to work with timestamps as well)
+    /// If no offset, Returns current slot based on current block height
+    /// If offset, Returns next slot based on current block height & integer offset
+    /// rounded to nearest granularity (~every 60 blocks)
+    fn schedule_slot_id(&self, offset: Option<u64>) -> u128 {
+        let block = env::block_index();
+        let block_ts = env::block_timestamp();
+        let rem = block % self.slot_granularity;
+        // every 30min
+        let schedule = Schedule::from_str("0 30 * * * * *").unwrap();
+        let next_ts = schedule.next_after(&(block_ts as i64));
+        log!("schedule: {:?}, {:?}", schedule, next_ts);
 
         if let Some(o) = offset {
             u128::from(block - rem + o)
