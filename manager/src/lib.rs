@@ -55,9 +55,8 @@ pub struct Task {
     /// Contract method this task will be executing
     function_id: String,
 
-    /// Crontab + Consensustab Spec String
+    /// Crontab Spec String
     /// Defines the interval spacing of execution
-    // TODO: Change to the time parser type
     cadence: String,
 
     /// Defines if this task can continue until balance runs out
@@ -96,16 +95,21 @@ pub struct Agent {
 pub struct CronManager {
     // Runtime
     // TODO: Setup DAO based management & ownership
+    // TODO: Add paused to fns
+    // TODO: Add fn "tick" for updating bps, staking, etc
     paused: bool,
     owner_id: AccountId,
     owner_pk: PublicKey,
+    bps_block: i64,
+    bps_timestamp: i64,
 
     // Basic management
-    tasks: LookupMap<Vec<u8>, Task>,
     agents: LookupMap<PublicKey, Agent>,
     slots: TreeMap<u128, Vec<Vec<u8>>>,
+    tasks: LookupMap<Vec<u8>, Task>,
 
     // Economics
+    // TODO: Add admin fns to manage these
     available_balance: Balance,
     staked_balance: Balance,
     agent_fee: Balance,
@@ -120,10 +124,13 @@ impl CronManager {
     #[init(ignore_state)]
     #[payable]
     pub fn new() -> Self {
+        // TODO: Safeguard state!
         CronManager {
             paused: false,
             owner_id: env::signer_account_id(),
             owner_pk: env::signer_account_pk(),
+            bps_block: (env::block_index() as i64),
+            bps_timestamp: (env::block_timestamp() as i64),
             tasks: LookupMap::new(b"t"),
             agents: LookupMap::new(b"a"),
             slots: TreeMap::new(b"s"),
@@ -145,8 +152,6 @@ impl CronManager {
     /// ```
     pub fn get_tasks(&self, offset: Option<u64>) -> Vec<Base64VecU8> {
         let current_slot = self.get_slot_id(offset);
-        let current_schedule = self.schedule_slot_id(offset);
-        log!("current_schedule {:?}",current_schedule);
 
         // Get tasks based on current slot.
         // (Or closest past slot if there are leftovers.)
@@ -201,14 +206,14 @@ impl CronManager {
     /// the task is no longer executed, any additional funds will be returned to task owner.
     ///
     /// ```bash
-    /// near call cron.testnet create_task '{"contract_id": "counter.in.testnet","function_id": "increment","cadence": "@epoch","recurring": true,"deposit": 0,"gas": 2400000000000}' --accountId YOU.testnet
+    /// near call cron.testnet create_task '{"contract_id": "counter.in.testnet","function_id": "increment","cadence": "@daily","recurring": true,"deposit": 0,"gas": 2400000000000}' --accountId YOU.testnet
     /// ```
     #[payable]
     pub fn create_task(
         &mut self,
         contract_id: String,
         function_id: String,
-        cadence: String, // TODO: Change to the time parser type
+        cadence: String,
         recurring: Option<bool>,
         deposit: Option<u128>,
         gas: Option<u64>,
@@ -237,15 +242,14 @@ impl CronManager {
         log!("Task Hash (as bytes) {:?}", &hash);
         // log!("Task data {:?}", &item.to_string());
 
-        // TODO: Parse cadence, insert in slots where necessary
-        // TODO: Change! testing with 200 blocks
-        let default_vec: Vec<Vec<u8>> = Vec::new();
-        let next_slot = self.get_slot_id(Some(200));
+        // Parse cadence into a future timestamp, then convert to a slot
+        let next_slot = self.get_slot_from_cadence(item.cadence.clone());
 
         // Add task to catalog
         self.tasks.insert(&hash, &item);
 
         // Get previous task hashes in slot, add as needed
+        let default_vec: Vec<Vec<u8>> = Vec::new();
         let mut slot_slots = self.slots.get(&next_slot).unwrap_or(default_vec);
         slot_slots.push(hash.clone());
         log!("Inserting into slot: {}", next_slot);
@@ -255,18 +259,36 @@ impl CronManager {
     }
 
     /// ```bash
-    /// near call cron.testnet update_task '{TBD}' --accountId YOU.testnet
+    /// near call cron.testnet update_task '{"task_hash": "","cadence": "@weekly","recurring": true,"deposit": 0,"gas": 2400000000000}' --accountId YOU.testnet
     /// ```
-    // #[payable]
-    // pub fn update_task(
-    //     &mut self,
-    //     task_hash: String,
-    //     contract_id: AccountId,
-    //     cadence: String, // TODO: Change to the time parser type
-    //     arguments: String
-    // ) -> Task {
-    //     // TODO: 
-    // }
+    #[payable]
+    pub fn update_task(
+        &mut self,
+        task_hash: Base64VecU8,
+        cadence: Option<String>,
+        recurring: Option<bool>,
+        deposit: Option<u128>,
+        gas: Option<u64>,
+        arguments: Option<Vec<u8>>
+    ) {
+        let task_hash = task_hash.0;
+        let mut task = self.tasks.get(&task_hash)
+            .expect("No task found by hash");
+        
+        assert_eq!(task.owner_id, env::predecessor_account_id(), "Only owner can remove their task.");
+
+        // Update args that exist
+        if cadence != None { task.cadence = cadence.unwrap(); }
+        if recurring != None { task.recurring = recurring.unwrap(); }
+        if deposit != None { task.deposit = deposit.unwrap(); }
+        if gas != None { task.gas = gas.unwrap(); }
+        if arguments != None { task.arguments = arguments.unwrap(); }
+
+        // Update task total available balance, if this function was payed
+        if env::attached_deposit() > 0 {
+            task.total_deposit += env::attached_deposit();
+        }
+    }
 
     /// Deletes a task in its entirety, returning any remaining balance to task owner.
     /// 
@@ -321,13 +343,13 @@ impl CronManager {
         log!("current slot {:?}", current_slot);
 
         // get task based on current slot
-        let mut tab = self.slots.get(&current_slot)
+        let mut slot = self.slots.get(&current_slot)
             .expect("No tasks found in slot");
-        log!("tab {:?}", &tab);
+        log!("slot {:?}", &slot);
 
         // TODO: update state, post pop
         // Get a single task hash, then retrieve task details
-        let hash = tab.pop().expect("No tasks available");
+        let hash = slot.pop().expect("No tasks available");
         let mut task = self.tasks.get(&hash)
             .expect("No task found by hash");
         log!("Found Task {:?}", &task);
@@ -345,8 +367,7 @@ impl CronManager {
 
         // TODO: finish!
         if task.recurring == true {
-            // TODO: Change! testing with 200 blocks
-            let next_slot = self.get_slot_id(Some(200));
+            let next_slot = self.get_slot_from_cadence(task.cadence.clone());
             assert!(&current_slot < &next_slot, "Cannot execute task in the past");
 
             // Get previous task hashes in slot, add as needed
@@ -531,7 +552,6 @@ impl CronManager {
         task.deposit + u128::from(task.gas) + self.agent_fee
     }
 
-    // TODO: this will need a major overhaul, for now simplify! (needs to work with timestamps as well)
     /// If no offset, Returns current slot based on current block height
     /// If offset, Returns next slot based on current block height & integer offset
     /// rounded to nearest granularity (~every 60 blocks)
@@ -546,24 +566,28 @@ impl CronManager {
         }
     }
 
-    // TODO: this will need a major overhaul, for now simplify! (needs to work with timestamps as well)
-    /// If no offset, Returns current slot based on current block height
-    /// If offset, Returns next slot based on current block height & integer offset
-    /// rounded to nearest granularity (~every 60 blocks)
-    fn schedule_slot_id(&self, offset: Option<u64>) -> u128 {
-        let block = env::block_index();
-        let block_ts = env::block_timestamp();
-        let rem = block % self.slot_granularity;
-        // every 30min
-        let schedule = Schedule::from_str("0 30 * * * * *").unwrap();
-        let next_ts = schedule.next_after(&(block_ts as i64));
-        log!("schedule: {:?}, {:?}", schedule, next_ts);
+    /// Parse cadence into a schedule
+    /// Get next approximate block from a schedule
+    /// return slot from the difference of upcoming block and current block
+    fn get_slot_from_cadence(&mut self, cadence: String) -> u128 {
+        let current_block = env::block_index() as i64;
+        let current_block_ts = env::block_timestamp() as i64;
 
-        if let Some(o) = offset {
-            u128::from(block - rem + o)
-        } else {
-            u128::from(block - rem)
-        }
+        // Schedule params
+        let schedule = Schedule::from_str(&cadence).unwrap();
+        let next_ts = schedule.next_after(&(current_block_ts as i64)).unwrap();
+        let next_diff = next_ts - current_block_ts;
+
+        // calculate the average blocks, to get predicted future block
+        let blocks_total = current_block - self.bps_block;
+        let mut bps = (current_block_ts - self.bps_timestamp) / blocks_total;
+        // Protect against bps being 0
+        if bps < 1 { bps = 1; }
+
+        // return upcoming slot
+        let offset = (bps * next_diff) as u64;
+        log!("get_slot_from_cadence: {}, {}, {} {}", cadence, blocks_total, bps, &offset);
+        self.get_slot_id(Some(offset))
     }
 }
 
