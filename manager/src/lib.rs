@@ -100,8 +100,8 @@ pub struct CronManager {
     paused: bool,
     owner_id: AccountId,
     owner_pk: PublicKey,
-    bps_block: i64,
-    bps_timestamp: i64,
+    bps_block: u64,
+    bps_timestamp: u64,
 
     // Basic management
     agents: LookupMap<PublicKey, Agent>,
@@ -129,8 +129,8 @@ impl CronManager {
             paused: false,
             owner_id: env::signer_account_id(),
             owner_pk: env::signer_account_pk(),
-            bps_block: (env::block_index() as i64),
-            bps_timestamp: (env::block_timestamp() as i64),
+            bps_block: env::block_index(),
+            bps_timestamp: env::block_timestamp(),
             tasks: LookupMap::new(b"t"),
             agents: LookupMap::new(b"a"),
             slots: TreeMap::new(b"s"),
@@ -570,13 +570,13 @@ impl CronManager {
     /// Get next approximate block from a schedule
     /// return slot from the difference of upcoming block and current block
     fn get_slot_from_cadence(&mut self, cadence: String) -> u128 {
-        let current_block = env::block_index() as i64;
-        let current_block_ts = env::block_timestamp() as i64;
+        let current_block = env::block_index();
+        let current_block_ts = env::block_timestamp();
 
         // Schedule params
         let schedule = Schedule::from_str(&cadence).unwrap();
-        let next_ts = schedule.next_after(&(current_block_ts as i64)).unwrap();
-        let next_diff = next_ts - current_block_ts;
+        let next_ts = schedule.next_after(&current_block_ts).unwrap();
+        let next_diff = (next_ts as u64) - current_block_ts;
 
         // calculate the average blocks, to get predicted future block
         let blocks_total = current_block - self.bps_block;
@@ -585,7 +585,7 @@ impl CronManager {
         if bps < 1 { bps = 1; }
 
         // return upcoming slot
-        let offset = (bps * next_diff) as u64;
+        let offset = bps * next_diff;
         log!("get_slot_from_cadence: {}, {}, {} {}", cadence, blocks_total, bps, &offset);
         self.get_slot_id(Some(offset))
     }
