@@ -124,7 +124,7 @@ impl CronManager {
     #[init(ignore_state)]
     #[payable]
     pub fn new() -> Self {
-        // TODO: Safeguard state!
+        assert!(!env::state_exists(), "The contract is already initialized");
         CronManager {
             paused: false,
             owner_id: env::signer_account_id(),
