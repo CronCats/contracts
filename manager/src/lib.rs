@@ -29,6 +29,7 @@ pub const MAX_BLOCK_RANGE: u32 = 1_000_000;
 pub const MAX_EPOCH_RANGE: u32 = 10_000;
 pub const MAX_SECOND_RANGE: u32 = 600_000_000;
 pub const SLOT_GRANULARITY: u64 = 100;
+pub const NANO: u64 = 1_000_000_000;
 
 /// Allows tasks to be executed in async env
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize)]
@@ -575,13 +576,14 @@ impl CronManager {
         let current_block_ts = env::block_timestamp();
 
         // Schedule params
+        // TODO: eventually use TryFrom
         let schedule = Schedule::from_str(&cadence).unwrap();
         let next_ts = schedule.next_after(&current_block_ts).unwrap();
         let next_diff = (next_ts as u64) - current_block_ts;
 
         // calculate the average blocks, to get predicted future block
         let blocks_total = current_block - self.bps_block;
-        let mut bps = (current_block_ts - self.bps_timestamp) / blocks_total;
+        let mut bps = (current_block_ts / NANO - self.bps_timestamp / NANO) / blocks_total;
         // Protect against bps being 0
         if bps < 1 { bps = 1; }
 
