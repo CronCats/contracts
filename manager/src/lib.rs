@@ -11,7 +11,8 @@ use near_sdk::{
     log,
     near_bindgen,
     serde::{Deserialize, Serialize},
-    serde_json::json
+    serde_json::json,
+    Gas
 };
 use cron_schedule::Schedule;
 use std::str::FromStr;
@@ -215,8 +216,8 @@ impl CronManager {
         function_id: String,
         cadence: String,
         recurring: Option<bool>,
-        deposit: Option<u128>,
-        gas: Option<u64>,
+        deposit: Option<Balance>,
+        gas: Option<Gas>,
         arguments: Option<Vec<u8>>
     ) -> Base64VecU8 {
         // TODO: Add asserts to check cadence can be parsed
