@@ -236,7 +236,7 @@ impl CronManager {
 
         // Check that balance is sufficient for 1 execution minimum
         let call_balance_used = self.task_balance_uses(&item);
-        assert!(call_balance_used < item.total_deposit, "Not enough task balance to execute job");
+        assert!(call_balance_used <= item.total_deposit, "Not enough task balance to execute job, need at least {}", call_balance_used);
 
         let hash = self.hash(&item);
         log!("Task Hash (as bytes) {:?}", &hash);
@@ -357,7 +357,7 @@ impl CronManager {
         // let hash = self.hash(&task);
         let call_balance_used = self.task_balance_uses(&task);
 
-        assert!(call_balance_used < task.total_deposit, "Not enough task balance to execute job");
+        assert!(call_balance_used <= task.total_deposit, "Not enough task balance to execute job");
 
         // Increment agent reward & task count
         agent.balance += self.agent_fee;
