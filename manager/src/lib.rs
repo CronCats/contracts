@@ -12,7 +12,9 @@ use near_sdk::{
     near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json::json,
-    Gas
+    Gas,
+    PromiseResult,
+    base64
 };
 use cron_schedule::Schedule;
 use std::str::FromStr;
@@ -22,6 +24,11 @@ near_sdk::setup_alloc!();
 // Balance & Fee Definitions
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const GAS_BASE_FEE: u64 = 3_000_000_000_000;
+// TODO: investigate how much this should be, currently
+// http post https://rpc.mainnet.near.org jsonrpc=2.0 id=dontcare method=EXPERIMENTAL_genesis_config
+// > mainnet-config.json
+
+pub const GAS_FOR_CALLBACK: u64 = 75_000_000_000_000;
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 // Boundary Definitions
@@ -32,7 +39,7 @@ pub const SLOT_GRANULARITY: u64 = 100;
 pub const NANO: u64 = 1_000_000_000;
 
 /// Allows tasks to be executed in async env
-#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize)]
+#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
 pub enum TaskStatus {
     /// Shows a task is not currently active, ready for an agent to take
@@ -42,42 +49,45 @@ pub enum TaskStatus {
     Active,
 
     /// Tasks marked as complete are ready for deletion from state. 
-    Complete
+    Complete,
+
+    /// Tasks that were known to fail by checking a promise callback.
+    Failed
 }
 
-#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize)]
+#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Task {
     /// Entity responsible for this task, can change task details
-    owner_id: AccountId,
+    pub owner_id: AccountId,
 
     /// Account to direct all execution calls against
-    contract_id: AccountId,
+    pub contract_id: AccountId,
 
     /// Contract method this task will be executing
-    function_id: String,
+    pub function_id: String,
 
     /// Crontab Spec String
     /// Defines the interval spacing of execution
-    cadence: String,
+    pub cadence: String,
 
     /// Defines if this task can continue until balance runs out
-    recurring: bool,
+    pub recurring: bool,
 
     /// Tasks status forces single executions per interval
-    status: TaskStatus,
+    pub status: TaskStatus,
 
     /// Total balance of NEAR available for current and future executions
-    total_deposit: Balance,
+    pub total_deposit: Balance,
 
     /// Configuration of NEAR balance to send to each function call. This is the "amount" for a function call.
-    deposit: Balance,
+    pub deposit: Balance,
 
     /// Configuration of NEAR balance to attach to each function call. This is the "gas" for a function call.
-    gas: u64,
+    pub gas: u64,
 
     // NOTE: Only allow static pre-defined bytes
-    arguments: Vec<u8>
+    pub arguments: Vec<u8>
 }
 
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault, Debug, Serialize, Deserialize)]
@@ -277,16 +287,16 @@ impl CronManager {
         let mut task = self.tasks.get(&task_hash)
             .expect("No task found by hash");
         
-        assert_eq!(task.owner_id, env::predecessor_account_id(), "Only owner can remove their task.");
+        assert_eq!(task.owner_id, env::predecessor_account_id(), "Only owner can update their task.");
 
         // Update args that exist
-        if cadence != None { task.cadence = cadence.unwrap(); }
-        if recurring != None { task.recurring = recurring.unwrap(); }
-        if deposit != None { task.deposit = deposit.unwrap(); }
-        if gas != None { task.gas = gas.unwrap(); }
-        if arguments != None { task.arguments = arguments.unwrap(); }
+        if cadence.is_some() { task.cadence = cadence.unwrap(); }
+        if recurring.is_some() { task.recurring = recurring.unwrap(); }
+        if deposit.is_some() { task.deposit = deposit.unwrap(); }
+        if gas.is_some() { task.gas = gas.unwrap(); }
+        if arguments.is_some() { task.arguments = arguments.unwrap(); }
 
-        // Update task total available balance, if this function was payed
+        // Update task total available balance, if this function was given a deposit.
         if env::attached_deposit() > 0 {
             task.total_deposit += env::attached_deposit();
         }
@@ -382,22 +392,52 @@ impl CronManager {
         // Update agent storage
         self.agents.insert(&env::signer_account_pk(), &agent);
 
-        // Call external contract with task variables
-        env::promise_create(
-            task.contract_id.clone(),
-            &task.function_id.as_bytes(),
-            json!({}).to_string().as_bytes(),
-            // NOTE: Does this work if signer sends NO amount? Who pays??
-            Some(task.deposit).unwrap_or(0),
-            Some(task.gas).unwrap_or(env::prepaid_gas() - env::used_gas())
-        );
 
         // Decrease task balance
         // TODO: Change to real gas used
         task.total_deposit -= self.task_balance_used();
 
+        task.status = TaskStatus::Active;
+
         // Update task storage
         self.tasks.insert(&hash, &task);
+
+        // Call external contract with task variables
+        let promise_first = env::promise_create(
+            task.contract_id.clone(),
+            &task.function_id.as_bytes(),
+            task.arguments.as_slice(),
+            // NOTE: Does this work if signer sends NO amount? Who pays??
+            task.deposit,
+            task.gas
+        );
+        let promise_second = env::promise_then(
+            promise_first,
+            env::current_account_id(),
+            b"callback_for_proxy_call",
+            json!({ "task_hash": hash }).to_string().as_bytes(),
+            0,
+            GAS_FOR_CALLBACK,
+        );
+        env::promise_return(promise_second);
+    }
+
+    #[private]
+    pub fn callback_for_proxy_call(&mut self, task_hash: Vec<u8>) {
+        assert_eq!(env::promise_results_count(), 1, "Expected 1 promise result.");
+        let mut task = self.tasks.get(&task_hash.clone())
+            .expect("No task found by hash");
+        match env::promise_result(0) {
+            PromiseResult::Successful(_) => {
+                log!("Task {} completed successfully", base64::encode(task_hash.clone()));
+                task.status = TaskStatus::Complete;
+            },
+            PromiseResult::Failed => {
+                task.status = TaskStatus::Failed;
+            },
+            PromiseResult::NotReady => unreachable!()
+        };
+        self.tasks.insert(&task_hash, &task);
     }
 
     /// Add any account as an agent that will be able to execute tasks.
