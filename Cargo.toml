@@ -1,6 +1,3 @@
-manager = { path = "./manager" }
-counter = { path = "./examples/counter" }
-
 [workspace]
 # include a member for each contract
 members = [
