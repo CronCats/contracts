@@ -23,12 +23,12 @@ near_sdk::setup_alloc!();
 
 // Balance & Fee Definitions
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
-pub const GAS_BASE_FEE: u64 = 3_000_000_000_000;
+pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
 // TODO: investigate how much this should be, currently
 // http post https://rpc.mainnet.near.org jsonrpc=2.0 id=dontcare method=EXPERIMENTAL_genesis_config
 // > mainnet-config.json
 
-pub const GAS_FOR_CALLBACK: u64 = 75_000_000_000_000;
+pub const GAS_FOR_CALLBACK: Gas = 75_000_000_000_000;
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 // Boundary Definitions
@@ -84,7 +84,7 @@ pub struct Task {
     pub deposit: Balance,
 
     /// Configuration of NEAR balance to attach to each function call. This is the "gas" for a function call.
-    pub gas: u64,
+    pub gas: Gas,
 
     // NOTE: Only allow static pre-defined bytes
     pub arguments: Vec<u8>
@@ -280,7 +280,7 @@ impl CronManager {
         cadence: Option<String>,
         recurring: Option<bool>,
         deposit: Option<u128>,
-        gas: Option<u64>,
+        gas: Option<Gas>,
         arguments: Option<Vec<u8>>
     ) {
         let task_hash = task_hash.0;
@@ -622,7 +622,7 @@ impl CronManager {
         let next_diff = (next_ts as u64) - current_block_ts;
 
         // calculate the average blocks, to get predicted future block
-        let blocks_total = current_block - self.bps_block;
+        let blocks_total = core::cmp::max(current_block - self.bps_block, 1);
         let mut bps = (current_block_ts / NANO - self.bps_timestamp / NANO) / blocks_total;
         // Protect against bps being 0
         if bps < 1 { bps = 1; }
@@ -634,30 +634,46 @@ impl CronManager {
     }
 }
 
-// #[cfg(all(test, not(target_arch = "wasm32")))]
-// mod tests {
-//     use near_sdk::test_utils::{accounts, VMContextBuilder};
-//     use near_sdk::json_types::{ValidAccountId};
-//     use near_sdk::MockedBlockchain;
-//     use near_sdk::{testing_env};
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use super::*;
+    use near_sdk::test_utils::{accounts, VMContextBuilder};
+    use near_sdk::json_types::{ValidAccountId};
+    use near_sdk::MockedBlockchain;
+    use near_sdk::{testing_env};
 
-//     use super::*;
+    fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
+        let mut builder = VMContextBuilder::new();
+        builder
+            .current_account_id(accounts(0))
+            .signer_account_id(predecessor_account_id.clone())
+            .predecessor_account_id(predecessor_account_id);
+        builder
+    }
 
-//     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
-//         let mut builder = VMContextBuilder::new();
-//         builder
-//             .current_account_id(accounts(0))
-//             .signer_account_id(predecessor_account_id.clone())
-//             .predecessor_account_id(predecessor_account_id);
-//         builder
-//     }
+    #[test]
+    fn test_basic_creation() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = CronManager::new();
+        testing_env!(context.is_view(true).build());
+        assert!(contract.get_all_tasks(None).is_empty());
+        testing_env!(context.is_view(false).attached_deposit(3000000000300).build());
+        let task_id = contract.create_task(
+            "contract.testnet".to_string(),
+            "increment".to_string(),
+            "@daily".to_string(),
+            Some(true),
+            Some(100),
+            Some(200),
+            None,
+        );
 
-//     #[test]
-//     fn test_thang() {
-//         let mut context = get_context(accounts(1));
-//         testing_env!(context.build());
-//         let contract = CronManager::new();
-//         testing_env!(context.is_view(true).build());
-//         assert_eq!(contract.thang(), "hi");
-//     }
-// }
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.get_all_tasks(None).len(), 1);
+
+        assert_eq!(contract.get_task(task_id), Task {
+            owner_id: accounts(1).to_string(), contract_id: "contract.testnet".to_string(), function_id: "increment".to_string(), cadence: "@daily".to_string(), recurring: true, status: TaskStatus::Ready, total_deposit: 3000000000300, deposit: 100, gas: 200, arguments: vec![]
+        });
+    }
+}
