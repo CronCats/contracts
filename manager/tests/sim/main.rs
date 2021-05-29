@@ -1,11 +1,9 @@
-use near_sdk::json_types::{U128, U64, Base64VecU8};
+use near_sdk::json_types::Base64VecU8;
 use near_sdk::serde_json::json;
-use near_sdk::{Balance, serde_json};
+use near_sdk::serde_json;
 use near_sdk_sim::transaction::ExecutionStatus;
 use near_sdk_sim::{init_simulator, to_yocto, UserAccount, DEFAULT_GAS, STORAGE_AMOUNT, runtime::init_runtime};
-use manager::{CronManager, Task, TaskStatus};
-use near_sdk_sim::types::AccountId;
-use std::error::Error;
+use manager::{Task, TaskStatus, Agent};
 use std::rc::Rc;
 use std::cell::RefCell;
 use near_sdk_sim::runtime::RuntimeStandalone;
@@ -18,6 +16,8 @@ near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
 
 const MANAGER_ID: &str = "manager.sim";
 const COUNTER_ID: &str = "counter.sim";
+const AGENT_ID: &str = "agent.sim";
+const USER_ID: &str = "user.sim";
 const TASK_BASE64: &str = "chUCZxP6uO5xZIjwI9XagXVUCV7nmE09HVRUap8qauo=";
 
 type TaskBase64Hash = String;
@@ -65,7 +65,7 @@ fn simulate_next_epoch() {
     let mut root_runtime = root_account.borrow_runtime_mut();
     let block_production_result = root_runtime.produce_blocks(7);
     assert!(block_production_result.is_ok(), "Couldn't produce blocks");
-    println!("aloha current block height {}, epoch height {}", root_runtime.current_block().block_height, root_runtime.current_block().epoch_height);
+    println!("Current block height {}, epoch height {}", root_runtime.current_block().block_height, root_runtime.current_block().epoch_height);
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn simulate_basic_task_checks() {
     assert_eq!(expected_task, returned_task, "Task returned was not expected.");
 
     // Attempt to remove task with non-owner account.
-    let mut removal_result = root.call(
+    let removal_result = root.call(
         cron.account_id(),
         "remove_task",
         &json!({
@@ -142,7 +142,7 @@ fn simulate_basic_task_checks() {
         0, // deposit
     ).assert_success();
 
-    // Get has from task just added.
+    // Get hash from task just removed.
     task_view_result = root
         .view(
             cron.account_id(),
@@ -152,6 +152,86 @@ fn simulate_basic_task_checks() {
             }).to_string().into_bytes(),
         );
     assert!(task_view_result.is_err(), "Expected error when trying to retrieve removed task.");
+}
+
+#[test]
+fn simulate_basic_agent_registration_update() {
+    let (root, cron) = sim_helper_init();
+    let counter = sim_helper_init_counter(&root);
+    helper_create_task(&cron, &counter);
+    let (agent, _) = sim_helper_create_agent_user(&root);
+
+    // Register an agent, where the beneficiary is user.sim
+    agent.call(
+        cron.account_id(),
+        "register_agent",
+        &json!({
+            "payable_account_id": USER_ID
+        }).to_string().into_bytes(),
+        DEFAULT_GAS,
+        0, // deposit
+    ).assert_success();
+
+    // Attempt to re-register
+    let mut failed_result = agent.call(
+        cron.account_id(),
+        "register_agent",
+        &json!({
+            "payable_account_id": USER_ID
+        }).to_string().into_bytes(),
+        DEFAULT_GAS,
+        0, // deposit
+    );
+    let mut status = failed_result.status();
+    if let ExecutionStatus::Failure(err) = status {
+        // At this time, this is the way to check for error messages.
+        assert!(err.to_string().contains("Agent agent.sim already exists"));
+    } else {
+        panic!("Should not be able to re-register an agent.");
+    }
+
+    // Update agent with an invalid name
+    failed_result = agent.call(
+        cron.account_id(),
+        "update_agent",
+        &json!({
+            "payable_account_id": "inv*lid.n@me"
+        }).to_string().into_bytes(),
+        DEFAULT_GAS,
+        0, // deposit
+    );
+
+    status = failed_result.status();
+    if let ExecutionStatus::Failure(err) = status {
+        // At this time, this is the way to check for error messages.
+        assert!(err.to_string().contains("The account ID is invalid"));
+    } else {
+        panic!("Should not be able to send invalid account ID.");
+    }
+
+    // Update agent with a valid account name
+    agent.call(
+        cron.account_id(),
+        "update_agent",
+        &json!({
+            "payable_account_id": "newname.sim"
+        }).to_string().into_bytes(),
+        DEFAULT_GAS,
+        0, // deposit
+    );
+
+    // Put agent's public key into a variable so we can fetch the agent.
+    let agent_pk = agent.signer.public_key.to_string();
+
+    let agent_result: Agent = root.view(
+        cron.account_id(),
+        "get_agent",
+        &json!({
+            "pk": agent_pk
+        }).to_string().into_bytes(),
+    ).unwrap_json();
+
+    assert_eq!(agent_result.payable_account_id, "newname.sim".to_string());
 }
 
 /// Basic initialization returning the "root account" for the simulator
@@ -176,8 +256,8 @@ fn sim_helper_init() -> (UserAccount, UserAccount) {
 
 fn sim_helper_create_agent_user(root_account: &UserAccount) -> (UserAccount, UserAccount) {
     let hundred_near = to_yocto("100");
-    let agent = root_account.create_user("agent.sim".to_string(), hundred_near);
-    let user = root_account.create_user("user.sim".to_string(), hundred_near);
+    let agent = root_account.create_user(AGENT_ID.into(), hundred_near);
+    let user = root_account.create_user(USER_ID.into(), hundred_near);
     (agent, user)
 }
 

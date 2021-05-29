@@ -93,13 +93,13 @@ pub struct Task {
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault, Debug, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Agent {
-    #[serde(skip_serializing)]
+    #[serde(skip)]
     pk: PublicKey,
-    #[serde(skip_serializing)]
-    account_id: AccountId,
-    payable_account_id: AccountId,
-    balance: Balance,
-    total_tasks_executed: u128
+    #[serde(skip)]
+    pub account_id: AccountId,
+    pub payable_account_id: AccountId,
+    pub balance: Balance,
+    pub total_tasks_executed: u128
 }
 
 #[near_bindgen]
