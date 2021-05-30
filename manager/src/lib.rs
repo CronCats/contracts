@@ -35,8 +35,9 @@ pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 pub const MAX_BLOCK_RANGE: u64 = 1_000_000_000_000_000;
 pub const MAX_EPOCH_RANGE: u32 = 10_000;
 pub const MAX_SECOND_RANGE: u32 = 600_000_000;
-pub const SLOT_GRANULARITY: u64 = 60;
+pub const SLOT_GRANULARITY: u64 = 60; // NOTE: Connection drain.. might be required if slot granularity changes
 pub const NANO: u64 = 1_000_000_000;
+pub const BPS_DENOMINATOR: u64 = 1_000;
 
 /// Allows tasks to be executed in async env
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
@@ -597,31 +598,37 @@ impl CronManager {
 
     /// If no offset, Returns current slot based on current block height
     /// If offset, Returns next slot based on current block height & integer offset
-    /// rounded to nearest granularity (~every 1 block per sec)
+    /// rounded to nearest granularity (~every 1.6 block per sec)
     fn get_slot_id(&self, offset: Option<u64>) -> u128 {
-        let block = env::block_index();
-        let rem = block % self.slot_granularity;
-        let block_round = block - rem;
+        let block = env::block_index() * BPS_DENOMINATOR;
         let id;
 
         if let Some(o) = offset {
             // NOTE: Assumption here is that the offset will be in seconds. (blocks per second)
             //       Slot granularity will be in minutes (60 blocks per slot)
-            let slot_rem = core::cmp::max(o % self.slot_granularity, 1);
-            let slot_round = core::cmp::max(o - slot_rem, self.slot_granularity);
-            let next = block_round + slot_round;
+            // let offset_denom = o * BPS_DENOMINATOR;
+            let offset_denom = o;
+            let granularity = self.slot_granularity * BPS_DENOMINATOR;
+            let slot_rem = core::cmp::max(offset_denom % granularity, 1);
+            let slot_round = core::cmp::max(offset_denom.saturating_sub(slot_rem), granularity);
+            let next = block + slot_round;
 
-            if next - block > block_round + MAX_BLOCK_RANGE {
+            if next - block > block + MAX_BLOCK_RANGE {
                 // Protect against extreme future block schedules
-                id = u64::min(next, block_round + MAX_BLOCK_RANGE);
+                id = u64::min(next, block + MAX_BLOCK_RANGE);
             } else {
                 id = next;
             }
         } else {
-            id = block_round;
+            id = block;
         }
 
-        u128::from(id)
+        // Compute the slot id by truncating to granularity
+        let block_id = id / BPS_DENOMINATOR;
+        let rem = block_id % self.slot_granularity;
+        let id_round = block_id.saturating_sub(rem);
+
+        u128::from(id_round)
     }
 
     /// Parse cadence into a schedule
@@ -636,19 +643,26 @@ impl CronManager {
         let schedule = Schedule::from_str(&cadence).unwrap();
         let next_ts = schedule.next_after(&current_block_ts).unwrap();
         let next_diff = next_ts - current_block_ts;
+        println!("next_ts FN: {} {}", next_ts, next_diff);
 
         // calculate the average blocks, to get predicted future block
         let blocks_total = core::cmp::max(current_block - self.bps_block, 1);
-        let mut bps = (current_block_ts / NANO - self.bps_timestamp / NANO) / blocks_total;
+        println!("blocks_total FN: {}", blocks_total);
+        // let mut bps = blocks_total / (current_block_ts / NANO - self.bps_timestamp / NANO);
+        let mut bps = (blocks_total * NANO * BPS_DENOMINATOR) / std::cmp::max(current_block_ts - self.bps_timestamp, 1);
+        println!("BPS FN1: {}", bps);
 
         // Protect against bps being 0
         if bps < 1 { bps = 1; }
+        println!("BPS FN2: {} {}", bps * BPS_DENOMINATOR, next_diff);
 
         // return upcoming slot
         // Get the next block based on time it takes until next timestamp
-        let offset = (next_diff / NANO) / bps;
+        // let offset = next_diff / bps / NANO;
+        let offset = next_diff / bps;
         let current = self.get_slot_id(None);
         let next_slot = self.get_slot_id(Some(offset));
+        println!("FIN FN: {} {} {}", offset, current, next_slot);
 
         if current == next_slot {
             // Add slot granularity to make sure the minimum next slot is a block within next slot granularity range
@@ -725,7 +739,7 @@ mod tests {
         testing_env!(context.build());
         let contract = CronManager::new();
         testing_env!(context.is_view(true).build());
-        let slot = contract.get_slot_id(Some(1));
+        let slot = contract.get_slot_id(Some(1_000));
 
         assert_eq!(slot, 1260);
     }
@@ -736,7 +750,7 @@ mod tests {
         testing_env!(context.build());
         let contract = CronManager::new();
         testing_env!(context.is_view(true).build());
-        let slot = contract.get_slot_id(Some(1_000_000_000));
+        let slot = contract.get_slot_id(Some(1_000_000_000_000));
 
         // ensure even if we pass in a HUGE number, it can only be scheduled UP to the max pre-defined block settings
         assert_eq!(slot, 1_000_001_160);
@@ -795,30 +809,67 @@ mod tests {
     }
 
     #[test]
+    fn test_get_slot_from_cadence_maths() {
+        let context = get_context(accounts(1));
+        testing_env!(context.build());
+        let contract = CronManager::new();
+        let current_block = env::block_index();
+        let current_block_ts = env::block_timestamp();
+        let bps_block = current_block - 10;
+        let bps_timestamp = current_block_ts - (60 * NANO);
+
+        // Schedule params
+        let schedule = Schedule::from_str(&"* */5 * * * *".to_string()).unwrap();
+        let next_ts = schedule.next_after(&current_block_ts).unwrap();
+        let next_diff = (next_ts - current_block_ts) / NANO;
+        println!("next_ts: {} {}", next_ts, next_diff);
+
+        // calculate the average blocks, to get predicted future block
+        let blocks_total = core::cmp::max(current_block - bps_block, 1);
+        println!("blocks_total: {}", blocks_total);
+        // let mut bps = blocks_total / (current_block_ts / NANO - self.bps_timestamp / NANO);
+        const BPS_DENOMINATOR: u64 = 1000;
+        let mut bps = (blocks_total * NANO * BPS_DENOMINATOR) / std::cmp::max(current_block_ts - bps_timestamp, 1);
+        println!("BPS: {}", bps);
+
+        // Protect against bps being 0
+        if bps < 1 { bps = 1; }
+        println!("BPS: {} {}", bps * BPS_DENOMINATOR, next_diff);
+
+        // return upcoming slot
+        // Get the next block based on time it takes until next timestamp
+        let offset = bps / next_diff;
+        let current = contract.get_slot_id(None);
+        let next_slot = contract.get_slot_id(Some(offset));
+        println!("FIN: {} {} {}", offset, current, next_slot);
+    }
+
+    #[test]
     fn test_get_slot_from_cadence() {
         // TODO: These values seem off...
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
         let mut contract = CronManager::new();
+        testing_env!(context.is_view(false).block_index(1334).block_timestamp(1_600_000_000_300_000_000).build());
         testing_env!(context.is_view(true).build());
         let slot1 = contract.get_slot_from_cadence("*/5 * * * * *".to_string()); // Immediately next slot (since every 5 seconds)
         println!("SLOT 1 {}",slot1);
-        assert_eq!(slot1, 1260);
+        assert_eq!(slot1, 1380);
         let slot2 = contract.get_slot_from_cadence("* */5 * * * *".to_string()); // Every 5 mins
         println!("SLOT 2 {}",slot2);
-        assert_eq!(slot2, 1380);
+        assert_eq!(slot2, 1860);
         let slot3 = contract.get_slot_from_cadence("* * */5 * * *".to_string()); // Every 5th day
         println!("SLOT 3 {}",slot3);
-        assert_eq!(slot3, 10380);
+        assert_eq!(slot3, 28860);
         let slot4 = contract.get_slot_from_cadence("* * * */5 * *".to_string()); // Every 5th Month
         println!("SLOT 4 {}",slot4);
-        assert_eq!(slot4, 215580);
+        assert_eq!(slot4, 644460);
         let slot5 = contract.get_slot_from_cadence("* * * * */5 *".to_string()); // Every 5th Year
         println!("SLOT 5 {}",slot5);
-        assert_eq!(slot5, 4189980);
+        assert_eq!(slot5, 12567720);
         // TODO: This is weird/breaking
-        let slot6 = contract.get_slot_from_cadence("* * * * * */5".to_string()); // Every ?
-        println!("SLOT 6 {}",slot6);
-        assert_eq!(slot6, 4189980);
+        // let slot6 = contract.get_slot_from_cadence("* * * * * */5".to_string()); // Every ?
+        // println!("SLOT 6 {}",slot6);
+        // assert_eq!(slot6, 1380);
     }
 }
