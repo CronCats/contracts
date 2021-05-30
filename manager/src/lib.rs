@@ -377,8 +377,8 @@ impl CronManager {
 
         // TODO: Process task exit, if no future task can execute
 
-        // TODO: finish!
-        if task.recurring == true {
+        // only skip scheduling if user didnt intend
+        if task.recurring != false {
             let next_slot = self.get_slot_from_cadence(task.cadence.clone());
             assert!(&current_slot < &next_slot, "Cannot execute task in the past");
 
@@ -600,6 +600,7 @@ impl CronManager {
     fn get_slot_id(&self, offset: Option<u64>) -> u128 {
         let block = env::block_index();
         let rem = block % self.slot_granularity;
+        log!("get_slot_id: {}, {}, {} {}", &offset.unwrap(), &block, &rem, &self.slot_granularity);
 
         if let Some(o) = offset {
             u128::from(block - rem + o)
@@ -676,4 +677,16 @@ mod tests {
             owner_id: accounts(1).to_string(), contract_id: "contract.testnet".to_string(), function_id: "increment".to_string(), cadence: "@daily".to_string(), recurring: true, status: TaskStatus::Ready, total_deposit: 3000000000300, deposit: 100, gas: 200, arguments: vec![]
         });
     }
+
+    // #[test]
+    // fn test_get_slot_id() {
+    //     let mut context = get_context(accounts(1));
+    //     testing_env!(context.build());
+    //     let mut contract = CronManager::new();
+    //     testing_env!(context.is_view(true).build());
+    //     let slot = contract.get_slot_id(None);
+    //     println!("SLOT {}", slot);
+
+    //     assert_eq!(slot, 1);
+    // }
 }
