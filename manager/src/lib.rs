@@ -181,20 +181,24 @@ impl CronManager {
     }
 
     /// Most useful for debugging at this point.
-    pub fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Base64VecU8> {
-        let mut ret: Vec<Base64VecU8> = Vec::new();
+    pub fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Task> {
+        let mut ret: Vec<Task> = Vec::new();
         if let Some(slot_number) = slot {
             // User specified a slot number, only return tasks in there.
             let tasks_in_slot = self.slots.get(&slot_number.0).expect("Couldn't find tasks for given slot.");
-            for task in tasks_in_slot.iter() {
-                ret.push(Base64VecU8::from(task.to_vec()));
+            for task_hash in tasks_in_slot.iter() {
+                let task = self.tasks.get(&task_hash)
+                    .expect("No task found by hash");
+                ret.push(task);
             }
         } else {
             // Return all slots
             for slot in self.slots.iter() {
                 let tasks_in_slot = slot.1;
-                for task in tasks_in_slot.iter() {
-                    ret.push(Base64VecU8::from(task.to_vec()));
+                for task_hash in tasks_in_slot.iter() {
+                    let task = self.tasks.get(&task_hash)
+                        .expect("No task found by hash");
+                    ret.push(task);
                 }
             }
         }
