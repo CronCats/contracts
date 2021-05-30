@@ -727,7 +727,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(Some(1));
 
-        assert_eq!(slot, 1300);
+        assert_eq!(slot, 1260);
     }
 
     #[test]
@@ -739,7 +739,7 @@ mod tests {
         let slot = contract.get_slot_id(Some(1_000_000_000));
 
         // ensure even if we pass in a HUGE number, it can only be scheduled UP to the max pre-defined block settings
-        assert_eq!(slot, 1_001_200);
+        assert_eq!(slot, 1_000_001_160);
     }
 
     #[test]
@@ -771,7 +771,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = CronManager::new();
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.slot_granularity, 100);
+        assert_eq!(contract.slot_granularity, SLOT_GRANULARITY);
 
         let mut context2 = get_context(accounts(2));
         testing_env!(context2.is_view(false).build());
@@ -786,7 +786,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = CronManager::new();
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.slot_granularity, 100);
+        assert_eq!(contract.slot_granularity, SLOT_GRANULARITY);
 
         testing_env!(context.is_view(false).build());
         contract.update_settings(10);
