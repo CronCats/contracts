@@ -32,10 +32,10 @@ pub const GAS_FOR_CALLBACK: Gas = 75_000_000_000_000;
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 // Boundary Definitions
-pub const MAX_BLOCK_RANGE: u32 = 1_000_000;
+pub const MAX_BLOCK_RANGE: u64 = 1_000_000_000_000_000;
 pub const MAX_EPOCH_RANGE: u32 = 10_000;
 pub const MAX_SECOND_RANGE: u32 = 600_000_000;
-pub const SLOT_GRANULARITY: u64 = 100;
+pub const SLOT_GRANULARITY: u64 = 60;
 pub const NANO: u64 = 1_000_000_000;
 
 /// Allows tasks to be executed in async env
@@ -351,6 +351,7 @@ impl CronManager {
             .expect("Agent not registered");
 
         // Get current slot based on block or timestamp
+        // TODO: Adjust this to get slot from treemap floor?
         let current_slot = self.get_slot_id(None);
         log!("current slot {:?}", current_slot);
 
@@ -596,17 +597,31 @@ impl CronManager {
 
     /// If no offset, Returns current slot based on current block height
     /// If offset, Returns next slot based on current block height & integer offset
-    /// rounded to nearest granularity (~every 60 blocks)
+    /// rounded to nearest granularity (~every 1 block per sec)
     fn get_slot_id(&self, offset: Option<u64>) -> u128 {
         let block = env::block_index();
         let rem = block % self.slot_granularity;
-        log!("get_slot_id: {}, {}, {} {}", &offset.unwrap(), &block, &rem, &self.slot_granularity);
+        let block_round = block - rem;
+        let id;
 
         if let Some(o) = offset {
-            u128::from(block - rem + o)
+            // NOTE: Assumption here is that the offset will be in seconds. (blocks per second)
+            //       Slot granularity will be in minutes (60 blocks per slot)
+            let slot_rem = core::cmp::max(o % self.slot_granularity, 1);
+            let slot_round = core::cmp::max(o - slot_rem, self.slot_granularity);
+            let next = block_round + slot_round;
+
+            if next - block > block_round + MAX_BLOCK_RANGE {
+                // Protect against extreme future block schedules
+                id = u64::min(next, block_round + MAX_BLOCK_RANGE);
+            } else {
+                id = next;
+            }
         } else {
-            u128::from(block - rem)
+            id = block_round;
         }
+
+        u128::from(id)
     }
 
     /// Parse cadence into a schedule
@@ -617,21 +632,35 @@ impl CronManager {
         let current_block_ts = env::block_timestamp();
 
         // Schedule params
-        // TODO: eventually use TryFrom
+        // NOTE: eventually use TryFrom
         let schedule = Schedule::from_str(&cadence).unwrap();
         let next_ts = schedule.next_after(&current_block_ts).unwrap();
-        let next_diff = (next_ts as u64) - current_block_ts;
+        let next_diff = next_ts - current_block_ts;
 
         // calculate the average blocks, to get predicted future block
         let blocks_total = core::cmp::max(current_block - self.bps_block, 1);
         let mut bps = (current_block_ts / NANO - self.bps_timestamp / NANO) / blocks_total;
+
         // Protect against bps being 0
         if bps < 1 { bps = 1; }
 
         // return upcoming slot
-        let offset = bps * next_diff;
-        log!("get_slot_from_cadence: {}, {}, {} {}", cadence, blocks_total, bps, &offset);
-        self.get_slot_id(Some(offset))
+        // Get the next block based on time it takes until next timestamp
+        let offset = (next_diff / NANO) / bps;
+        let current = self.get_slot_id(None);
+        let next_slot = self.get_slot_id(Some(offset));
+
+        if current == next_slot {
+            // Add slot granularity to make sure the minimum next slot is a block within next slot granularity range
+            current + u128::from(self.slot_granularity)
+        } else {
+            next_slot
+        }
+    }
+
+    pub fn update_settings(&mut self, slot_granularity: u64) {
+        assert_eq!(self.owner_id, env::signer_account_id(), "Must be owner");
+        self.slot_granularity = slot_granularity;
     }
 }
 
@@ -640,15 +669,16 @@ mod tests {
     use super::*;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
     use near_sdk::json_types::{ValidAccountId};
-    use near_sdk::MockedBlockchain;
-    use near_sdk::{testing_env};
+    use near_sdk::{testing_env, MockedBlockchain};
 
     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(accounts(0))
             .signer_account_id(predecessor_account_id.clone())
-            .predecessor_account_id(predecessor_account_id);
+            .predecessor_account_id(predecessor_account_id)
+            .block_index(1234)
+            .block_timestamp(1_600_000_000_000_000_000);
         builder
     }
 
@@ -678,15 +708,115 @@ mod tests {
         });
     }
 
-    // #[test]
-    // fn test_get_slot_id() {
-    //     let mut context = get_context(accounts(1));
-    //     testing_env!(context.build());
-    //     let mut contract = CronManager::new();
-    //     testing_env!(context.is_view(true).build());
-    //     let slot = contract.get_slot_id(None);
-    //     println!("SLOT {}", slot);
+    #[test]
+    fn test_get_slot_id_current_block() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let contract = CronManager::new();
+        testing_env!(context.is_view(true).build());
+        let slot = contract.get_slot_id(None);
 
-    //     assert_eq!(slot, 1);
-    // }
+        assert_eq!(slot, 1200);
+    }
+
+    #[test]
+    fn test_get_slot_id_offset_block() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let contract = CronManager::new();
+        testing_env!(context.is_view(true).build());
+        let slot = contract.get_slot_id(Some(1));
+
+        assert_eq!(slot, 1300);
+    }
+
+    #[test]
+    fn test_get_slot_id_max_block() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let contract = CronManager::new();
+        testing_env!(context.is_view(true).build());
+        let slot = contract.get_slot_id(Some(1_000_000_000));
+
+        // ensure even if we pass in a HUGE number, it can only be scheduled UP to the max pre-defined block settings
+        assert_eq!(slot, 1_001_200);
+    }
+
+    #[test]
+    fn test_get_slot_id_change_granularity() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = CronManager::new();
+        testing_env!(context.is_view(true).build());
+        let slot = contract.get_slot_id(None);
+        assert_eq!(slot, 1200);
+
+        testing_env!(context.is_view(false).build());
+        contract.update_settings(10);
+        testing_env!(context.is_view(true).build());
+        let slot = contract.get_slot_id(None);
+        assert_eq!(slot, 1230);
+
+        testing_env!(context.is_view(false).build());
+        contract.update_settings(1);
+        testing_env!(context.is_view(true).build());
+        let slot = contract.get_slot_id(None);
+        assert_eq!(slot, 1234);
+    }
+
+    #[test]
+    #[should_panic(expected = "Must be owner")]
+    fn test_update_settings_fail() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = CronManager::new();
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.slot_granularity, 100);
+
+        let mut context2 = get_context(accounts(2));
+        testing_env!(context2.is_view(false).build());
+        contract.update_settings(10);
+        testing_env!(context2.is_view(true).build());
+        assert_eq!(contract.slot_granularity, 10);
+    }
+
+    #[test]
+    fn test_update_settings() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = CronManager::new();
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.slot_granularity, 100);
+
+        testing_env!(context.is_view(false).build());
+        contract.update_settings(10);
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.slot_granularity, 10);
+    }
+
+    #[test]
+    fn test_get_slot_from_cadence() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = CronManager::new();
+        testing_env!(context.is_view(true).build());
+        let slot1 = contract.get_slot_from_cadence("*/5 * * * * *".to_string()); // Immediately next slot (since every 5 seconds)
+        println!("SLOT 1 {}",slot1);
+        assert_eq!(slot1, 1260);
+        let slot2 = contract.get_slot_from_cadence("* */5 * * * *".to_string()); // Every 5 mins
+        println!("SLOT 2 {}",slot2);
+        assert_eq!(slot2, 1380);
+        let slot3 = contract.get_slot_from_cadence("* * */5 * * *".to_string()); // Every 5th day
+        println!("SLOT 3 {}",slot3);
+        assert_eq!(slot3, 10380);
+        let slot4 = contract.get_slot_from_cadence("* * * */5 * *".to_string()); // Every 5th Month
+        println!("SLOT 4 {}",slot4);
+        assert_eq!(slot4, 215580);
+        let slot5 = contract.get_slot_from_cadence("* * * * */5 *".to_string()); // Every 5th Year
+        println!("SLOT 5 {}",slot5);
+        assert_eq!(slot5, 4189980);
+        let slot6 = contract.get_slot_from_cadence("* * * * * *".to_string()); // Every 5th Year
+        println!("SLOT 6 {}",slot6);
+        assert_eq!(slot6, 4189980);
+    }
 }
