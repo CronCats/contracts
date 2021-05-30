@@ -796,6 +796,7 @@ mod tests {
 
     #[test]
     fn test_get_slot_from_cadence() {
+        // TODO: These values seem off...
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
         let mut contract = CronManager::new();
@@ -815,7 +816,8 @@ mod tests {
         let slot5 = contract.get_slot_from_cadence("* * * * */5 *".to_string()); // Every 5th Year
         println!("SLOT 5 {}",slot5);
         assert_eq!(slot5, 4189980);
-        let slot6 = contract.get_slot_from_cadence("* * * * * *".to_string()); // Every 5th Year
+        // TODO: This is weird/breaking
+        let slot6 = contract.get_slot_from_cadence("* * * * * */5".to_string()); // Every ?
         println!("SLOT 6 {}",slot6);
         assert_eq!(slot6, 4189980);
     }
