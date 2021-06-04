@@ -112,7 +112,6 @@ pub struct Agent {
 pub struct CronManager {
     // Runtime
     // TODO: Setup DAO based management & ownership
-    // TODO: Add fn "tick" for updating bps, staking, etc
     paused: bool,
     owner_id: AccountId,
     owner_pk: PublicKey,
@@ -125,7 +124,6 @@ pub struct CronManager {
     tasks: LookupMap<Vec<u8>, Task>,
 
     // Economics
-    // TODO: Add admin fns to manage these
     available_balance: Balance,
     staked_balance: Balance,
     agent_fee: Balance,
