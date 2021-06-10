@@ -1,4 +1,4 @@
-use near_sdk::json_types::Base64VecU8;
+use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::serde_json::json;
 use near_sdk::serde_json;
 use near_sdk_sim::transaction::ExecutionStatus;
@@ -19,6 +19,7 @@ const COUNTER_ID: &str = "counter.sim";
 const AGENT_ID: &str = "agent.sim";
 const USER_ID: &str = "user.sim";
 const TASK_BASE64: &str = "chUCZxP6uO5xZIjwI9XagXVUCV7nmE09HVRUap8qauo=";
+const AGENT_REGISTRATION_COST: u128 = 2_090_000_000_000_000_000_000;
 
 type TaskBase64Hash = String;
 
@@ -31,11 +32,11 @@ fn helper_create_task(cron: &UserAccount, counter: &UserAccount) -> TaskBase64Ha
             "function_id": "increment".to_string(),
             "cadence": "0   30   9,12,15     1,15       May-Aug  Mon,Wed,Fri  2018/2".to_string(),
             "recurring": true,
-            "deposit": 0,
+            "deposit": "12000000000000",
             "gas": 3000000000000u64,
         }).to_string().into_bytes(),
         DEFAULT_GAS,
-        6_000_000_000_000u128, // deposit
+        36_000_000_000_000u128, // deposit
     );
     execution_result.assert_success();
     let hash: Base64VecU8 = execution_result.unwrap_json();
@@ -59,7 +60,7 @@ fn simulate_task_creation() {
 #[test]
 fn simulate_next_epoch() {
     // TODO: fill this test out, this is just the basics of moving blocks forward.
-    let (mut runtime, signer, root_account_id) = init_runtime(None);
+    let (runtime, signer, root_account_id) = init_runtime(None);
     let root_account = UserAccount::new(&Rc::new(RefCell::new(runtime)), root_account_id, signer);
 
     let mut root_runtime = root_account.borrow_runtime_mut();
@@ -107,8 +108,8 @@ fn simulate_basic_task_checks() {
         cadence: "0   30   9,12,15     1,15       May-Aug  Mon,Wed,Fri  2018/2".to_string(),
         recurring: true,
         status: TaskStatus::Ready,
-        total_deposit: 6000000000000,
-        deposit: 0,
+        total_deposit: U128::from(36000000000000),
+        deposit: U128::from(12000000000000),
         gas: 3000000000000,
         arguments: vec![]
     };
@@ -169,7 +170,7 @@ fn simulate_basic_agent_registration_update() {
             "payable_account_id": USER_ID
         }).to_string().into_bytes(),
         DEFAULT_GAS,
-        0, // deposit
+        AGENT_REGISTRATION_COST, // deposit
     ).assert_success();
 
     // Attempt to re-register
@@ -180,12 +181,12 @@ fn simulate_basic_agent_registration_update() {
             "payable_account_id": USER_ID
         }).to_string().into_bytes(),
         DEFAULT_GAS,
-        0, // deposit
+        AGENT_REGISTRATION_COST, // deposit
     );
     let mut status = failed_result.status();
     if let ExecutionStatus::Failure(err) = status {
         // At this time, this is the way to check for error messages.
-        assert!(err.to_string().contains("Agent agent.sim already exists"));
+        assert!(err.to_string().contains("Agent already exists"));
     } else {
         panic!("Should not be able to re-register an agent.");
     }
@@ -220,18 +221,33 @@ fn simulate_basic_agent_registration_update() {
         0, // deposit
     );
 
-    // Put agent's public key into a variable so we can fetch the agent.
-    let agent_pk = agent.signer.public_key.to_string();
-
     let agent_result: Agent = root.view(
         cron.account_id(),
         "get_agent",
         &json!({
-            "pk": agent_pk
+            "account": agent.account_id
         }).to_string().into_bytes(),
     ).unwrap_json();
 
     assert_eq!(agent_result.payable_account_id, "newname.sim".to_string());
+}
+
+#[test]
+fn simulate_agent_unregister_check() {
+    let (root, cron) = sim_helper_init();
+    let counter = sim_helper_init_counter(&root);
+    helper_create_task(&cron, &counter);
+    let unregister_result = cron.call(
+        cron.account_id(),
+        "unregister_agent",
+        &[],
+        DEFAULT_GAS,
+        1
+    );
+    unregister_result.assert_success();
+    for log in unregister_result.logs() {
+        assert_eq!(log, &"The agent manager.sim is not registered".to_string());
+    }
 }
 
 /// Basic initialization returning the "root account" for the simulator
