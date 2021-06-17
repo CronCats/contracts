@@ -2,7 +2,8 @@
 # include a member for each contract
 members = [
   "manager",
-  "examples/counter"
+  "examples/counter",
+  "examples/charity"
 ]
 
 [profile.release]

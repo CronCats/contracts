@@ -1,0 +1,11 @@
+[package]
+name = "rust-charity-tutorial"
+version = "0.0.1"
+authors = ["Cron.near", "@trevorjtclarke"]
+edition = "2018"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+near-sdk = "3.1.0"
