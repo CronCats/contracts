@@ -69,7 +69,7 @@ near call cron.$NEAR_ACCT register_agent '{"payable_account_id": "user.'$NEAR_AC
 
 near call cron.$NEAR_ACCT update_agent '{"payable_account_id": "user.'$NEAR_ACCT'"}' --accountId agent.$NEAR_ACCT
 
-near call cron.$NEAR_ACCT unregister_agent --accountId agent.$NEAR_ACCT
+near call cron.$NEAR_ACCT unregister_agent --accountId agent.$NEAR_ACCT --amount 0.000000000000000000000001
 
 near view cron.$NEAR_ACCT get_agent '{"pk": "ed25519:AGENT_PUBLIC_KEY"}'
 
