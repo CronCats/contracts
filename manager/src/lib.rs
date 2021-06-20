@@ -220,7 +220,7 @@ impl CronManager {
     /// ```bash
     /// near view cron.testnet get_tasks
     /// ```
-    pub fn get_tasks(&self, offset: Option<u64>) -> Vec<Base64VecU8> {
+    pub fn get_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, u128) {
         let current_slot = self.get_slot_id(offset);
 
         // Get tasks based on current slot.
@@ -232,9 +232,9 @@ impl CronManager {
             for task in tasks.iter() {
                 ret.push(Base64VecU8::from(task.to_vec()));
             }
-            ret
+            (ret, current_slot)
         } else {
-            vec![Base64VecU8::from(vec![])]
+            (vec![Base64VecU8::from(vec![])], current_slot)
         }
     }
 
@@ -589,7 +589,6 @@ impl CronManager {
         assert_eq!(self.paused, false, "Update agent paused");
 
         let account = env::signer_account_id();
-        println!("account {:?}", account);
 
         // check that signer agent exists
         if let Some(mut agent) = self.agents.get(&account) {
@@ -691,7 +690,7 @@ impl CronManager {
     /// If no offset, Returns current slot based on current block height
     /// If offset, Returns next slot based on current block height & integer offset
     /// rounded to nearest granularity (~every 1.6 block per sec)
-    fn get_slot_id(&self, offset: Option<u64>) -> u128 {
+    pub fn get_slot_id(&self, offset: Option<u64>) -> u128 {
         let block = env::block_index() * BPS_DENOMINATOR;
         let id;
 
@@ -726,7 +725,7 @@ impl CronManager {
     /// Parse cadence into a schedule
     /// Get next approximate block from a schedule
     /// return slot from the difference of upcoming block and current block
-    fn get_slot_from_cadence(&mut self, cadence: String) -> u128 {
+    pub fn get_slot_from_cadence(&self, cadence: String) -> u128 {
         let current_block = env::block_index();
         let current_block_ts = env::block_timestamp();
 
@@ -745,8 +744,7 @@ impl CronManager {
 
         // return upcoming slot
         // Get the next block based on time it takes until next timestamp
-        // let offset = next_diff / bps / NANO;
-        let offset = next_diff / bps;
+        let offset = next_diff / bps / BPS_DENOMINATOR;
         let current = self.get_slot_id(None);
         let next_slot = self.get_slot_id(Some(offset));
 
@@ -790,6 +788,9 @@ mod tests {
     use chrono::prelude::DateTime;
     use chrono::Utc;
 
+    const BLOCK_START_BLOCK: u64 = 52_201_040;
+    const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
+
     pub fn get_sample_task() -> Task {
         Task {
             owner_id: String::from("bob"),
@@ -823,8 +824,8 @@ mod tests {
             .signer_account_id(predecessor_account_id.clone())
             .signer_account_pk(b"ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM".to_vec())
             .predecessor_account_id(predecessor_account_id)
-            .block_index(1234)
-            .block_timestamp(1_600_000_000_000_000_000);
+            .block_index(BLOCK_START_BLOCK)
+            .block_timestamp(BLOCK_START_TS);
         builder
     }
 
@@ -970,7 +971,7 @@ mod tests {
             None,
         );
         testing_env!(context.is_view(true).build());
-        let slot = contract.slots.get(&1260).expect("Should have something here");
+        let slot = contract.slots.get(&52201080).expect("Should have something here");
         assert_eq!(slot[0], [233, 217, 1, 85, 174, 36, 220, 148, 248, 181, 105, 12, 71, 127, 52, 183, 172, 171, 193, 186, 212, 162, 3, 139, 78, 84, 11, 30, 30, 194, 160, 130]);
     }
 
@@ -1245,7 +1246,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
 
-        assert_eq!(slot, 1200);
+        assert_eq!(slot, 52201020);
     }
 
     #[test]
@@ -1256,7 +1257,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(Some(1_000));
 
-        assert_eq!(slot, 1260);
+        assert_eq!(slot, 52201080);
     }
 
     #[test]
@@ -1268,7 +1269,7 @@ mod tests {
         let slot = contract.get_slot_id(Some(1_000_000_000_000));
 
         // ensure even if we pass in a HUGE number, it can only be scheduled UP to the max pre-defined block settings
-        assert_eq!(slot, 1_000_001_160);
+        assert_eq!(slot, 1_052_200_980);
     }
 
     #[test]
@@ -1278,19 +1279,19 @@ mod tests {
         let mut contract = CronManager::new();
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
-        assert_eq!(slot, 1200);
+        assert_eq!(slot, 52201020);
 
         testing_env!(context.is_view(false).build());
         contract.update_settings(None, None, Some(10), None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
-        assert_eq!(slot, 1230);
+        assert_eq!(slot, 52201040);
 
         testing_env!(context.is_view(false).build());
         contract.update_settings(None, None, Some(1), None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
-        assert_eq!(slot, 1234);
+        assert_eq!(slot, 52201040);
     }
 
     #[test]
@@ -1323,65 +1324,80 @@ mod tests {
 
     #[test]
     fn test_get_slot_from_cadence_ts_check() {
+        // let start_ts: u64 = 1_624_151_500_000_000_000;
+        let rem = BLOCK_START_TS.clone() % 1_000_000;
+        let secs = ((BLOCK_START_TS.clone() - rem) / 1_000_000_000) + 1;
+        let start_ts = Utc.timestamp(secs as i64, 0).naive_utc().timestamp_nanos() as u64;
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let current_block_ts = env::block_timestamp();
+
+        // Seconds
         let schedule1 = Schedule::from_str(&"*/5 * * * * *".to_string()).unwrap();
         let next_ts1 = schedule1.next_after(&current_block_ts).unwrap();
         println!("TS 1: {} {}", next_ts1, human_readable_time(next_ts1));
-        assert_eq!(next_ts1, 1600000005000000000);
+        let denom1 = 5 * NANO;
+        let rem1 = start_ts.clone() % denom1;
+        assert_eq!(next_ts1, (start_ts.clone() - rem1) + denom1);
 
+        // Minutes
         let schedule2 = Schedule::from_str(&"* */5 * * * *".to_string()).unwrap();
         let next_ts2 = schedule2.next_after(&current_block_ts).unwrap();
         println!("TS 2: {} {}", next_ts2, human_readable_time(next_ts2));
-        assert_eq!(next_ts2, 1600000200000000000);
+        let denom2 = 5 * 60 * NANO;
+        let rem2 = start_ts.clone() % denom2;
+        assert_eq!(next_ts2, (start_ts.clone() - rem2) + denom2);
 
+        // Hours
         let schedule3 = Schedule::from_str(&"* * */5 * * *".to_string()).unwrap();
         let next_ts3 = schedule3.next_after(&current_block_ts).unwrap();
         println!("TS 3: {} {}", next_ts3, human_readable_time(next_ts3));
-        assert_eq!(next_ts3, 1600009200000000000);
+        assert_eq!(next_ts3, 1624165200000000000);
 
-        let schedule4 = Schedule::from_str(&"* * * */5 * *".to_string()).unwrap();
+        // Days
+        let schedule4 = Schedule::from_str(&"* * * 10 * *".to_string()).unwrap();
         let next_ts4 = schedule4.next_after(&current_block_ts).unwrap();
         println!("TS 4: {} {}", next_ts4, human_readable_time(next_ts4));
-        assert_eq!(next_ts4, 1600214400000000000);
+        assert_eq!(next_ts4, 1625875200000000000);
 
-        let schedule5 = Schedule::from_str(&"* * * * */5 *".to_string()).unwrap();
+        // Month
+        let schedule5 = Schedule::from_str(&"* * * * 10 *".to_string()).unwrap();
         let next_ts5 = schedule5.next_after(&current_block_ts).unwrap();
         println!("TS 5: {} {}", next_ts5, human_readable_time(next_ts5));
-        assert_eq!(next_ts5, 1604188800000000000);
+        assert_eq!(next_ts5, 1633046400000000000);
 
+        // Year
         let schedule6 = Schedule::from_str(&"* * * * * * 2025".to_string()).unwrap();
         let next_ts6 = schedule6.next_after(&current_block_ts).unwrap();
         println!("TS 6: {} {}", next_ts6, human_readable_time(next_ts6));
-        assert_eq!(next_ts6, 1757766401000000000);
+        assert_eq!(next_ts6, 1750381904000000000);
     }
 
     #[test]
-    fn test_get_slot_from_cadence() {
+    fn test_get_slot_from_cadence_match() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
-        let mut contract = CronManager::new();
-        testing_env!(context.is_view(false).block_index(1334).block_timestamp(1_600_000_000_300_000_000).build());
+        let contract = CronManager::new();
+        testing_env!(context.is_view(false).block_index(BLOCK_START_BLOCK.clone() + 1).block_timestamp(BLOCK_START_TS.clone() + 1_000_000_000).build());
         testing_env!(context.is_view(true).build());
         let slot1 = contract.get_slot_from_cadence("*/5 * * * * *".to_string()); // Immediately next slot (since every 5 seconds)
         println!("SLOT 1 {}",slot1);
-        assert_eq!(slot1, 1380);
+        assert_eq!(slot1, 52201080);
         let slot2 = contract.get_slot_from_cadence("* */5 * * * *".to_string()); // Every 5 mins
         println!("SLOT 2 {}",slot2);
-        assert_eq!(slot2, 1860);
+        assert_eq!(slot2, 52201200);
         let slot3 = contract.get_slot_from_cadence("* * */5 * * *".to_string()); // Every 5th hour
         println!("SLOT 3 {}",slot3);
-        assert_eq!(slot3, 28860);
-        let slot4 = contract.get_slot_from_cadence("* * * */5 * *".to_string()); // Every 5th day
+        assert_eq!(slot3, 52214700);
+        let slot4 = contract.get_slot_from_cadence("* * * 10 * *".to_string()); // The 10th day of Month
         println!("SLOT 4 {}",slot4);
-        assert_eq!(slot4, 644460);
-        let slot5 = contract.get_slot_from_cadence("* * * * */5 *".to_string()); // Every 5th Month
+        assert_eq!(slot4, 53924700);
+        let slot5 = contract.get_slot_from_cadence("* * * * 10 *".to_string()); // The 10th Month of the Year
         println!("SLOT 5 {}",slot5);
-        assert_eq!(slot5, 12567720);
+        assert_eq!(slot5, 61095900);
         let slot6 = contract.get_slot_from_cadence("* * * * * * 2025".to_string());
         println!("SLOT 6 {}",slot6);
-        assert_eq!(slot6, 473300940);
+        assert_eq!(slot6, 178431420);
     }
 
     #[test]
@@ -1468,7 +1484,6 @@ mod tests {
         let mut context = get_context(accounts(1));
         testing_env!(context.is_view(false).build());
         let mut contract = CronManager::new();
-        contract.update_settings(None, None, Some(1), None, None);
         context.attached_deposit(2090000000000000000000);
         testing_env!(context.build());
         contract.register_agent(None, Some(accounts(1)));
@@ -1477,15 +1492,17 @@ mod tests {
         contract.create_task(
             "contract.testnet".to_string(),
             "increment".to_string(),
-            "* * * * * *".to_string(),
+            "* */5 * * * *".to_string(),
             Some(true),
             None,
             Some(200),
             None,
         );
 
-        testing_env!(context.is_view(false).block_index(1235).build());
+        testing_env!(context.is_view(false).block_index(52201085).build());
         contract.proxy_call();
+
+        testing_env!(context.is_view(false).block_index(52201600).build());
         contract.withdraw_task_balance();
 
         testing_env!(context.is_view(true).build());
@@ -1509,11 +1526,14 @@ mod tests {
         testing_env!(context.is_view(false).build());
         let mut contract = CronManager::new();
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.bps_block, 1234);
-        testing_env!(context.is_view(false).block_index(1275).build());
+        assert_eq!(contract.bps_block, 52201040);
+        testing_env!(context.is_view(false).block_index(52201240).build());
         contract.tick();
-        testing_env!(context.is_view(true).block_index(1375).build());
-        assert_eq!(contract.bps_block, 1275);
+        testing_env!(context.is_view(false).block_index(52207040).build());
+        contract.tick();
+        testing_env!(context.is_view(false).block_index(52208540).build());
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.bps_block, 52207040);
     }
 
     #[test]
