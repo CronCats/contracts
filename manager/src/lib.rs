@@ -15,6 +15,7 @@ pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
 // > mainnet-config.json
 
 pub const GAS_FOR_CALLBACK: Gas = 75_000_000_000_000;
+pub const AGENT_BASE_FEE: u128 = 3_000_000_000_000;
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 // Boundary Definitions
@@ -137,7 +138,7 @@ impl CronManager {
             slots: TreeMap::new(StorageKeys::Slots),
             available_balance: 0,
             staked_balance: 0,
-            agent_fee: u128::from(GAS_BASE_FEE),
+            agent_fee: AGENT_BASE_FEE,
             slot_granularity: SLOT_GRANULARITY,
             agent_storage_usage: 0
         };
@@ -696,7 +697,7 @@ impl CronManager {
     /// If no offset, returns current slot based on current block height
     /// If offset, returns next slot based on current block height & integer offset
     /// rounded to nearest granularity (~every 1.6 block per sec)
-    pub fn get_slot_id(&self, offset: Option<u64>) -> u128 {
+    fn get_slot_id(&self, offset: Option<u64>) -> u128 {
         let current_block = env::block_index();
         let slot_id: u64 = if let Some(o) = offset {
             // NOTE: Assumption here is that the offset will be in seconds. (blocks per second)
