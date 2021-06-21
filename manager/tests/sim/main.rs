@@ -399,5 +399,6 @@ fn simulate_task_creation_agent_usage() {
     // Check agent's balance after withdrawal
     agent_view = root_runtime.view_account("agent.root").unwrap();
     agent_amount = agent_view.amount;
-    println!("agent_amount after agent withdraw \t{:?}", agent_amount);
+    println!("agent_amount after agent withdraw \t{:?}", agent_amount.clone());
+    assert_eq!(agent_amount, 6_000_055_703_235_116_793_699_999_791);
 }
