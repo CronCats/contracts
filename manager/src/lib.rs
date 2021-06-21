@@ -627,15 +627,14 @@ impl CronManager {
     /// near call cron.testnet withdraw_task_balance --accountId YOUR_AGENT.testnet
     /// ```
     pub fn withdraw_task_balance(&mut self) -> Promise {
-        let account = env::signer_account_id();
+        let account = env::predecessor_account_id();
 
         // check that signer agent exists
         if let Some(agent) = self.agents.get(&account) {
-            assert!(agent.balance.0 > 0, "No Agent balance");
-            Promise::new(agent.payable_account_id.to_string())
-                .transfer(agent.balance.0)
+            assert!(agent.balance.0 > self.agent_storage_usage as u128, "No Agent balance beyond the storage balance");
+            Promise::new(agent.payable_account_id.to_string()).transfer(agent.balance.0 - self.agent_storage_usage as u128)
         } else {
-            panic!("No Agent");
+            env::panic(b"No Agent");
         }
     }
 
