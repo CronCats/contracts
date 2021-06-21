@@ -35,7 +35,7 @@ impl Donations {
     /// near call donations.testnet add_account '{"account_id":"friend.testnet"}'
     /// ```
     pub fn add_account(&mut self, account_id: AccountId) {
-        assert!(self.beneficiaries.len() > 10, "Max beneficiaries stored");
+        assert!(self.beneficiaries.len() < 10, "Max beneficiaries stored");
         self.beneficiaries.insert(&account_id);
     }
 
@@ -80,12 +80,12 @@ impl Donations {
         let donation = env::attached_deposit() / u128::from(self.beneficiaries.len());
 
         // update stats
-        self.total += 1;
         self.paid += env::attached_deposit();
         
         // loop and transfer funds to each account
         for acct in self.beneficiaries.iter() {
             Promise::new(acct).transfer(donation);
+            self.total += 1;
         }
     }
 }
@@ -119,11 +119,56 @@ mod tests {
         assert_eq!(contract.stats().0, 0, "Stats is not empty");
     }
 
-    // #[test]
-    // fn test_beneficiaries() {
-    //     let mut context = get_context(accounts(1));
-    //     testing_env!(context.build());
-    //     let mut contract = Donations::new();
-    //     testing_env!(context.is_view(true).build());
-    // }
+    #[test]
+    fn test_add_beneficiaries() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.is_view(false).build());
+        let mut contract = Donations::new();
+        contract.add_account(accounts(2).to_string());
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.beneficiaries.len(), 1, "Wrong number of accounts");
+    }
+
+    #[test]
+    fn test_remove_beneficiaries() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.is_view(false).build());
+        let mut contract = Donations::new();
+        contract.add_account(accounts(2).to_string());
+        assert_eq!(contract.beneficiaries.len(), 1, "Wrong number of accounts");
+        contract.remove_account(accounts(2).to_string());
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.beneficiaries.len(), 0, "Wrong number of accounts");
+    }
+
+    #[test]
+    fn test_reset_beneficiaries() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.is_view(false).build());
+        let mut contract = Donations::new();
+        contract.add_account(accounts(2).to_string());
+        contract.add_account(accounts(3).to_string());
+        contract.add_account(accounts(4).to_string());
+        contract.add_account(accounts(5).to_string());
+        assert_eq!(contract.beneficiaries.len(), 4, "Wrong number of accounts");
+        contract.reset();
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.beneficiaries.len(), 0, "Wrong number of accounts");
+    }
+
+    #[test]
+    fn test_donation() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.is_view(false).build());
+        let mut contract = Donations::new();
+        contract.add_account(accounts(2).to_string());
+        contract.add_account(accounts(3).to_string());
+        assert_eq!(contract.beneficiaries.len(), 2, "Wrong number of accounts");
+        testing_env!(context.is_view(false).attached_deposit(10_000_000_000_000_000_000_000_000).build());
+        contract.donate();
+        testing_env!(context.is_view(true).build());
+        println!("contract.stats() {:?}", contract.stats());
+        assert_eq!(contract.stats().0, u128::from(contract.beneficiaries.len()), "Payments increased");
+        assert_eq!(contract.stats().1, 10_000_000_000_000_000_000_000_000, "Payment amount increased");
+    }
 }

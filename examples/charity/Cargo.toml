@@ -1,5 +1,5 @@
 [package]
-name = "rust-charity-tutorial"
+name = "charity"
 version = "0.0.1"
 authors = ["Cron.near", "@trevorjtclarke"]
 edition = "2018"
