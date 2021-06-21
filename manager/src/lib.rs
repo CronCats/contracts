@@ -220,7 +220,7 @@ impl CronManager {
     /// ```bash
     /// near view cron.testnet get_tasks
     /// ```
-    pub fn get_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, u128) {
+    pub fn get_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, U128) {
         let current_slot = self.get_slot_id(offset);
 
         // Get tasks based on current slot.
@@ -232,9 +232,9 @@ impl CronManager {
             for task in tasks.iter() {
                 ret.push(Base64VecU8::from(task.to_vec()));
             }
-            (ret, current_slot)
+            (ret, U128::from(current_slot))
         } else {
-            (vec![Base64VecU8::from(vec![])], current_slot)
+            (vec![Base64VecU8::from(vec![])], U128::from(current_slot))
         }
     }
 
@@ -437,8 +437,11 @@ impl CronManager {
         assert_eq!(self.paused, false, "Task execution paused");
 
         // only registered agent signed, because micropayments will benefit long term
-        let mut agent = self.agents.get(&env::signer_account_id())
-            .expect("Agent not registered");
+        let agent_opt = self.agents.get(&env::signer_account_id());
+        if agent_opt.is_none() {
+            env::panic(b"Agent not registered");
+        }
+        let mut agent = agent_opt.unwrap();
 
         // Get current slot based on block or timestamp
         // TODO: Adjust this to get slot from treemap floor?
@@ -446,8 +449,11 @@ impl CronManager {
         log!("current slot {:?}", current_slot);
 
         // get task based on current slot
-        let mut slot = self.slots.get(&current_slot)
-            .expect("No tasks found in slot");
+        let slot_opt = self.slots.get(&current_slot);
+        if slot_opt.is_none() {
+            env::panic(b"No tasks found in slot");
+        }
+        let mut slot = slot_opt.unwrap();
         log!("slot {:?}", &slot);
 
         // Get a single task hash, then retrieve task details
@@ -686,45 +692,40 @@ impl CronManager {
         else { false }
     }
 
-    /// If no offset, Returns current slot based on current block height
-    /// If offset, Returns next slot based on current block height & integer offset
+    /// Takes an optional `offset`: the number of blocks to offset from now (current block height)
+    /// If no offset, returns current slot based on current block height
+    /// If offset, returns next slot based on current block height & integer offset
     /// rounded to nearest granularity (~every 1.6 block per sec)
     pub fn get_slot_id(&self, offset: Option<u64>) -> u128 {
-        let block = env::block_index() * BPS_DENOMINATOR;
-        let id;
-
-        if let Some(o) = offset {
+        let current_block = env::block_index();
+        let slot_id: u64 = if let Some(o) = offset {
             // NOTE: Assumption here is that the offset will be in seconds. (blocks per second)
             //       Slot granularity will be in minutes (60 blocks per slot)
-            // let offset_denom = o * BPS_DENOMINATOR;
-            let offset_denom = o;
-            let granularity = self.slot_granularity * BPS_DENOMINATOR;
-            let slot_rem = core::cmp::max(offset_denom % granularity, 1);
-            let slot_round = core::cmp::max(offset_denom.saturating_sub(slot_rem), granularity);
-            let next = block + slot_round;
 
-            if next - block > block + MAX_BLOCK_RANGE {
-                // Protect against extreme future block schedules
-                id = u64::min(next, block + MAX_BLOCK_RANGE);
+            let slot_remainder = core::cmp::max(o % self.slot_granularity, 1);
+            let slot_round = core::cmp::max(o.saturating_sub(slot_remainder), self.slot_granularity);
+            let next = current_block + slot_round;
+
+            // Protect against extreme future block schedules
+            if next - current_block > current_block + MAX_BLOCK_RANGE {
+                u64::min(next, current_block + MAX_BLOCK_RANGE)
             } else {
-                id = next;
+                next
             }
         } else {
-            id = block;
-        }
+            current_block
+        };
 
-        // Compute the slot id by truncating to granularity
-        let block_id = id / BPS_DENOMINATOR;
-        let rem = block_id % self.slot_granularity;
-        let id_round = block_id.saturating_sub(rem);
+        let slot_remainder = slot_id % self.slot_granularity;
+        let slot_id_round = slot_id.saturating_sub(slot_remainder);
 
-        u128::from(id_round)
+        u128::from(slot_id_round)
     }
 
     /// Parse cadence into a schedule
     /// Get next approximate block from a schedule
     /// return slot from the difference of upcoming block and current block
-    pub fn get_slot_from_cadence(&self, cadence: String) -> u128 {
+    fn get_slot_from_cadence(&self, cadence: String) -> u128 {
         let current_block = env::block_index();
         let current_block_ts = env::block_timestamp();
 
@@ -735,15 +736,24 @@ impl CronManager {
         let next_diff = next_ts - current_block_ts;
 
         // calculate the average blocks, to get predicted future block
+        // Get the range of blocks for which we're taking the average
+        // Remember `bps_block` is updated after every call to `tick`
         let blocks_total = core::cmp::max(current_block - self.bps_block, 1);
+        // Generally, avoiding floats can be useful, here we set a denominator
+        // Since the `bps` timestamp is in nanoseconds, we multiply the
+        // numerator to match the magnitude
+        // We use the `max` value to avoid division by 0
         let mut bps = (blocks_total * NANO * BPS_DENOMINATOR) / std::cmp::max(current_block_ts - self.bps_timestamp, 1);
 
         // Protect against bps being 0
         if bps < 1 { bps = 1; }
 
-        // return upcoming slot
-        // Get the next block based on time it takes until next timestamp
-        let offset = next_diff / bps / BPS_DENOMINATOR;
+        /*
+        seconds * nano      blocks           1
+         ---             *  ---         *   ---   = blocks offset (with extra 1000 magnitude)
+          1             seconds * 1000      1000
+        */
+        let offset = ((next_diff as u128 * bps as u128) / BPS_DENOMINATOR as u128 / NANO as u128) as u64;
         let current = self.get_slot_id(None);
         let next_slot = self.get_slot_id(Some(offset));
 
@@ -959,7 +969,15 @@ mod tests {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
         let mut contract = CronManager::new();
-        testing_env!(context.is_view(false).attached_deposit(3000000000200).build());
+
+        // Move forward time and blocks to get more accurate bps
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(3000000000200)
+            .block_timestamp(BLOCK_START_TS + (6 * NANO))
+            .block_index(BLOCK_START_BLOCK + 6)
+        .build());
+
         contract.create_task(
             "contract.testnet".to_string(),
             "increment".to_string(),
@@ -1256,7 +1274,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(Some(1_000));
 
-        assert_eq!(slot, 52201080);
+        assert_eq!(slot, 52201980);
     }
 
     #[test]
@@ -1268,7 +1286,7 @@ mod tests {
         let slot = contract.get_slot_id(Some(1_000_000_000_000));
 
         // ensure even if we pass in a HUGE number, it can only be scheduled UP to the max pre-defined block settings
-        assert_eq!(slot, 1_052_200_980);
+        assert_eq!(slot, 1_000_052_200_980);
     }
 
     #[test]
@@ -1476,37 +1494,6 @@ mod tests {
         testing_env!(context.build());
         let mut contract = CronManager::new();
         contract.withdraw_task_balance();
-    }
-
-    #[test]
-    fn test_agent_withdraw_balance() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.is_view(false).build());
-        let mut contract = CronManager::new();
-        context.attached_deposit(2090000000000000000000);
-        testing_env!(context.build());
-        contract.register_agent(None, Some(accounts(1)));
-        // enough for 2 runs
-        testing_env!(context.is_view(false).attached_deposit(6000000000600).build());
-        contract.create_task(
-            "contract.testnet".to_string(),
-            "increment".to_string(),
-            "* */5 * * * *".to_string(),
-            Some(true),
-            None,
-            Some(200),
-            None,
-        );
-
-        testing_env!(context.is_view(false).block_index(52201085).build());
-        contract.proxy_call();
-
-        testing_env!(context.is_view(false).block_index(52201600).build());
-        contract.withdraw_task_balance();
-
-        testing_env!(context.is_view(true).build());
-        let agent = contract.get_agent(accounts(1).to_string());
-        assert_eq!(agent.unwrap().balance, U128::from(2090000003000000000000));
     }
 
     #[test]
