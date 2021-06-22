@@ -1,4 +1,8 @@
-use near_sdk::{AccountId, Promise, borsh::{self, BorshDeserialize, BorshSerialize}, BorshStorageKey, collections::{UnorderedSet}, env, log, near_bindgen, PanicOnDefault};
+use near_sdk::{
+    borsh::{self, BorshDeserialize, BorshSerialize},
+    collections::UnorderedSet,
+    env, log, near_bindgen, AccountId, BorshStorageKey, PanicOnDefault, Promise,
+};
 
 near_sdk::setup_alloc!();
 
@@ -75,13 +79,19 @@ impl Donations {
     #[payable]
     pub fn donate(&mut self) {
         assert!(self.beneficiaries.len() > 0, "No beneficiaries");
-        assert!(env::attached_deposit() > 0, "Must include amount to be paid to all beneficiaries");
-        assert!(env::attached_deposit() / u128::from(self.beneficiaries.len()) > 1_000_000_000, "Minimum amount not met to cover transfers");
+        assert!(
+            env::attached_deposit() > 0,
+            "Must include amount to be paid to all beneficiaries"
+        );
+        assert!(
+            env::attached_deposit() / u128::from(self.beneficiaries.len()) > 1_000_000_000,
+            "Minimum amount not met to cover transfers"
+        );
         let donation = env::attached_deposit() / u128::from(self.beneficiaries.len());
 
         // update stats
         self.paid += env::attached_deposit();
-        
+
         // loop and transfer funds to each account
         for acct in self.beneficiaries.iter() {
             Promise::new(acct).transfer(donation);
@@ -90,12 +100,11 @@ impl Donations {
     }
 }
 
-
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
+    use near_sdk::json_types::ValidAccountId;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::json_types::{ValidAccountId};
     use near_sdk::{testing_env, MockedBlockchain};
 
     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
@@ -164,11 +173,22 @@ mod tests {
         contract.add_account(accounts(2).to_string());
         contract.add_account(accounts(3).to_string());
         assert_eq!(contract.beneficiaries.len(), 2, "Wrong number of accounts");
-        testing_env!(context.is_view(false).attached_deposit(10_000_000_000_000_000_000_000_000).build());
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(10_000_000_000_000_000_000_000_000)
+            .build());
         contract.donate();
         testing_env!(context.is_view(true).build());
         println!("contract.stats() {:?}", contract.stats());
-        assert_eq!(contract.stats().0, u128::from(contract.beneficiaries.len()), "Payments increased");
-        assert_eq!(contract.stats().1, 10_000_000_000_000_000_000_000_000, "Payment amount increased");
+        assert_eq!(
+            contract.stats().0,
+            u128::from(contract.beneficiaries.len()),
+            "Payments increased"
+        );
+        assert_eq!(
+            contract.stats().1,
+            10_000_000_000_000_000_000_000_000,
+            "Payment amount increased"
+        );
     }
 }

@@ -1,14 +1,19 @@
-use near_contract_standards::storage_management::{StorageBalance, StorageBalanceBounds, StorageManagement};
+use crate::CronManager;
+use near_contract_standards::storage_management::{
+    StorageBalance, StorageBalanceBounds, StorageManagement,
+};
 use near_sdk::json_types::{ValidAccountId, U128};
 use near_sdk::{assert_one_yocto, env, log, AccountId, Balance, Promise};
-use crate::CronManager;
 
 impl CronManager {
     fn internal_storage_balance_of(&self, account_id: &AccountId) -> Option<StorageBalance> {
         if self.agents.contains_key(account_id) {
             // The "available" balance is always zero because the storage isn't
             // variable for this contract.
-            Some(StorageBalance { total: self.storage_balance_bounds().min, available: 0.into() })
+            Some(StorageBalance {
+                total: self.storage_balance_bounds().min,
+                available: 0.into(),
+            })
         } else {
             None
         }
@@ -25,7 +30,9 @@ impl StorageManagement for CronManager {
         registration_only: Option<bool>,
     ) -> StorageBalance {
         self.register_agent(account_id.clone(), None);
-        let account_id = account_id.map(|a| a.into()).unwrap_or_else(|| env::predecessor_account_id());
+        let account_id = account_id
+            .map(|a| a.into())
+            .unwrap_or_else(|| env::predecessor_account_id());
         self.internal_storage_balance_of(&account_id).unwrap()
     }
 
@@ -47,9 +54,7 @@ impl StorageManagement for CronManager {
                 _ => storage_balance,
             }
         } else {
-            env::panic(
-                format!("The account {} is not registered", &predecessor).as_bytes(),
-            );
+            env::panic(format!("The account {} is not registered", &predecessor).as_bytes());
         }
     }
 
@@ -74,7 +79,8 @@ impl StorageManagement for CronManager {
     }
 
     fn storage_balance_bounds(&self) -> StorageBalanceBounds {
-        let required_storage_balance = Balance::from(self.agent_storage_usage) * env::storage_byte_cost();
+        let required_storage_balance =
+            Balance::from(self.agent_storage_usage) * env::storage_byte_cost();
         StorageBalanceBounds {
             min: required_storage_balance.into(),
             max: Some(required_storage_balance.into()),
