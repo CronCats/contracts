@@ -15,3 +15,4 @@ near-contract-standards = "3.2.0"
 [dev-dependencies]
 near-sdk-sim = "3.1.0"
 chrono = "~0.4"
+near-primitives-core = "0.4.0"

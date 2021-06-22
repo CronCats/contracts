@@ -1,12 +1,17 @@
 use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::serde_json::json;
 use near_sdk::serde_json;
-use near_sdk_sim::transaction::ExecutionStatus;
-use near_sdk_sim::{init_simulator, to_yocto, UserAccount, DEFAULT_GAS, STORAGE_AMOUNT, runtime::init_runtime};
+use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
+use near_sdk_sim::{init_simulator, to_yocto, UserAccount, DEFAULT_GAS, STORAGE_AMOUNT};
 use manager::{Task, TaskStatus, Agent};
 use std::rc::Rc;
 use std::cell::RefCell;
-use near_sdk_sim::runtime::RuntimeStandalone;
+use near_sdk_sim::runtime::{RuntimeStandalone, GenesisConfig};
+use near_sdk_sim::hash::CryptoHash;
+use near_sdk_sim::near_crypto::{InMemorySigner, KeyType, Signer};
+use near_sdk_sim::state_record::StateRecord;
+use near_sdk_sim::account::AccessKey;
+use near_primitives_core::account::Account as PrimitiveAccount;
 
 // Load in contract bytes at runtime
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
@@ -43,30 +48,46 @@ fn helper_create_task(cron: &UserAccount, counter: &UserAccount) -> TaskBase64Ha
     serde_json::to_string(&hash).unwrap()
 }
 
-fn helper_next_epoch(runtime: &mut RuntimeStandalone) {
-    let epoch_height = runtime.current_block().epoch_height;
-    while epoch_height == runtime.current_block().epoch_height {
-        runtime.produce_block().unwrap();
-    }
+/// Basic initialization returning the "root account" for the simulator
+/// and the NFT account with the contract deployed and initialized.
+fn sim_helper_init() -> (UserAccount, UserAccount) {
+    let mut root_account = init_simulator(None);
+    root_account = root_account.create_user("sim".to_string(), to_yocto("1000000"));
+
+    // Deploy cron manager and call "new" method
+    let cron = root_account.deploy(&CRON_MANAGER_WASM_BYTES, MANAGER_ID.into(), STORAGE_AMOUNT);
+    cron.call(
+        cron.account_id(),
+        "new",
+        &[],
+        DEFAULT_GAS,
+        0, // attached deposit
+    )
+        .assert_success();
+
+    (root_account, cron)
 }
+
+fn sim_helper_create_agent_user(root_account: &UserAccount) -> (UserAccount, UserAccount) {
+    let hundred_near = to_yocto("100");
+    let agent = root_account.create_user(AGENT_ID.into(), hundred_near);
+    let user = root_account.create_user(USER_ID.into(), hundred_near);
+    (agent, user)
+}
+
+fn sim_helper_init_counter(root_account: &UserAccount) -> UserAccount {
+    // Deploy counter and call "new" method
+    let counter = root_account.deploy(&COUNTER_WASM_BYTES, COUNTER_ID.into(), STORAGE_AMOUNT);
+    counter
+}
+
+// Begin tests
 
 #[test]
 fn simulate_task_creation() {
     let (root, cron) = sim_helper_init();
     let counter = sim_helper_init_counter(&root);
     helper_create_task(&cron, &counter);
-}
-
-#[test]
-fn simulate_next_epoch() {
-    // TODO: fill this test out, this is just the basics of moving blocks forward.
-    let (runtime, signer, root_account_id) = init_runtime(None);
-    let root_account = UserAccount::new(&Rc::new(RefCell::new(runtime)), root_account_id, signer);
-
-    let mut root_runtime = root_account.borrow_runtime_mut();
-    let block_production_result = root_runtime.produce_blocks(7);
-    assert!(block_production_result.is_ok(), "Couldn't produce blocks");
-    println!("Current block height {}, epoch height {}", root_runtime.current_block().block_height, root_runtime.current_block().epoch_height);
 }
 
 #[test]
@@ -250,35 +271,134 @@ fn simulate_agent_unregister_check() {
     }
 }
 
-/// Basic initialization returning the "root account" for the simulator
-/// and the NFT account with the contract deployed and initialized.
-fn sim_helper_init() -> (UserAccount, UserAccount) {
-    let mut root_account = init_simulator(None);
-    root_account = root_account.create_user("sim".to_string(), to_yocto("1000000"));
+#[test]
+fn simulate_task_creation_agent_usage() {
+    let mut genesis = GenesisConfig::default();
+    genesis.runtime_config.wasm_config.limit_config.max_total_prepaid_gas = genesis.gas_limit;
+    let root_account_id = "root".to_string();
+    let signer = genesis.init_root_signer(&root_account_id);
 
-    // Deploy cron manager and call "new" method
-    let cron = root_account.deploy(&CRON_MANAGER_WASM_BYTES, MANAGER_ID.into(), STORAGE_AMOUNT);
+    // Make agent signer
+    let agent_signer = InMemorySigner::from_seed("agent.root", KeyType::ED25519, "aloha");
+    // Push agent account to state_records
+    genesis.state_records.push(StateRecord::Account {
+        account_id: "agent.root".to_string(),
+        account: PrimitiveAccount {
+            amount: to_yocto("6000"),
+            locked: 0,
+            code_hash: Default::default(),
+            storage_usage: 0
+        }
+    });
+    genesis.state_records.push(StateRecord::AccessKey {
+        account_id: "agent.root".to_string(),
+        public_key: agent_signer.clone().public_key(),
+        access_key: AccessKey::full_access(),
+    });
+
+    let runtime = RuntimeStandalone::new_with_store(genesis);
+    let runtime_rc = &Rc::new(RefCell::new(runtime));
+    let root_account = UserAccount::new(runtime_rc, root_account_id, signer);
+
+    // create "counter" account and deploy
+    let counter = root_account.deploy(&COUNTER_WASM_BYTES, "counter.root".to_string(), STORAGE_AMOUNT);
+
+    // create "agent" account from signer
+    let agent  = UserAccount::new(runtime_rc, "agent.root".to_string(), agent_signer.clone());
+
+    // create "cron" account, deploy and call "new"
+    let cron = root_account.deploy(&CRON_MANAGER_WASM_BYTES, "cron.root".to_string(), STORAGE_AMOUNT);
     cron.call(
         cron.account_id(),
         "new",
         &[],
         DEFAULT_GAS,
         0, // attached deposit
-    )
-    .assert_success();
+    ).assert_success();
 
-    (root_account, cron)
-}
+    // Increase agent fee a bit
+    cron.call(
+        cron.account_id(),
+        "update_settings",
+        &json!({
+            "agent_fee": U128::from(60_000_000_000_000_000_000_000u128)
+        }).to_string().into_bytes(), // 0.06 Ⓝ
+        DEFAULT_GAS,
+        0, // attached deposit
+    ).assert_success();
 
-fn sim_helper_create_agent_user(root_account: &UserAccount) -> (UserAccount, UserAccount) {
-    let hundred_near = to_yocto("100");
-    let agent = root_account.create_user(AGENT_ID.into(), hundred_near);
-    let user = root_account.create_user(USER_ID.into(), hundred_near);
-    (agent, user)
-}
+    // create a task
+    let execution_result = counter.call(
+        cron.account_id(),
+        "create_task",
+        &json!({
+            "contract_id": COUNTER_ID,
+            "function_id": "increment".to_string(),
+            "cadence": "0 30 * * * * *".to_string(), // every hour at 30 min
+            "recurring": true,
+            "deposit": "0",
+            "gas": 1000000000000u64,
+        }).to_string().into_bytes(),
+        DEFAULT_GAS,
+        120000000002000000000000u128, // deposit (0.120000000002 Ⓝ)
+    );
+    execution_result.assert_success();
 
-fn sim_helper_init_counter(root_account: &UserAccount) -> UserAccount {
-    // Deploy counter and call "new" method
-    let counter = root_account.deploy(&COUNTER_WASM_BYTES, COUNTER_ID.into(), STORAGE_AMOUNT);
-    counter
+    // register agent
+    agent.call("cron.root".to_string(), "register_agent", &json!({}).to_string().into_bytes(), DEFAULT_GAS, 2090000000000000000000).assert_success();
+
+    // Here's where things get interesting. We must borrow mutable runtime
+    // in order to move blocks forward. But once we do, future calls will
+    // look different.
+    let mut root_runtime = root_account.borrow_runtime_mut();
+    // Move forward proper amount until slot 1740
+    let block_production_result = root_runtime.produce_blocks(1780);
+    assert!(block_production_result.is_ok(), "Couldn't produce blocks");
+    println!("Current block height {}, epoch height {}", root_runtime.current_block().block_height, root_runtime.current_block().epoch_height);
+    println!("Current timestamp {}", root_runtime.current_block().block_timestamp);
+
+    // Agent calls proxy_call using new transaction syntax with borrowed,
+    // mutable runtime object.
+    let res = root_runtime.resolve_tx(SignedTransaction::call(
+        6, // I don't think this matters
+        "agent.root".to_string(),
+        "cron.root".to_string(),
+        &agent_signer.clone(),
+        0,
+        "proxy_call".into(),
+        "{}".as_bytes().to_vec(),
+        DEFAULT_GAS,
+        CryptoHash::default(),
+    ));
+    let (_, res) = res.unwrap();
+    assert_eq!(res.status, ExecutionStatus::SuccessValue(vec![]));
+    root_runtime.process_all().unwrap();
+
+    // Check agent's balance after proxy call
+    let mut agent_view = root_runtime.view_account("agent.root").unwrap();
+    let mut agent_amount = agent_view.amount;
+    println!("agent_amount after proxy call \t\t{:?}", agent_amount);
+
+    // Agent withdraws balance, claiming rewards
+    let res = root_runtime.resolve_tx(SignedTransaction::call(
+        7,
+        "agent.root".to_string(),
+        "cron.root".to_string(),
+        &agent_signer,
+        0,
+        "withdraw_task_balance".into(),
+        "{}".as_bytes().to_vec(),
+        DEFAULT_GAS,
+        CryptoHash::default(),
+    ));
+    let (_, res) = res.unwrap();
+    // res.
+    assert_eq!(res.status, ExecutionStatus::SuccessValue(vec![]));
+    root_runtime.process_all().expect("Issue withdrawing task balance");
+
+    // Check agent's balance after withdrawal
+    agent_view = root_runtime.view_account("agent.root").unwrap();
+    agent_amount = agent_view.amount;
+    println!("agent_amount after agent withdraw \t{:?}", agent_amount.clone());
+    assert_eq!(agent_amount, 6_000_055_704_498_754_825_899_999_791);
 }
