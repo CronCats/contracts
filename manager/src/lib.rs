@@ -245,12 +245,17 @@ impl CronManager {
         if let Some(k) = slot_ballpark {
             let mut ret: Vec<Base64VecU8> = Vec::new();
             let tasks = self.slots.get(&k).unwrap();
+
             for task in tasks.iter() {
-                ret.push(Base64VecU8::from(task.to_vec()));
+                let task_data = self.tasks.get(&task.to_vec()).unwrap();
+                // Do not return tasks that are currently being processed
+                if task_data.status == TaskStatus::Ready || task_data.status == TaskStatus::Complete {
+                    ret.push(Base64VecU8::from(task.to_vec()));
+                }
             }
             (ret, U128::from(current_slot))
         } else {
-            (vec![Base64VecU8::from(vec![])], U128::from(current_slot))
+            (vec![], U128::from(current_slot))
         }
     }
 
@@ -490,19 +495,28 @@ impl CronManager {
         log!("current slot {:?}", current_slot);
 
         // get task based on current slot
-        let slot_opt = self.slots.get(&current_slot);
+        // priority goes to tasks that have fallen behind (using floor key)
+        let mut slot_opt = self.slots.get(&current_slot);
+        let slot_ballpark = self.slots.floor_key(&current_slot);
+        println!("slot_ballpark {:?} {:?}",slot_ballpark, current_slot);
+        if let Some(k) = slot_ballpark {
+            slot_opt = self.slots.get(&k);
+        }
+
         if slot_opt.is_none() {
             env::panic(b"No tasks found in slot");
         }
-        let mut slot = slot_opt.unwrap();
-        log!("slot {:?}", &slot);
+        let mut slot_data = slot_opt.unwrap();
+        log!("slot {:?}", &slot_data);
 
         // Get a single task hash, then retrieve task details
-        let hash = slot.pop().expect("No tasks available");
+        let hash = slot_data.pop().expect("No tasks available");
         let mut task = self.tasks.get(&hash).expect("No task found by hash");
         log!("Found Task {:?}", &task);
 
-        // let hash = self.hash(&task);
+        // Check that task status is ready or completed
+        assert!(task.status == TaskStatus::Ready || task.status == TaskStatus::Complete, "Task cannot be executed, check configuration");
+
         let call_balance_used = self.task_balance_uses(&task);
 
         assert!(
@@ -519,6 +533,7 @@ impl CronManager {
         // only skip scheduling if user didnt intend
         if task.recurring != false {
             let next_slot = self.get_slot_from_cadence(task.cadence.clone());
+            log!("Scheduling Next Task {:?}", &next_slot);
             assert!(
                 &current_slot < &next_slot,
                 "Cannot schedule task in the past"
@@ -1096,6 +1111,55 @@ mod tests {
                 193, 186, 212, 162, 3, 139, 78, 84, 11, 30, 30, 194, 160, 130
             ]
         );
+    }
+
+    #[test]
+    fn test_task_get_only_active() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = CronManager::new();
+
+        // Move forward time and blocks to get more accurate bps
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(3000000000200)
+            .block_timestamp(BLOCK_START_TS + (6 * NANO))
+            .block_index(BLOCK_START_BLOCK + 6)
+            .build());
+
+        // create a some tasks
+        contract.create_task(
+            "contract.testnet".to_string(),
+            "increment".to_string(),
+            "*/10 * * * * *".to_string(),
+            Some(false),
+            Some(U128::from(0)),
+            Some(200),
+            None,
+        );
+        contract.create_task(
+            "contract.testnet".to_string(),
+            "decrement".to_string(),
+            "*/10 * * * * *".to_string(),
+            Some(false),
+            Some(U128::from(0)),
+            Some(200),
+            None,
+        );
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(3000000000200)
+            .block_timestamp(BLOCK_START_TS + (12 * NANO))
+            .block_index(BLOCK_START_BLOCK + 12)
+            .build());
+        testing_env!(context.is_view(true).build());
+        println!("contract.get_tasks(None) {:?}", contract.get_tasks(Some(1)).0.len());
+        assert_eq!(contract.get_tasks(Some(1)).0.len(), 2, "Task amount diff than expected");
+
+        // change the tasks status
+        // contract.proxy_call();
+        // testing_env!(context.is_view(true).build());
+        // assert_eq!(contract.get_tasks(Some(2)).0.len(), 0, "Task amount should be less");
     }
 
     // TODO: Finish

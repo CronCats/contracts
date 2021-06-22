@@ -116,7 +116,7 @@ fn simulate_basic_task_checks() {
     let error_message = error.to_string();
     assert!(error_message.contains("No task found by hash"));
 
-    // Get has from task just added.
+    // Get hash from task just added.
     task_view_result = root.view(
         cron.account_id(),
         "get_task",
