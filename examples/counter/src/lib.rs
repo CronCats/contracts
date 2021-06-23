@@ -20,7 +20,7 @@ static ALLOC: near_sdk::wee_alloc::WeeAlloc = near_sdk::wee_alloc::WeeAlloc::INI
 #[derive(Default, BorshDeserialize, BorshSerialize)]
 pub struct Counter {
     // See more data types at https://doc.rust-lang.org/book/ch03-02-data-types.html
-    val: i8, // i8 is signed. unsigned integers are also available: u8, u16, u32, u64, u128
+    val: i128, // changed to allow maximum calls before overflow
 }
 
 #[near_bindgen]
@@ -36,7 +36,7 @@ impl Counter {
     /// ```bash
     /// near view counter.YOU.testnet get_num
     /// ```
-    pub fn get_num(&self) -> i8 {
+    pub fn get_num(&self) -> i128 {
         return self.val;
     }
 
