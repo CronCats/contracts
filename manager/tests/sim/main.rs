@@ -6,9 +6,10 @@ use near_sdk::serde_json::json;
 use near_sdk_sim::account::AccessKey;
 use near_sdk_sim::hash::CryptoHash;
 use near_sdk_sim::near_crypto::{InMemorySigner, KeyType, Signer};
+use near_sdk_sim::receipt::ReceiptEnum;
 use near_sdk_sim::runtime::{GenesisConfig, RuntimeStandalone};
 use near_sdk_sim::state_record::StateRecord;
-use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
+use near_sdk_sim::transaction::{Action, ExecutionStatus, SignedTransaction};
 use near_sdk_sim::{init_simulator, to_yocto, UserAccount, DEFAULT_GAS, STORAGE_AMOUNT};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -25,6 +26,7 @@ const AGENT_ID: &str = "agent.sim";
 const USER_ID: &str = "user.sim";
 const TASK_BASE64: &str = "chUCZxP6uO5xZIjwI9XagXVUCV7nmE09HVRUap8qauo=";
 const AGENT_REGISTRATION_COST: u128 = 2_090_000_000_000_000_000_000;
+const AGENT_FEE: u128 = 60_000_000_000_000_000_000_000u128;
 
 type TaskBase64Hash = String;
 
@@ -346,11 +348,9 @@ fn simulate_task_creation_agent_usage() {
     cron.call(
         cron.account_id(),
         "update_settings",
-        &json!({
-            "agent_fee": U128::from(60_000_000_000_000_000_000_000u128)
-        })
-        .to_string()
-        .into_bytes(), // 0.06 Ⓝ
+        &json!({ "agent_fee": U128::from(AGENT_FEE) })
+            .to_string()
+            .into_bytes(), // 0.06 Ⓝ
         DEFAULT_GAS,
         0, // attached deposit
     )
@@ -382,7 +382,7 @@ fn simulate_task_creation_agent_usage() {
             "register_agent",
             &json!({}).to_string().into_bytes(),
             DEFAULT_GAS,
-            2090000000000000000000,
+            AGENT_REGISTRATION_COST,
         )
         .assert_success();
 
@@ -405,7 +405,7 @@ fn simulate_task_creation_agent_usage() {
 
     // Agent calls proxy_call using new transaction syntax with borrowed,
     // mutable runtime object.
-    let res = root_runtime.resolve_tx(SignedTransaction::call(
+    let mut res = root_runtime.resolve_tx(SignedTransaction::call(
         6, // I don't think this matters
         "agent.root".to_string(),
         "cron.root".to_string(),
@@ -416,18 +416,39 @@ fn simulate_task_creation_agent_usage() {
         DEFAULT_GAS,
         CryptoHash::default(),
     ));
-    let (_, res) = res.unwrap();
-    assert_eq!(res.status, ExecutionStatus::SuccessValue(vec![]));
+    let (_, res_outcome) = res.unwrap();
+    assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
     root_runtime.process_all().unwrap();
 
-    // Check agent's balance after proxy call
-    let mut agent_view = root_runtime.view_account("agent.root").unwrap();
-    let mut agent_amount = agent_view.amount;
-    println!("agent_amount after proxy call \t\t{:?}", agent_amount);
+    // Look at agent object and see how much balance there is
+    res = root_runtime.resolve_tx(SignedTransaction::call(
+        7,
+        "agent.root".to_string(),
+        "cron.root".to_string(),
+        &agent_signer,
+        0,
+        "get_agent".into(),
+        "{\"account\": \"agent.root\"}".as_bytes().to_vec(),
+        DEFAULT_GAS,
+        CryptoHash::default(),
+    ));
+    let (_, res_outcome) = res.unwrap();
+    let new_agent_balance = match res_outcome.status {
+        ExecutionStatus::SuccessValue(res_agent) => {
+            let res_agent_info = String::from_utf8_lossy(res_agent.as_ref());
+            let agent: Agent = serde_json::from_str(res_agent_info.as_ref()).unwrap();
+            agent.balance
+        }
+        _ => panic!("Did not successfully get agent info"),
+    };
+    // The agent's balance should be the storage cost plus the reward
+    assert_eq!(new_agent_balance.0, AGENT_REGISTRATION_COST + AGENT_FEE);
 
     // Agent withdraws balance, claiming rewards
-    let res = root_runtime.resolve_tx(SignedTransaction::call(
-        7,
+    // Here we don't resolve the transaction, but instead just send it so we can view
+    // the receipts generated
+    root_runtime.send_tx(SignedTransaction::call(
+        8,
         "agent.root".to_string(),
         "cron.root".to_string(),
         &agent_signer,
@@ -437,19 +458,38 @@ fn simulate_task_creation_agent_usage() {
         DEFAULT_GAS,
         CryptoHash::default(),
     ));
-    let (_, res) = res.unwrap();
-    // res.
-    assert_eq!(res.status, ExecutionStatus::SuccessValue(vec![]));
+    let pending_receipts = root_runtime.pending_receipts();
+
+    assert_eq!(
+        pending_receipts.len(),
+        1,
+        "Expected there to be one receipt during agent withdrawal"
+    );
+    let receipt = &pending_receipts[0];
+    let receipt_enum = receipt.clone().receipt;
+    // Consider flattening the nested matches like https://stackoverflow.com/a/38523776/711863
+    match receipt_enum {
+        ReceiptEnum::Action(a) => {
+            let actions = a.actions;
+            assert_eq!(
+                actions.len(),
+                1,
+                "Expected only one Transfer Action during agent withdrawal."
+            );
+            match &actions[0] {
+                Action::Transfer(transfer_action) => {
+                    // Finally we do the assertion that the agent gets the expected payment
+                    assert_eq!(
+                        transfer_action.deposit, 188721950334965552025544,
+                        "Agent being transferred different fee amount."
+                    )
+                }
+                _ => panic!("Expected a Transfer Action during agent withdrawal."),
+            }
+        }
+        _ => panic!("Expected only one action receipt of transfer during agent withdrawal."),
+    }
     root_runtime
         .process_all()
         .expect("Issue withdrawing task balance");
-
-    // Check agent's balance after withdrawal
-    agent_view = root_runtime.view_account("agent.root").unwrap();
-    agent_amount = agent_view.amount;
-    println!(
-        "agent_amount after agent withdraw \t{:?}",
-        agent_amount.clone()
-    );
-    assert_eq!(agent_amount, 6_000_055_704_498_754_825_899_999_791);
 }
