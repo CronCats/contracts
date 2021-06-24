@@ -285,6 +285,43 @@ impl CronManager {
         ret
     }
 
+    /// Most useful for debugging at this point.
+    pub fn debug_slots(&self) -> Vec<u128> {
+        let mut ret: Vec<u128> = Vec::new();
+        for slot in self.slots.iter() {
+            ret.push(slot.0);
+        }
+        ret
+    }
+
+    /// Most useful for debugging at this point.
+    pub fn debug_slots_len(&self) -> u64 {
+        self.slots.len()
+    }
+
+    /// Most useful for debugging at this point.
+    pub fn debug_slots_min(&self) -> Option<u128> {
+        self.slots.min()
+    }
+
+    /// Most useful for debugging at this point.
+    pub fn debug_slots_rem(&mut self, k: u128) {
+        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Only owner");
+        self.slots.remove(&k);
+    }
+
+    /// Most useful for debugging at this point.
+    pub fn debug_slots_clean(&mut self) {
+        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Only owner");
+        let mut idx = 0;
+
+        while idx < 5 {
+            let k =self.slots.min().unwrap();
+            self.slots.remove(&k);
+            idx += 1;
+        }
+    }
+
     /// Gets the data payload of a single task by hash
     ///
     /// ```bash
