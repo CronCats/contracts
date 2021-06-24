@@ -64,6 +64,8 @@ near view cron.$NEAR_ACCT get_tasks '{"offset": 999}'
 
 near call cron.$NEAR_ACCT proxy_call --accountId agent.$NEAR_ACCT
 
+near view cron.$NEAR_ACCT get_all_tasks
+
 # Agents
 near call cron.$NEAR_ACCT register_agent '{"payable_account_id": "user.'$NEAR_ACCT'"}' --accountId agent.$NEAR_ACCT
 

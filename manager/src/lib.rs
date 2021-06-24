@@ -5,7 +5,7 @@ use near_contract_standards::storage_management::StorageManagement;
 use near_sdk::{
     base64,
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, TreeMap},
+    collections::{LookupMap, TreeMap, UnorderedMap},
     env,
     json_types::{Base58PublicKey, Base64VecU8, ValidAccountId, U128},
     log, near_bindgen,
@@ -118,7 +118,7 @@ pub struct CronManager {
     // Basic management
     agents: LookupMap<AccountId, Agent>,
     slots: TreeMap<u128, Vec<Vec<u8>>>,
-    tasks: LookupMap<Vec<u8>, Task>,
+    tasks: UnorderedMap<Vec<u8>, Task>,
 
     // Economics
     available_balance: Balance,
@@ -144,7 +144,7 @@ impl CronManager {
             owner_pk: env::signer_account_pk(),
             bps_block: env::block_index(),
             bps_timestamp: env::block_timestamp(),
-            tasks: LookupMap::new(StorageKeys::Tasks),
+            tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),
             slots: TreeMap::new(StorageKeys::Slots),
             available_balance: 0,
@@ -259,7 +259,9 @@ impl CronManager {
         }
     }
 
-    /// Most useful for debugging at this point.
+    /// Returns task data
+    /// Used by the frontend for viewing tasks
+    /// TODO: Consider the data structure change, are there more efficient storage? https://docs.near.org/docs/concepts/data-storage#gas-consumption-examples-1
     pub fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Task> {
         let mut ret: Vec<Task> = Vec::new();
         if let Some(slot_number) = slot {
@@ -273,13 +275,9 @@ impl CronManager {
                 ret.push(task);
             }
         } else {
-            // Return all slots
-            for slot in self.slots.iter() {
-                let tasks_in_slot = slot.1;
-                for task_hash in tasks_in_slot.iter() {
-                    let task = self.tasks.get(&task_hash).expect("No task found by hash");
-                    ret.push(task);
-                }
+            // Return all tasks
+            for (_, task) in self.tasks.iter() {
+                ret.push(task);
             }
         }
         ret
