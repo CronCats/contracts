@@ -717,10 +717,12 @@ impl CronManager {
                 agent.balance.0 > self.agent_storage_usage as u128,
                 "No Agent balance beyond the storage balance"
             );
+            let withdrawal_amount = agent.balance.0 - (self.agent_storage_usage as u128 * env::storage_byte_cost());
+            log!("Withdrawal of {} has been sent.", withdrawal_amount);
             Promise::new(agent.payable_account_id.to_string())
-                .transfer(agent.balance.0 - self.agent_storage_usage as u128)
+                .transfer(withdrawal_amount)
         } else {
-            env::panic(b"No Agent");
+            env::panic(b"No Agent")
         }
     }
 
