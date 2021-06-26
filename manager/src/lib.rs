@@ -499,9 +499,12 @@ impl CronManager {
         let mut slot_opt = self.slots.get(&current_slot);
         let slot_ballpark = self.slots.floor_key(&current_slot);
         println!("slot_ballpark {:?} {:?}",slot_ballpark, current_slot);
-        if let Some(k) = slot_ballpark {
+        let using_floor_key: bool = if let Some(k) = slot_ballpark {
             slot_opt = self.slots.get(&k);
-        }
+            true
+        } else {
+            false
+        };
 
         if slot_opt.is_none() {
             env::panic(b"No tasks found in slot");
@@ -511,6 +514,14 @@ impl CronManager {
 
         // Get a single task hash, then retrieve task details
         let hash = slot_data.pop().expect("No tasks available");
+
+        // After popping, ensure state is rewritten back
+        if using_floor_key {
+            self.slots.insert(&self.slots.floor_key(&current_slot).unwrap(), &slot_data);
+        } else {
+            self.slots.insert(&current_slot, &slot_data);
+        }
+
         let mut task = self.tasks.get(&hash).expect("No task found by hash");
         log!("Found Task {:?}", &task);
 
