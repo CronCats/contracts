@@ -255,17 +255,7 @@ fn simulate_many_tasks() {
     assert_eq!(tasks_info.hashes.len(), 0, "Expected no tasks as before");
 
     success_vec = success_val.trim().into();
-    // let sheesh: Vec<u8> = new_success_val.trim().into();
     assert_eq!(get_tasks_view_res.unwrap(), success_vec, "There should not be any tasks at current slot of 120");
-    // assert!(root_runtime.produce_blocks(19).is_ok(), "Couldn't produce blocks");
-    //
-    // // Get tasks will return tasks for next slot; should be empty. 240 is the next slot with tasks
-    // get_tasks_view_res = root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
-    // success_val = r#"
-    //     [[],"180"]
-    // "#;
-    // success_vec = success_val.trim().into();
-    // assert_eq!(get_tasks_view_res.unwrap(), success_vec, "Expected no tasks at slot 180");
 
     // Proxy call should panic when no tasks to execute
     res = root_runtime.resolve_tx(SignedTransaction::call(
@@ -279,8 +269,7 @@ fn simulate_many_tasks() {
         DEFAULT_GAS,
         CryptoHash::default(),
     ));
-    let (_, res_outcome) = res.unwrap()
-        ;
+    let (_, res_outcome) = res.unwrap();
     // Ensure that it panics with a message we expect.
     match res_outcome.status {
         ExecutionStatus::Failure(f) => {
@@ -596,7 +585,6 @@ fn simulate_task_creation_agent_usage() {
     // in order to move blocks forward. But once we do, future calls will
     // look different.
     let mut root_runtime = root_account.borrow_runtime_mut();
-    // let mut cron_runtime = cron.borrow_runtime();
     // Move forward proper amount until slot 1740
     let block_production_result = root_runtime.produce_blocks(1780);
     assert!(block_production_result.is_ok(), "Couldn't produce blocks");
@@ -672,8 +660,4 @@ fn simulate_task_creation_agent_usage() {
         }
     }
     assert!(found_withdrawal_log, "Expected a recent outcome to have a log about the transfer action.");
-
-    // let logs = res_outcome.logs;
-    // assert_eq!(logs.len(), 1, "Expected one log after agent withdrawal.");
-    // assert_eq!(logs[0].as_str(), "Withdrawal of 60000000000000000000000 has been sent.");
 }
