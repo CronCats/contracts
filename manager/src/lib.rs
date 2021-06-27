@@ -532,10 +532,12 @@ impl CronManager {
         // priority goes to tasks that have fallen behind (using floor key)
         let mut slot_opt = self.slots.get(&current_slot);
         let slot_ballpark = self.slots.floor_key(&current_slot);
-        println!("slot_ballpark {:?} {:?}",slot_ballpark, current_slot);
-        if let Some(k) = slot_ballpark {
+        let using_floor_key: bool = if let Some(k) = slot_ballpark {
             slot_opt = self.slots.get(&k);
-        }
+            true
+        } else {
+            false
+        };
 
         if slot_opt.is_none() {
             env::panic(b"No tasks found in slot");
@@ -545,6 +547,14 @@ impl CronManager {
 
         // Get a single task hash, then retrieve task details
         let hash = slot_data.pop().expect("No tasks available");
+
+        // After popping, ensure state is rewritten back
+        if using_floor_key {
+            self.slots.insert(&self.slots.floor_key(&current_slot).unwrap(), &slot_data);
+        } else {
+            self.slots.insert(&current_slot, &slot_data);
+        }
+
         let mut task = self.tasks.get(&hash).expect("No task found by hash");
         log!("Found Task {:?}", &task);
 
@@ -755,10 +765,12 @@ impl CronManager {
                 agent.balance.0 > self.agent_storage_usage as u128,
                 "No Agent balance beyond the storage balance"
             );
+            let withdrawal_amount = agent.balance.0 - (self.agent_storage_usage as u128 * env::storage_byte_cost());
+            log!("Withdrawal of {} has been sent.", withdrawal_amount);
             Promise::new(agent.payable_account_id.to_string())
-                .transfer(agent.balance.0 - self.agent_storage_usage as u128)
+                .transfer(withdrawal_amount)
         } else {
-            env::panic(b"No Agent");
+            env::panic(b"No Agent")
         }
     }
 
@@ -959,7 +971,6 @@ mod tests {
         let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
         let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
         // Print the newly formatted date and time
-        // println!("{}", newdate);
         newdate.to_string()
     }
 
