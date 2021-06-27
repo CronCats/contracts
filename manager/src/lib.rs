@@ -525,7 +525,6 @@ impl CronManager {
         let mut agent = agent_opt.unwrap();
 
         // Get current slot based on block or timestamp
-        // TODO: Adjust this to get slot from treemap floor?
         let current_slot = self.get_slot_id(None);
         log!("current slot {:?}", current_slot);
 
@@ -563,7 +562,8 @@ impl CronManager {
         agent.balance = U128::from(agent.balance.0 + self.agent_fee);
         agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
 
-        // TODO: Process task exit, if no future task can execute
+        // Clean up slot if no more data
+        if slot_data.len() < 1 { self.slots.remove(&slot_ballpark.unwrap()); }
 
         // only skip scheduling if user didnt intend
         if task.recurring != false {
@@ -578,6 +578,9 @@ impl CronManager {
             let mut slot_slots = self.slots.get(&next_slot).unwrap_or(Vec::new());
             slot_slots.push(hash.clone());
             self.slots.insert(&next_slot, &slot_slots);
+        } else if call_balance_used * 2 <= task.total_deposit.0 {
+            // TODO: Process task exit, if no future task can execute
+            return self.exit_task(hash);
         }
 
         // Update agent storage
