@@ -498,7 +498,6 @@ impl CronManager {
         // priority goes to tasks that have fallen behind (using floor key)
         let mut slot_opt = self.slots.get(&current_slot);
         let slot_ballpark = self.slots.floor_key(&current_slot);
-        println!("slot_ballpark {:?} {:?}",slot_ballpark, current_slot);
         let using_floor_key: bool = if let Some(k) = slot_ballpark {
             slot_opt = self.slots.get(&k);
             true
@@ -934,7 +933,6 @@ mod tests {
         let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
         let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
         // Print the newly formatted date and time
-        // println!("{}", newdate);
         newdate.to_string()
     }
 
