@@ -1,4 +1,4 @@
-use manager::{Agent, Task, TaskStatus};
+use manager::{Agent, Task}; //TaskStatus
 use near_primitives_core::account::Account as PrimitiveAccount;
 use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::serde::{Deserialize, Serialize};
@@ -353,7 +353,7 @@ fn simulate_basic_task_checks() {
         function_id: "increment".to_string(),
         cadence: "0   30   9,12,15     1,15       May-Aug  Mon,Wed,Fri  2018/2".to_string(),
         recurring: true,
-        status: TaskStatus::Ready,
+        // status: TaskStatus::Ready,
         total_deposit: U128::from(36000000000000),
         deposit: U128::from(12000000000000),
         gas: 3000000000000,
@@ -603,6 +603,7 @@ fn simulate_task_creation_agent_usage() {
         CryptoHash::default(),
     ));
     let (_, res_outcome) = res.unwrap();
+    println!("res_outcome {:?}", res_outcome);
     assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
 
     // Look at agent object and see how much balance there is
@@ -644,7 +645,7 @@ fn simulate_task_creation_agent_usage() {
         CryptoHash::default(),
     ));
 
-    let (_, res_outcome) = res.unwrap();
+    let (_, _res_outcome) = res.unwrap();
     root_runtime.process_all().unwrap();
     let last_outcomes = &root_runtime.last_outcomes;
 
