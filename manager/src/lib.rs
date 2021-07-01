@@ -514,8 +514,6 @@ impl CronManager {
     /// ```bash
     /// near call cron.testnet proxy_call --accountId YOU.testnet
     /// ```
-    // TODO: Change OOP, be careful on rewind execution!
-    // TODO: How can this promise execute and allow panics?
     pub fn proxy_call(&mut self) {
         // No adding tasks while contract is paused
         assert_eq!(self.paused, false, "Task execution paused");
@@ -553,28 +551,18 @@ impl CronManager {
 
         // After popping, ensure state is rewritten back
         if using_floor_key {
-            self.slots.insert(&self.slots.floor_key(&current_slot).unwrap(), &slot_data);
+            self.slots.insert(&slot_ballpark.unwrap(), &slot_data);
         } else {
             self.slots.insert(&current_slot, &slot_data);
         }
 
-        let mut task = self.tasks.get(&hash).expect("No task found by hash");
-        log!("Found Task {:?}", &task);
-
         // Clean up slot if no more data
         if slot_data.len() < 1 { self.slots.remove(&slot_ballpark.unwrap()); }
 
-        // Check that task status is ready or completed
-        // assert!(task.status == TaskStatus::Ready || task.status == TaskStatus::Complete, "Task cannot be executed, check configuration");
+        let mut task = self.tasks.get(&hash).expect("No task found by hash");
+        log!("Found Task {:?}", &task);
 
-        let call_balance_used = self.task_balance_uses(&task);
-
-        // assert!(
-        //     call_balance_used <= task.total_deposit.0,
-        //     "Not enough task balance to execute job"
-        // );
-
-        if call_balance_used > task.total_deposit.0 {
+        if self.task_balance_uses(&task) > task.total_deposit.0 {
             log!("Not enough task balance to execute task, exiting");
             // Process task exit, if no future task can execute
             return self.exit_task(hash);
@@ -589,9 +577,8 @@ impl CronManager {
 
         // Decrease task balance
         // TODO: Change to real gas used
+        // TODO: Make sure unused gas gets returned to task as well
         task.total_deposit = U128::from(task.total_deposit.0 - self.task_balance_used());
-
-        // task.status = TaskStatus::Active;
 
         // Update task storage
         self.tasks.insert(&hash, &task);
@@ -615,6 +602,12 @@ impl CronManager {
         env::promise_return(promise_second);
     }
 
+    /// Logic executed on the completion of a proxy call
+    /// Internal Method
+    /// 
+    /// Responsible for:
+    /// 1. Checking if the task needs to reschedule
+    /// 2. Finalizing tasks that are done running, return balance to owner
     #[private]
     pub fn callback_for_proxy_call(&mut self, task_hash: Vec<u8>) {
         assert_eq!(
@@ -626,16 +619,19 @@ impl CronManager {
             .tasks
             .get(&task_hash.clone())
             .expect("No task found by hash");
+
         match env::promise_result(0) {
             PromiseResult::Successful(_) => {
                 log!(
                     "Task {} completed successfully",
                     base64::encode(task_hash.clone())
                 );
-                // task.status = TaskStatus::Complete;
             }
             PromiseResult::Failed => {
-                // task.status = TaskStatus::Failed;
+                log!(
+                    "Task {} Failed",
+                    base64::encode(task_hash.clone())
+                );
             }
             PromiseResult::NotReady => unreachable!(),
         };

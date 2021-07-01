@@ -603,7 +603,6 @@ fn simulate_task_creation_agent_usage() {
         CryptoHash::default(),
     ));
     let (_, res_outcome) = res.unwrap();
-    println!("res_outcome {:?}", res_outcome);
     assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
 
     // Look at agent object and see how much balance there is
