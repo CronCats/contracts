@@ -274,7 +274,7 @@ fn simulate_many_tasks() {
     match res_outcome.status {
         ExecutionStatus::Failure(f) => {
             // Not great to use `contains` but will have to do for now.
-            assert!(f.to_string().contains("No tasks available"), "Should have error that no tasks are available");
+            assert!(f.to_string().contains("No tasks found"), "Should have error that no tasks are available");
         },
         _ => panic!("Expected failure when proxy_call has no tasks to execute")
     }

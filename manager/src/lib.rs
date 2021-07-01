@@ -649,6 +649,8 @@ impl CronManager {
             }
             PromiseResult::NotReady => unreachable!(),
         };
+
+        // TODO: NOTE: Is there a time when this task should be deleted?
         self.tasks.insert(&task_hash, &task);
     }
 
