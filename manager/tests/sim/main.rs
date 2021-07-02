@@ -17,8 +17,8 @@ use near_sdk_sim::types::AccountId;
 
 // Load in contract bytes at runtime
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
-    CRON_MANAGER_WASM_BYTES => "../res/manager.wasm",
-    COUNTER_WASM_BYTES => "../res/rust_counter_tutorial.wasm",
+    CRON_MANAGER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/manager.wasm",
+    COUNTER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/rust_counter_tutorial.wasm",
 }
 
 const MANAGER_ID: &str = "manager.sim";
