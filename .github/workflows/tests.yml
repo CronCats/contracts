@@ -15,7 +15,7 @@ jobs:
       - name: Build
         env:
           IS_GITHUB_ACTION: true
-        run: cargo build --workspace --target wasm32-unknown-unknown --release
+        run: cargo +stable build --workspace --target wasm32-unknown-unknown --release
       - name: Copy wasm files
         uses: canastro/copy-file-action@master
         with:
