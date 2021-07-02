@@ -1,4 +1,5 @@
 use manager::{Agent, Task, TaskStatus};
+use near_primitives_core::account::Account as PrimitiveAccount;
 use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json;
@@ -7,13 +8,12 @@ use near_sdk_sim::account::AccessKey;
 use near_sdk_sim::hash::CryptoHash;
 use near_sdk_sim::near_crypto::{InMemorySigner, KeyType, Signer};
 use near_sdk_sim::runtime::{GenesisConfig, RuntimeStandalone};
-use near_primitives::test_utils::account_new;
 use near_sdk_sim::state_record::StateRecord;
 use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
 use near_sdk_sim::{init_simulator, to_yocto, UserAccount, DEFAULT_GAS, STORAGE_AMOUNT, ExecutionResult};
 use std::cell::RefCell;
 use std::rc::Rc;
-use near_sdk_sim::types::{AccountId, Balance, StorageUsage};
+use near_sdk_sim::types::AccountId;
 
 // Load in contract bytes at runtime
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
@@ -30,23 +30,6 @@ const AGENT_REGISTRATION_COST: u128 = 2_090_000_000_000_000_000_000;
 const AGENT_FEE: u128 = 60_000_000_000_000_000_000_000u128;
 
 type TaskBase64Hash = String;
-
-// Note: this is copy/pasted from use near_primitives_core::account::Account
-// We cannot use this import or it will break Windows compatibility
-// #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-// #[serde(crate = "near_sdk::serde")]
-// pub struct Account {
-//     /// The total not locked tokens.
-//     // #[serde(with = "u128_dec_format_compatible")]
-//     pub amount: Balance,
-//     /// The amount locked due to staking.
-//     // #[serde(with = "u128_dec_format_compatible")]
-//     pub locked: Balance,
-//     /// Hash of the code stored in the storage for this account.
-//     pub code_hash: CryptoHash,
-//     /// Storage used by the given account, includes account id, this struct, access keys and other data.
-//     pub storage_usage: StorageUsage,
-// }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
@@ -151,13 +134,12 @@ fn simulate_many_tasks() {
     // Push agent account to state_records
     genesis.state_records.push(StateRecord::Account {
         account_id: "agent.root".to_string(),
-        // account: Account {
-        //     amount: to_yocto("6000"),
-        //     locked: 0,
-        //     code_hash: Default::default(),
-        //     storage_usage: 0,
-        // },
-        account: account_new(to_yocto("6000"), CryptoHash::default())
+        account: PrimitiveAccount {
+            amount: to_yocto("6000"),
+            locked: 0,
+            code_hash: Default::default(),
+            storage_usage: 0,
+        },
     });
     genesis.state_records.push(StateRecord::AccessKey {
         account_id: "agent.root".to_string(),
@@ -532,13 +514,12 @@ fn simulate_task_creation_agent_usage() {
     // Push agent account to state_records
     genesis.state_records.push(StateRecord::Account {
         account_id: "agent.root".to_string(),
-        // account: Account {
-        //     amount: to_yocto("6000"),
-        //     locked: 0,
-        //     code_hash: Default::default(),
-        //     storage_usage: 0,
-        // },
-        account: account_new(to_yocto("6000"), CryptoHash::default())
+        account: PrimitiveAccount {
+            amount: to_yocto("6000"),
+            locked: 0,
+            code_hash: Default::default(),
+            storage_usage: 0,
+        },
     });
     genesis.state_records.push(StateRecord::AccessKey {
         account_id: "agent.root".to_string(),
