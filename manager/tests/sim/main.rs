@@ -113,18 +113,7 @@ fn counter_create_task(counter: &UserAccount, cron: AccountId, cadence: &str) ->
     )
 }
 
-// Begin tests
-
-#[test]
-fn simulate_task_creation() {
-    let (root, cron) = sim_helper_init();
-    let counter = sim_helper_init_counter(&root);
-    helper_create_task(&cron, &counter);
-}
-
-/// Creates 11 tasks that will occupy different slots, have agent execute them.
-#[test]
-fn simulate_many_tasks() {
+fn bootstrap_time_simulation() -> (InMemorySigner, UserAccount, UserAccount, UserAccount, UserAccount) {
     let mut genesis = GenesisConfig::default();
     let root_account_id = "root".to_string();
     let signer = genesis.init_root_signer(&root_account_id);
@@ -173,15 +162,31 @@ fn simulate_many_tasks() {
         &[],
         DEFAULT_GAS,
         0, // attached deposit
-    )
-        .assert_success();
+    ).assert_success();
+
+    (agent_signer, root_account, agent, counter, cron)
+}
+
+// Begin tests
+
+#[test]
+fn simulate_task_creation() {
+    let (root, cron) = sim_helper_init();
+    let counter = sim_helper_init_counter(&root);
+    helper_create_task(&cron, &counter);
+}
+
+/// Creates 11 tasks that will occupy different slots, have agent execute them.
+#[test]
+fn simulate_many_tasks() {
+    let (agent_signer, root_account, agent, counter, cron) = bootstrap_time_simulation();
 
     // Increase agent fee a bit
     cron.call(
         cron.account_id(),
         "update_settings",
         &json!({
-            "agent_fee": U128::from(60_000_000_000_000_000_000_000u128)
+            "agent_fee": U128::from(AGENT_FEE)
         })
             .to_string()
             .into_bytes(), // 0.06 Ⓝ
@@ -505,56 +510,7 @@ fn simulate_agent_unregister_check() {
 
 #[test]
 fn simulate_task_creation_agent_usage() {
-    let mut genesis = GenesisConfig::default();
-    let root_account_id = "root".to_string();
-    let signer = genesis.init_root_signer(&root_account_id);
-
-    // Make agent signer
-    let agent_signer = InMemorySigner::from_seed("agent.root", KeyType::ED25519, "aloha");
-    // Push agent account to state_records
-    genesis.state_records.push(StateRecord::Account {
-        account_id: "agent.root".to_string(),
-        account: PrimitiveAccount {
-            amount: to_yocto("6000"),
-            locked: 0,
-            code_hash: Default::default(),
-            storage_usage: 0,
-        },
-    });
-    genesis.state_records.push(StateRecord::AccessKey {
-        account_id: "agent.root".to_string(),
-        public_key: agent_signer.clone().public_key(),
-        access_key: AccessKey::full_access(),
-    });
-
-    let runtime = RuntimeStandalone::new_with_store(genesis);
-    let runtime_rc = &Rc::new(RefCell::new(runtime));
-    let root_account = UserAccount::new(runtime_rc, root_account_id, signer);
-
-    // create "counter" account and deploy
-    let counter = root_account.deploy(
-        &COUNTER_WASM_BYTES,
-        "counter.root".to_string(),
-        STORAGE_AMOUNT,
-    );
-
-    // create "agent" account from signer
-    let agent = UserAccount::new(runtime_rc, "agent.root".to_string(), agent_signer.clone());
-
-    // create "cron" account, deploy and call "new"
-    let cron = root_account.deploy(
-        &CRON_MANAGER_WASM_BYTES,
-        "cron.root".to_string(),
-        STORAGE_AMOUNT,
-    );
-    cron.call(
-        cron.account_id(),
-        "new",
-        &[],
-        DEFAULT_GAS,
-        0, // attached deposit
-    )
-    .assert_success();
+    let (agent_signer, root_account, agent, counter, cron) = bootstrap_time_simulation();
 
     // Increase agent fee a bit
     cron.call(
@@ -632,7 +588,7 @@ fn simulate_task_creation_agent_usage() {
     // Agent withdraws balance, claiming rewards
     // Here we don't resolve the transaction, but instead just send it so we can view
     // the receipts generated
-    res = root_runtime.resolve_tx(SignedTransaction::call(
+    root_runtime.resolve_tx(SignedTransaction::call(
         9,
         "agent.root".to_string(),
         "cron.root".to_string(),
@@ -642,9 +598,8 @@ fn simulate_task_creation_agent_usage() {
         "{}".as_bytes().to_vec(),
         DEFAULT_GAS,
         CryptoHash::default(),
-    ));
+    )).expect("Error withdrawing task balance");
 
-    let (_, res_outcome) = res.unwrap();
     root_runtime.process_all().unwrap();
     let last_outcomes = &root_runtime.last_outcomes;
 
