@@ -3,7 +3,7 @@ use near_primitives_core::account::Account as PrimitiveAccount;
 use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json;
-use near_sdk::serde_json::json;
+use near_sdk::serde_json::{json, Value};
 use near_sdk_sim::account::AccessKey;
 use near_sdk_sim::hash::CryptoHash;
 use near_sdk_sim::near_crypto::{InMemorySigner, KeyType, Signer};
@@ -11,7 +11,7 @@ use near_sdk_sim::runtime::{GenesisConfig, RuntimeStandalone};
 use near_sdk_sim::state_record::StateRecord;
 use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
 use near_sdk_sim::{init_simulator, to_yocto, UserAccount, DEFAULT_GAS, STORAGE_AMOUNT, ExecutionResult};
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use near_sdk_sim::types::AccountId;
 
@@ -316,10 +316,9 @@ fn simulate_many_tasks() {
     assert_eq!(agent_info.total_tasks_executed.0, 11, "Expected agent to have completed 11 tasks.");
 
     // Agent withdraws balance, claiming rewards
-    // Here we don't resolve the transaction, but instead just send it so we can view
-    // the receipts generated
+    nonce += 1;
     root_runtime.resolve_tx(SignedTransaction::call(
-        nonce + 1,
+        nonce,
         "agent.root".to_string(),
         "cron.root".to_string(),
         &agent_signer,
@@ -330,27 +329,38 @@ fn simulate_many_tasks() {
         CryptoHash::default(),
     )).expect("Error withdrawing task balance");
 
-    root_runtime.process_all().unwrap();
-    let last_outcomes = &root_runtime.last_outcomes;
-
-    // This isn't great, but we check to make sure the log exists about the transfer
-    // At the time of this writing, finding the TransferAction with the correct
-    // deposit was not happening with simulation tests.
-    // Look for a log saying "Withdrawal of 60000000000000000000000 has been sent." in one of these
-    let mut found_withdrawal_log = false;
-    for outcome_hash in last_outcomes {
-        let eo = root_runtime.outcome(&outcome_hash).unwrap();
-        let expected_log = format!("Withdrawal of {} has been sent.", AGENT_FEE * 11);
-        if eo.logs.contains(&expected_log) {
-            found_withdrawal_log = true;
-        }
-    }
-    assert!(found_withdrawal_log, "Expected a recent outcome to have a log about the transfer action.");
+    let expected_log = format!("Withdrawal of {} has been sent.", AGENT_FEE * 11);
+    find_log_from_outcomes(&root_runtime, &expected_log.to_string());
 
     // Ensure that there's no balance for agent now
     agent_info_result = root_runtime.view_method_call("cron.root", "get_agent", "{\"account\": \"agent.root\"}".as_bytes());
     agent_info = agent_info_result.unwrap_json();
-    assert_eq!(agent_info.balance, U128::from(AGENT_REGISTRATION_COST), "Agent balance should be only state storage after withdrawal.")
+    assert_eq!(agent_info.balance, U128::from(AGENT_REGISTRATION_COST), "Agent balance should be only state storage after withdrawal.");
+
+    // Unregister agent and ensure it's removed
+    nonce += 1;
+    root_runtime.resolve_tx(SignedTransaction::call(
+        nonce,
+        "agent.root".to_string(),
+        "cron.root".to_string(),
+        &agent_signer,
+        1,
+        "unregister_agent".into(),
+        "{}".as_bytes().to_vec(),
+        DEFAULT_GAS,
+        CryptoHash::default(),
+    )).expect("Issue with agent unregister transaction");
+
+    // Check that the proper amount was refunded
+    // + 1 because of the yoctoⓃ that was attached above
+    let expected_log = format!("Agent has been removed and refunded the storage cost of {}", AGENT_REGISTRATION_COST + 1);
+    find_log_from_outcomes(&root_runtime, &expected_log.to_string());
+
+    agent_info_result = root_runtime.view_method_call("cron.root", "get_agent", "{\"account\": \"agent.root\"}".as_bytes());
+    assert!(agent_info_result.is_ok(), "Expected get_agent to return Ok");
+    let agent_info_val: Value = agent_info_result.unwrap_json_value();
+
+    assert_eq!(agent_info_val, Value::Null, "Expected a null return for the agent meaning it no longer exists.");
 }
 
 #[test]
@@ -527,8 +537,7 @@ fn simulate_basic_agent_registration_update() {
             })
             .to_string()
             .into_bytes(),
-        )
-        .unwrap_json();
+        ).unwrap_json();
 
     assert_eq!(agent_result.payable_account_id, "newname.sim".to_string());
 }
@@ -637,7 +646,12 @@ fn simulate_task_creation_agent_usage() {
         CryptoHash::default(),
     )).expect("Error withdrawing task balance");
 
-    root_runtime.process_all().unwrap();
+    // Look for this log
+    let expected_log = format!("Withdrawal of {} has been sent.", AGENT_FEE);
+    find_log_from_outcomes(&root_runtime, &expected_log.to_string());
+}
+
+fn find_log_from_outcomes(root_runtime: &RefMut<RuntimeStandalone>, msg: &String) {
     let last_outcomes = &root_runtime.last_outcomes;
 
     // This isn't great, but we check to make sure the log exists about the transfer
@@ -647,10 +661,10 @@ fn simulate_task_creation_agent_usage() {
     let mut found_withdrawal_log = false;
     for outcome_hash in last_outcomes {
         let eo = root_runtime.outcome(&outcome_hash).unwrap();
-        let expected_log = format!("Withdrawal of {} has been sent.", AGENT_FEE);
-        if eo.logs.contains(&expected_log) {
+        if eo.logs.contains(msg) {
             found_withdrawal_log = true;
         }
     }
-    assert!(found_withdrawal_log, "Expected a recent outcome to have a log about the transfer action.");
+    assert!(found_withdrawal_log, "Expected a recent outcome to have a log about the transfer action. Log: {}", msg);
+
 }
