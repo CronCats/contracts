@@ -722,12 +722,14 @@ impl CronManager {
         let account = env::predecessor_account_id();
 
         // check that signer agent exists
-        if let Some(agent) = self.agents.get(&account) {
+        if let Some(mut agent) = self.agents.get(&account) {
             assert!(
                 agent.balance.0 > self.agent_storage_usage as u128,
                 "No Agent balance beyond the storage balance"
             );
             let withdrawal_amount = agent.balance.0 - (self.agent_storage_usage as u128 * env::storage_byte_cost());
+            agent.balance = U128::from(agent.balance.0 - withdrawal_amount);
+            self.agents.insert(&account, &agent);
             log!("Withdrawal of {} has been sent.", withdrawal_amount);
             Promise::new(agent.payable_account_id.to_string())
                 .transfer(withdrawal_amount)
