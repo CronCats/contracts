@@ -313,7 +313,39 @@ fn simulate_many_tasks() {
     let agent_info_result = root_runtime.view_method_call("cron.root", "get_agent", "{\"account\": \"agent.root\"}".as_bytes());
     let agent_info: Agent = agent_info_result.unwrap_json();
     // Confirm that the agent has executed 11 tasks
-    assert_eq!(agent_info.total_tasks_executed.0, 11, "Expected agent to have completed 11 tasks.")
+    assert_eq!(agent_info.total_tasks_executed.0, 11, "Expected agent to have completed 11 tasks.");
+
+    // Agent withdraws balance, claiming rewards
+    // Here we don't resolve the transaction, but instead just send it so we can view
+    // the receipts generated
+    root_runtime.resolve_tx(SignedTransaction::call(
+        nonce + 1,
+        "agent.root".to_string(),
+        "cron.root".to_string(),
+        &agent_signer,
+        0,
+        "withdraw_task_balance".into(),
+        "{}".as_bytes().to_vec(),
+        DEFAULT_GAS,
+        CryptoHash::default(),
+    )).expect("Error withdrawing task balance");
+
+    root_runtime.process_all().unwrap();
+    let last_outcomes = &root_runtime.last_outcomes;
+
+    // This isn't great, but we check to make sure the log exists about the transfer
+    // At the time of this writing, finding the TransferAction with the correct
+    // deposit was not happening with simulation tests.
+    // Look for a log saying "Withdrawal of 60000000000000000000000 has been sent." in one of these
+    let mut found_withdrawal_log = false;
+    for outcome_hash in last_outcomes {
+        let eo = root_runtime.outcome(&outcome_hash).unwrap();
+        let expected_log = format!("Withdrawal of {} has been sent.", AGENT_FEE * 11);
+        if eo.logs.contains(&expected_log) {
+            found_withdrawal_log = true;
+        }
+    }
+    assert!(found_withdrawal_log, "Expected a recent outcome to have a log about the transfer action.");
 }
 
 #[test]
@@ -610,7 +642,8 @@ fn simulate_task_creation_agent_usage() {
     let mut found_withdrawal_log = false;
     for outcome_hash in last_outcomes {
         let eo = root_runtime.outcome(&outcome_hash).unwrap();
-        if eo.logs.contains(&"Withdrawal of 60000000000000000000000 has been sent.".to_string()) {
+        let expected_log = format!("Withdrawal of {} has been sent.", AGENT_FEE);
+        if eo.logs.contains(&expected_log) {
             found_withdrawal_log = true;
         }
     }
