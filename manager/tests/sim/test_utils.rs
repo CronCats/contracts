@@ -1,14 +1,19 @@
-use near_sdk_sim::{UserAccount, DEFAULT_GAS, init_simulator, to_yocto, STORAGE_AMOUNT, ExecutionResult};
-use crate::{TaskBase64Hash, MANAGER_ID, AGENT_ID, USER_ID, COUNTER_ID, CRON_MANAGER_WASM_BYTES, COUNTER_WASM_BYTES};
+use crate::{
+    TaskBase64Hash, AGENT_ID, COUNTER_ID, COUNTER_WASM_BYTES, CRON_MANAGER_WASM_BYTES, MANAGER_ID,
+    USER_ID,
+};
+use near_primitives_core::account::Account as PrimitiveAccount;
 use near_sdk::json_types::Base64VecU8;
 use near_sdk::serde_json;
 use near_sdk::serde_json::json;
-use near_sdk_sim::types::AccountId;
+use near_sdk_sim::account::AccessKey;
 use near_sdk_sim::near_crypto::{InMemorySigner, KeyType, Signer};
 use near_sdk_sim::runtime::{GenesisConfig, RuntimeStandalone};
 use near_sdk_sim::state_record::StateRecord;
-use near_sdk_sim::account::AccessKey;
-use near_primitives_core::account::Account as PrimitiveAccount;
+use near_sdk_sim::types::AccountId;
+use near_sdk_sim::{
+    init_simulator, to_yocto, ExecutionResult, UserAccount, DEFAULT_GAS, STORAGE_AMOUNT,
+};
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
@@ -24,8 +29,8 @@ pub(crate) fn helper_create_task(cron: &UserAccount, counter: &UserAccount) -> T
             "deposit": "12000000000000",
             "gas": 3000000000000u64,
         })
-            .to_string()
-            .into_bytes(),
+        .to_string()
+        .into_bytes(),
         DEFAULT_GAS,
         36_000_000_000_000u128, // deposit
     );
@@ -49,12 +54,14 @@ pub(crate) fn sim_helper_init() -> (UserAccount, UserAccount) {
         DEFAULT_GAS,
         0, // attached deposit
     )
-        .assert_success();
+    .assert_success();
 
     (root_account, cron)
 }
 
-pub(crate) fn sim_helper_create_agent_user(root_account: &UserAccount) -> (UserAccount, UserAccount) {
+pub(crate) fn sim_helper_create_agent_user(
+    root_account: &UserAccount,
+) -> (UserAccount, UserAccount) {
     let hundred_near = to_yocto("100");
     let agent = root_account.create_user(AGENT_ID.into(), hundred_near);
     let user = root_account.create_user(USER_ID.into(), hundred_near);
@@ -67,7 +74,11 @@ pub(crate) fn sim_helper_init_counter(root_account: &UserAccount) -> UserAccount
     counter
 }
 
-pub(crate) fn counter_create_task(counter: &UserAccount, cron: AccountId, cadence: &str) -> ExecutionResult {
+pub(crate) fn counter_create_task(
+    counter: &UserAccount,
+    cron: AccountId,
+    cadence: &str,
+) -> ExecutionResult {
     counter.call(
         cron,
         "create_task",
@@ -80,14 +91,20 @@ pub(crate) fn counter_create_task(counter: &UserAccount, cron: AccountId, cadenc
             // "gas": 100_000_000_000_000u64,
             "gas": 2_400_000_000_000u64,
         })
-            .to_string()
-            .into_bytes(),
+        .to_string()
+        .into_bytes(),
         DEFAULT_GAS,
         120000000200000000000000, // deposit (0.120000000002 Ⓝ)
     )
 }
 
-pub(crate) fn bootstrap_time_simulation() -> (InMemorySigner, UserAccount, UserAccount, UserAccount, UserAccount) {
+pub(crate) fn bootstrap_time_simulation() -> (
+    InMemorySigner,
+    UserAccount,
+    UserAccount,
+    UserAccount,
+    UserAccount,
+) {
     let mut genesis = GenesisConfig::default();
     let root_account_id = "root".to_string();
     let signer = genesis.init_root_signer(&root_account_id);
@@ -136,7 +153,8 @@ pub(crate) fn bootstrap_time_simulation() -> (InMemorySigner, UserAccount, UserA
         &[],
         DEFAULT_GAS,
         0, // attached deposit
-    ).assert_success();
+    )
+    .assert_success();
 
     (agent_signer, root_account, agent, counter, cron)
 }
@@ -155,5 +173,9 @@ pub(crate) fn find_log_from_outcomes(root_runtime: &RefMut<RuntimeStandalone>, m
             found_withdrawal_log = true;
         }
     }
-    assert!(found_withdrawal_log, "Expected a recent outcome to have a log about the transfer action. Log: {}", msg);
+    assert!(
+        found_withdrawal_log,
+        "Expected a recent outcome to have a log about the transfer action. Log: {}",
+        msg
+    );
 }

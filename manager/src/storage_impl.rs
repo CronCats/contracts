@@ -68,7 +68,10 @@ impl StorageManagement for CronManager {
                 self.agents.remove(&account_id);
                 // We add 1 to reimburse for the 1 yoctoⓃ used to call this method
                 Promise::new(account_id.clone()).transfer(balance + 1);
-                log!("Agent has been removed and refunded the storage cost of {}", balance + 1);
+                log!(
+                    "Agent has been removed and refunded the storage cost of {}",
+                    balance + 1
+                );
                 true
             } else {
                 env::panic(b"Can't unregister the agent with the positive balance. Must use the 'force' parameter if desired.")

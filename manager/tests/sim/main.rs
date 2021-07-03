@@ -1,5 +1,9 @@
 mod test_utils;
 
+use crate::test_utils::{
+    bootstrap_time_simulation, counter_create_task, find_log_from_outcomes, helper_create_task,
+    sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter,
+};
 use manager::{Agent, Task, TaskStatus};
 use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::serde::{Deserialize, Serialize};
@@ -8,7 +12,6 @@ use near_sdk::serde_json::{json, Value};
 use near_sdk_sim::hash::CryptoHash;
 use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
 use near_sdk_sim::DEFAULT_GAS;
-use crate::test_utils::{sim_helper_init, sim_helper_init_counter, helper_create_task, bootstrap_time_simulation, counter_create_task, find_log_from_outcomes, sim_helper_create_agent_user};
 
 // Load in contract bytes at runtime
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
@@ -30,7 +33,7 @@ type TaskBase64Hash = String;
 #[serde(crate = "near_sdk::serde")]
 pub struct GetTasksReturn {
     hashes: Vec<Base64VecU8>,
-    slot: U128
+    slot: U128,
 }
 
 #[test]
@@ -49,14 +52,13 @@ fn simulate_many_tasks() {
     cron.call(
         cron.account_id(),
         "update_settings",
-        &json!({
-            "agent_fee": U128::from(AGENT_FEE)
-        })
+        &json!({ "agent_fee": U128::from(AGENT_FEE) })
             .to_string()
             .into_bytes(), // 0.06 Ⓝ
         DEFAULT_GAS,
         0, // attached deposit
-    ).assert_success();
+    )
+    .assert_success();
 
     // Create 11 tasks with different cadences
     counter_create_task(&counter, cron.account_id(), "0 3 * * * * *").assert_success();
@@ -74,27 +76,37 @@ fn simulate_many_tasks() {
     // Slots 120, 240, 360, 600, 720, 1080, 1800, 2520, 2760, 10740, 18360
 
     // register agent
-    agent.call(
-        "cron.root".to_string(),
-        "register_agent",
-        &json!({}).to_string().into_bytes(),
-        DEFAULT_GAS,
-        AGENT_REGISTRATION_COST,
-    ).assert_success();
+    agent
+        .call(
+            "cron.root".to_string(),
+            "register_agent",
+            &json!({}).to_string().into_bytes(),
+            DEFAULT_GAS,
+            AGENT_REGISTRATION_COST,
+        )
+        .assert_success();
 
     // Here's where things get interesting. We must borrow mutable runtime
     // in order to move blocks forward. But once we do, future calls will
     // look different.
     let mut root_runtime = root_account.borrow_runtime_mut();
-    assert!(root_runtime.produce_blocks(120).is_ok(), "Couldn't produce blocks");
+    assert!(
+        root_runtime.produce_blocks(120).is_ok(),
+        "Couldn't produce blocks"
+    );
 
     // Should find a task
-    let mut get_tasks_view_res = root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
+    let mut get_tasks_view_res =
+        root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
     let mut success_val = r#"
         [["/YD9yxy6pZjlvra3qkvybKdodL3alsfvR6S62/FiYow="],"120"]
     "#;
     let mut success_vec: Vec<u8> = success_val.trim().into(); // trim because of multiline assignment above
-    assert_eq!(get_tasks_view_res.unwrap(), success_vec, "Should find one particular task hash at slot 120");
+    assert_eq!(
+        get_tasks_view_res.unwrap(),
+        success_vec,
+        "Should find one particular task hash at slot 120"
+    );
 
     // Agent calls proxy_call using new transaction syntax with borrowed,
     // mutable runtime object.
@@ -118,13 +130,21 @@ fn simulate_many_tasks() {
         [[],"120"]
     "#;
     success_vec = success_val.trim().into();
-    assert_eq!(get_tasks_view_res.unwrap(), success_vec, "Should find no task hashes at slot 120 anymore");
+    assert_eq!(
+        get_tasks_view_res.unwrap(),
+        success_vec,
+        "Should find no task hashes at slot 120 anymore"
+    );
 
     let mut tasks_info: GetTasksReturn = get_tasks_view_res.unwrap_json();
     assert_eq!(tasks_info.hashes.len(), 0, "Expected no tasks as before");
 
     success_vec = success_val.trim().into();
-    assert_eq!(get_tasks_view_res.unwrap(), success_vec, "There should not be any tasks at current slot of 120");
+    assert_eq!(
+        get_tasks_view_res.unwrap(),
+        success_vec,
+        "There should not be any tasks at current slot of 120"
+    );
 
     // Proxy call should panic when no tasks to execute
     res = root_runtime.resolve_tx(SignedTransaction::call(
@@ -143,9 +163,12 @@ fn simulate_many_tasks() {
     match res_outcome.status {
         ExecutionStatus::Failure(f) => {
             // Not great to use `contains` but will have to do for now.
-            assert!(f.to_string().contains("No tasks available"), "Should have error that no tasks are available");
-        },
-        _ => panic!("Expected failure when proxy_call has no tasks to execute")
+            assert!(
+                f.to_string().contains("No tasks available"),
+                "Should have error that no tasks are available"
+            );
+        }
+        _ => panic!("Expected failure when proxy_call has no tasks to execute"),
     }
 
     // Go through the remainder of the slots, executing tasks
@@ -153,8 +176,12 @@ fn simulate_many_tasks() {
     for n in &[240, 360, 600, 720, 1080, 1800, 2520, 2760, 10740, 18360] {
         // produce blocks until next slot
         let cur_block_height = root_runtime.cur_block.block_height;
-        assert!(root_runtime.produce_blocks(n - cur_block_height).is_ok(), "Couldn't produce blocks");
-        get_tasks_view_res = root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
+        assert!(
+            root_runtime.produce_blocks(n - cur_block_height).is_ok(),
+            "Couldn't produce blocks"
+        );
+        get_tasks_view_res =
+            root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
         tasks_info = get_tasks_view_res.unwrap_json();
         assert_eq!(tasks_info.hashes.len(), 1, "Expecting 1 task for this slot");
         // Proxy call
@@ -171,60 +198,94 @@ fn simulate_many_tasks() {
             CryptoHash::default(),
         ));
         let (_, res_outcome) = res.unwrap();
-        assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]), "Expected proxy_call to succeed when looping through.");
+        assert_eq!(
+            res_outcome.status,
+            ExecutionStatus::SuccessValue(vec![]),
+            "Expected proxy_call to succeed when looping through."
+        );
     }
 
-    let mut agent_info_result = root_runtime.view_method_call("cron.root", "get_agent", "{\"account\": \"agent.root\"}".as_bytes());
+    let mut agent_info_result = root_runtime.view_method_call(
+        "cron.root",
+        "get_agent",
+        "{\"account\": \"agent.root\"}".as_bytes(),
+    );
     let mut agent_info: Agent = agent_info_result.unwrap_json();
     // Confirm that the agent has executed 11 tasks
-    assert_eq!(agent_info.total_tasks_executed.0, 11, "Expected agent to have completed 11 tasks.");
+    assert_eq!(
+        agent_info.total_tasks_executed.0, 11,
+        "Expected agent to have completed 11 tasks."
+    );
 
     // Agent withdraws balance, claiming rewards
     nonce += 1;
-    root_runtime.resolve_tx(SignedTransaction::call(
-        nonce,
-        "agent.root".to_string(),
-        "cron.root".to_string(),
-        &agent_signer,
-        0,
-        "withdraw_task_balance".into(),
-        "{}".as_bytes().to_vec(),
-        DEFAULT_GAS,
-        CryptoHash::default(),
-    )).expect("Error withdrawing task balance");
+    root_runtime
+        .resolve_tx(SignedTransaction::call(
+            nonce,
+            "agent.root".to_string(),
+            "cron.root".to_string(),
+            &agent_signer,
+            0,
+            "withdraw_task_balance".into(),
+            "{}".as_bytes().to_vec(),
+            DEFAULT_GAS,
+            CryptoHash::default(),
+        ))
+        .expect("Error withdrawing task balance");
 
     let expected_log = format!("Withdrawal of {} has been sent.", AGENT_FEE * 11);
     find_log_from_outcomes(&root_runtime, &expected_log.to_string());
 
     // Ensure that there's no balance for agent now
-    agent_info_result = root_runtime.view_method_call("cron.root", "get_agent", "{\"account\": \"agent.root\"}".as_bytes());
+    agent_info_result = root_runtime.view_method_call(
+        "cron.root",
+        "get_agent",
+        "{\"account\": \"agent.root\"}".as_bytes(),
+    );
     agent_info = agent_info_result.unwrap_json();
-    assert_eq!(agent_info.balance, U128::from(AGENT_REGISTRATION_COST), "Agent balance should be only state storage after withdrawal.");
+    assert_eq!(
+        agent_info.balance,
+        U128::from(AGENT_REGISTRATION_COST),
+        "Agent balance should be only state storage after withdrawal."
+    );
 
     // Unregister agent and ensure it's removed
     nonce += 1;
-    root_runtime.resolve_tx(SignedTransaction::call(
-        nonce,
-        "agent.root".to_string(),
-        "cron.root".to_string(),
-        &agent_signer,
-        1,
-        "unregister_agent".into(),
-        "{}".as_bytes().to_vec(),
-        DEFAULT_GAS,
-        CryptoHash::default(),
-    )).expect("Issue with agent unregister transaction");
+    root_runtime
+        .resolve_tx(SignedTransaction::call(
+            nonce,
+            "agent.root".to_string(),
+            "cron.root".to_string(),
+            &agent_signer,
+            1,
+            "unregister_agent".into(),
+            "{}".as_bytes().to_vec(),
+            DEFAULT_GAS,
+            CryptoHash::default(),
+        ))
+        .expect("Issue with agent unregister transaction");
 
     // Check that the proper amount was refunded
     // + 1 because of the yoctoⓃ that was attached above
-    let expected_log = format!("Agent has been removed and refunded the storage cost of {}", AGENT_REGISTRATION_COST + 1);
+    let expected_log = format!(
+        "Agent has been removed and refunded the storage cost of {}",
+        AGENT_REGISTRATION_COST + 1
+    );
     find_log_from_outcomes(&root_runtime, &expected_log.to_string());
 
-    agent_info_result = root_runtime.view_method_call("cron.root", "get_agent", "{\"account\": \"agent.root\"}".as_bytes());
+    agent_info_result = root_runtime.view_method_call(
+        "cron.root",
+        "get_agent",
+        "{\"account\": \"agent.root\"}".as_bytes(),
+    );
     assert!(agent_info_result.is_ok(), "Expected get_agent to return Ok");
     let agent_info_val: Value = agent_info_result.unwrap_json_value();
 
-    assert_eq!(agent_info_val, Value::Null, "Expected a null return for the agent meaning it no longer exists.");
+    assert_eq!(
+        agent_info_val,
+        Value::Null,
+        "Expected a null return for the agent meaning it no longer exists."
+    );
 }
 
 #[test]
@@ -401,7 +462,8 @@ fn simulate_basic_agent_registration_update() {
             })
             .to_string()
             .into_bytes(),
-        ).unwrap_json();
+        )
+        .unwrap_json();
 
     assert_eq!(agent_result.payable_account_id, "newname.sim".to_string());
 }
@@ -439,13 +501,15 @@ fn simulate_task_creation_agent_usage() {
     execution_result.assert_success();
 
     // register agent
-    agent.call(
-        "cron.root".to_string(),
-        "register_agent",
-        &json!({}).to_string().into_bytes(),
-        DEFAULT_GAS,
-        AGENT_REGISTRATION_COST,
-    ).assert_success();
+    agent
+        .call(
+            "cron.root".to_string(),
+            "register_agent",
+            &json!({}).to_string().into_bytes(),
+            DEFAULT_GAS,
+            AGENT_REGISTRATION_COST,
+        )
+        .assert_success();
 
     // Here's where things get interesting. We must borrow mutable runtime
     // in order to move blocks forward. But once we do, future calls will
@@ -498,17 +562,19 @@ fn simulate_task_creation_agent_usage() {
     // Agent withdraws balance, claiming rewards
     // Here we don't resolve the transaction, but instead just send it so we can view
     // the receipts generated
-    root_runtime.resolve_tx(SignedTransaction::call(
-        9,
-        "agent.root".to_string(),
-        "cron.root".to_string(),
-        &agent_signer,
-        0,
-        "withdraw_task_balance".into(),
-        "{}".as_bytes().to_vec(),
-        DEFAULT_GAS,
-        CryptoHash::default(),
-    )).expect("Error withdrawing task balance");
+    root_runtime
+        .resolve_tx(SignedTransaction::call(
+            9,
+            "agent.root".to_string(),
+            "cron.root".to_string(),
+            &agent_signer,
+            0,
+            "withdraw_task_balance".into(),
+            "{}".as_bytes().to_vec(),
+            DEFAULT_GAS,
+            CryptoHash::default(),
+        ))
+        .expect("Error withdrawing task balance");
 
     // Look for this log
     let expected_log = format!("Withdrawal of {} has been sent.", AGENT_FEE);
