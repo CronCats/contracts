@@ -310,8 +310,8 @@ fn simulate_many_tasks() {
         assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]), "Expected proxy_call to succeed when looping through.");
     }
 
-    let agent_info_result = root_runtime.view_method_call("cron.root", "get_agent", "{\"account\": \"agent.root\"}".as_bytes());
-    let agent_info: Agent = agent_info_result.unwrap_json();
+    let mut agent_info_result = root_runtime.view_method_call("cron.root", "get_agent", "{\"account\": \"agent.root\"}".as_bytes());
+    let mut agent_info: Agent = agent_info_result.unwrap_json();
     // Confirm that the agent has executed 11 tasks
     assert_eq!(agent_info.total_tasks_executed.0, 11, "Expected agent to have completed 11 tasks.");
 
@@ -346,6 +346,11 @@ fn simulate_many_tasks() {
         }
     }
     assert!(found_withdrawal_log, "Expected a recent outcome to have a log about the transfer action.");
+
+    // Ensure that there's no balance for agent now
+    agent_info_result = root_runtime.view_method_call("cron.root", "get_agent", "{\"account\": \"agent.root\"}".as_bytes());
+    agent_info = agent_info_result.unwrap_json();
+    assert_eq!(agent_info.balance, U128::from(AGENT_REGISTRATION_COST), "Agent balance should be only state storage after withdrawal.")
 }
 
 #[test]
