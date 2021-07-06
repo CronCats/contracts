@@ -1,24 +1,22 @@
+mod test_utils;
+
+use crate::test_utils::{
+    bootstrap_time_simulation, counter_create_task, find_log_from_outcomes, helper_create_task,
+    sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter,
+};
 use manager::{Agent, Task, TaskStatus};
-use near_primitives_core::account::Account as PrimitiveAccount;
 use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json;
-use near_sdk::serde_json::json;
-use near_sdk_sim::account::AccessKey;
+use near_sdk::serde_json::{json, Value};
 use near_sdk_sim::hash::CryptoHash;
-use near_sdk_sim::near_crypto::{InMemorySigner, KeyType, Signer};
-use near_sdk_sim::runtime::{GenesisConfig, RuntimeStandalone};
-use near_sdk_sim::state_record::StateRecord;
 use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
-use near_sdk_sim::{init_simulator, to_yocto, UserAccount, DEFAULT_GAS, STORAGE_AMOUNT, ExecutionResult};
-use std::cell::RefCell;
-use std::rc::Rc;
-use near_sdk_sim::types::AccountId;
+use near_sdk_sim::DEFAULT_GAS;
 
 // Load in contract bytes at runtime
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
-    CRON_MANAGER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/manager.wasm",
-    COUNTER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/rust_counter_tutorial.wasm",
+    pub CRON_MANAGER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/manager.wasm",
+    pub COUNTER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/rust_counter_tutorial.wasm",
 }
 
 const MANAGER_ID: &str = "manager.sim";
@@ -35,85 +33,8 @@ type TaskBase64Hash = String;
 #[serde(crate = "near_sdk::serde")]
 pub struct GetTasksReturn {
     hashes: Vec<Base64VecU8>,
-    slot: U128
+    slot: U128,
 }
-
-fn helper_create_task(cron: &UserAccount, counter: &UserAccount) -> TaskBase64Hash {
-    let execution_result = counter.call(
-        cron.account_id(),
-        "create_task",
-        &json!({
-            "contract_id": COUNTER_ID,
-            "function_id": "increment".to_string(),
-            "cadence": "0   30   9,12,15     1,15       May-Aug  Mon,Wed,Fri  2018/2".to_string(),
-            "recurring": true,
-            "deposit": "12000000000000",
-            "gas": 3000000000000u64,
-        })
-        .to_string()
-        .into_bytes(),
-        DEFAULT_GAS,
-        36_000_000_000_000u128, // deposit
-    );
-    execution_result.assert_success();
-    let hash: Base64VecU8 = execution_result.unwrap_json();
-    serde_json::to_string(&hash).unwrap()
-}
-
-/// Basic initialization returning the "root account" for the simulator
-/// and the NFT account with the contract deployed and initialized.
-fn sim_helper_init() -> (UserAccount, UserAccount) {
-    let mut root_account = init_simulator(None);
-    root_account = root_account.create_user("sim".to_string(), to_yocto("1000000"));
-
-    // Deploy cron manager and call "new" method
-    let cron = root_account.deploy(&CRON_MANAGER_WASM_BYTES, MANAGER_ID.into(), STORAGE_AMOUNT);
-    cron.call(
-        cron.account_id(),
-        "new",
-        &[],
-        DEFAULT_GAS,
-        0, // attached deposit
-    )
-    .assert_success();
-
-    (root_account, cron)
-}
-
-fn sim_helper_create_agent_user(root_account: &UserAccount) -> (UserAccount, UserAccount) {
-    let hundred_near = to_yocto("100");
-    let agent = root_account.create_user(AGENT_ID.into(), hundred_near);
-    let user = root_account.create_user(USER_ID.into(), hundred_near);
-    (agent, user)
-}
-
-fn sim_helper_init_counter(root_account: &UserAccount) -> UserAccount {
-    // Deploy counter and call "new" method
-    let counter = root_account.deploy(&COUNTER_WASM_BYTES, COUNTER_ID.into(), STORAGE_AMOUNT);
-    counter
-}
-
-fn counter_create_task(counter: &UserAccount, cron: AccountId, cadence: &str) -> ExecutionResult {
-    counter.call(
-        cron,
-        "create_task",
-        &json!({
-            "contract_id": counter.account_id,
-            "function_id": "increment".to_string(),
-            "cadence": cadence,
-            "recurring": true,
-            "deposit": "0",
-            // "gas": 100_000_000_000_000u64,
-            "gas": 2_400_000_000_000u64,
-        })
-            .to_string()
-            .into_bytes(),
-        DEFAULT_GAS,
-        120000000200000000000000, // deposit (0.120000000002 Ⓝ)
-    )
-}
-
-// Begin tests
 
 #[test]
 fn simulate_task_creation() {
@@ -125,69 +46,19 @@ fn simulate_task_creation() {
 /// Creates 11 tasks that will occupy different slots, have agent execute them.
 #[test]
 fn simulate_many_tasks() {
-    let mut genesis = GenesisConfig::default();
-    let root_account_id = "root".to_string();
-    let signer = genesis.init_root_signer(&root_account_id);
-
-    // Make agent signer
-    let agent_signer = InMemorySigner::from_seed("agent.root", KeyType::ED25519, "aloha");
-    // Push agent account to state_records
-    genesis.state_records.push(StateRecord::Account {
-        account_id: "agent.root".to_string(),
-        account: PrimitiveAccount {
-            amount: to_yocto("6000"),
-            locked: 0,
-            code_hash: Default::default(),
-            storage_usage: 0,
-        },
-    });
-    genesis.state_records.push(StateRecord::AccessKey {
-        account_id: "agent.root".to_string(),
-        public_key: agent_signer.clone().public_key(),
-        access_key: AccessKey::full_access(),
-    });
-
-    let runtime = RuntimeStandalone::new_with_store(genesis);
-    let runtime_rc = &Rc::new(RefCell::new(runtime));
-    let root_account = UserAccount::new(runtime_rc, root_account_id, signer);
-
-    // create "counter" account and deploy
-    let counter = root_account.deploy(
-        &COUNTER_WASM_BYTES,
-        "counter.root".to_string(),
-        STORAGE_AMOUNT,
-    );
-
-    // create "agent" account from signer
-    let agent = UserAccount::new(runtime_rc, "agent.root".to_string(), agent_signer.clone());
-
-    // create "cron" account, deploy and call "new"
-    let cron = root_account.deploy(
-        &CRON_MANAGER_WASM_BYTES,
-        "cron.root".to_string(),
-        STORAGE_AMOUNT,
-    );
-    cron.call(
-        cron.account_id(),
-        "new",
-        &[],
-        DEFAULT_GAS,
-        0, // attached deposit
-    )
-        .assert_success();
+    let (agent_signer, root_account, agent, counter, cron) = bootstrap_time_simulation();
 
     // Increase agent fee a bit
     cron.call(
         cron.account_id(),
         "update_settings",
-        &json!({
-            "agent_fee": U128::from(60_000_000_000_000_000_000_000u128)
-        })
+        &json!({ "agent_fee": U128::from(AGENT_FEE) })
             .to_string()
             .into_bytes(), // 0.06 Ⓝ
         DEFAULT_GAS,
         0, // attached deposit
-    ).assert_success();
+    )
+    .assert_success();
 
     // Create 11 tasks with different cadences
     counter_create_task(&counter, cron.account_id(), "0 3 * * * * *").assert_success();
@@ -205,27 +76,37 @@ fn simulate_many_tasks() {
     // Slots 120, 240, 360, 600, 720, 1080, 1800, 2520, 2760, 10740, 18360
 
     // register agent
-    agent.call(
-        "cron.root".to_string(),
-        "register_agent",
-        &json!({}).to_string().into_bytes(),
-        DEFAULT_GAS,
-        AGENT_REGISTRATION_COST,
-    ).assert_success();
+    agent
+        .call(
+            "cron.root".to_string(),
+            "register_agent",
+            &json!({}).to_string().into_bytes(),
+            DEFAULT_GAS,
+            AGENT_REGISTRATION_COST,
+        )
+        .assert_success();
 
     // Here's where things get interesting. We must borrow mutable runtime
     // in order to move blocks forward. But once we do, future calls will
     // look different.
     let mut root_runtime = root_account.borrow_runtime_mut();
-    assert!(root_runtime.produce_blocks(120).is_ok(), "Couldn't produce blocks");
+    assert!(
+        root_runtime.produce_blocks(120).is_ok(),
+        "Couldn't produce blocks"
+    );
 
     // Should find a task
-    let mut get_tasks_view_res = root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
+    let mut get_tasks_view_res =
+        root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
     let mut success_val = r#"
         [["/YD9yxy6pZjlvra3qkvybKdodL3alsfvR6S62/FiYow="],"120"]
     "#;
     let mut success_vec: Vec<u8> = success_val.trim().into(); // trim because of multiline assignment above
-    assert_eq!(get_tasks_view_res.unwrap(), success_vec, "Should find one particular task hash at slot 120");
+    assert_eq!(
+        get_tasks_view_res.unwrap(),
+        success_vec,
+        "Should find one particular task hash at slot 120"
+    );
 
     // Agent calls proxy_call using new transaction syntax with borrowed,
     // mutable runtime object.
@@ -249,13 +130,21 @@ fn simulate_many_tasks() {
         [[],"120"]
     "#;
     success_vec = success_val.trim().into();
-    assert_eq!(get_tasks_view_res.unwrap(), success_vec, "Should find no task hashes at slot 120 anymore");
+    assert_eq!(
+        get_tasks_view_res.unwrap(),
+        success_vec,
+        "Should find no task hashes at slot 120 anymore"
+    );
 
     let mut tasks_info: GetTasksReturn = get_tasks_view_res.unwrap_json();
     assert_eq!(tasks_info.hashes.len(), 0, "Expected no tasks as before");
 
     success_vec = success_val.trim().into();
-    assert_eq!(get_tasks_view_res.unwrap(), success_vec, "There should not be any tasks at current slot of 120");
+    assert_eq!(
+        get_tasks_view_res.unwrap(),
+        success_vec,
+        "There should not be any tasks at current slot of 120"
+    );
 
     // Proxy call should panic when no tasks to execute
     res = root_runtime.resolve_tx(SignedTransaction::call(
@@ -274,9 +163,12 @@ fn simulate_many_tasks() {
     match res_outcome.status {
         ExecutionStatus::Failure(f) => {
             // Not great to use `contains` but will have to do for now.
-            assert!(f.to_string().contains("No tasks available"), "Should have error that no tasks are available");
-        },
-        _ => panic!("Expected failure when proxy_call has no tasks to execute")
+            assert!(
+                f.to_string().contains("No tasks available"),
+                "Should have error that no tasks are available"
+            );
+        }
+        _ => panic!("Expected failure when proxy_call has no tasks to execute"),
     }
 
     // Go through the remainder of the slots, executing tasks
@@ -284,8 +176,12 @@ fn simulate_many_tasks() {
     for n in &[240, 360, 600, 720, 1080, 1800, 2520, 2760, 10740, 18360] {
         // produce blocks until next slot
         let cur_block_height = root_runtime.cur_block.block_height;
-        assert!(root_runtime.produce_blocks(n - cur_block_height).is_ok(), "Couldn't produce blocks");
-        get_tasks_view_res = root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
+        assert!(
+            root_runtime.produce_blocks(n - cur_block_height).is_ok(),
+            "Couldn't produce blocks"
+        );
+        get_tasks_view_res =
+            root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
         tasks_info = get_tasks_view_res.unwrap_json();
         assert_eq!(tasks_info.hashes.len(), 1, "Expecting 1 task for this slot");
         // Proxy call
@@ -302,13 +198,94 @@ fn simulate_many_tasks() {
             CryptoHash::default(),
         ));
         let (_, res_outcome) = res.unwrap();
-        assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]), "Expected proxy_call to succeed when looping through.");
+        assert_eq!(
+            res_outcome.status,
+            ExecutionStatus::SuccessValue(vec![]),
+            "Expected proxy_call to succeed when looping through."
+        );
     }
 
-    let agent_info_result = root_runtime.view_method_call("cron.root", "get_agent", "{\"account\": \"agent.root\"}".as_bytes());
-    let agent_info: Agent = agent_info_result.unwrap_json();
+    let mut agent_info_result = root_runtime.view_method_call(
+        "cron.root",
+        "get_agent",
+        "{\"account\": \"agent.root\"}".as_bytes(),
+    );
+    let mut agent_info: Agent = agent_info_result.unwrap_json();
     // Confirm that the agent has executed 11 tasks
-    assert_eq!(agent_info.total_tasks_executed.0, 11, "Expected agent to have completed 11 tasks.")
+    assert_eq!(
+        agent_info.total_tasks_executed.0, 11,
+        "Expected agent to have completed 11 tasks."
+    );
+
+    // Agent withdraws balance, claiming rewards
+    nonce += 1;
+    root_runtime
+        .resolve_tx(SignedTransaction::call(
+            nonce,
+            "agent.root".to_string(),
+            "cron.root".to_string(),
+            &agent_signer,
+            0,
+            "withdraw_task_balance".into(),
+            "{}".as_bytes().to_vec(),
+            DEFAULT_GAS,
+            CryptoHash::default(),
+        ))
+        .expect("Error withdrawing task balance");
+
+    let expected_log = format!("Withdrawal of {} has been sent.", AGENT_FEE * 11);
+    find_log_from_outcomes(&root_runtime, &expected_log.to_string());
+
+    // Ensure that there's no balance for agent now
+    agent_info_result = root_runtime.view_method_call(
+        "cron.root",
+        "get_agent",
+        "{\"account\": \"agent.root\"}".as_bytes(),
+    );
+    agent_info = agent_info_result.unwrap_json();
+    assert_eq!(
+        agent_info.balance,
+        U128::from(AGENT_REGISTRATION_COST),
+        "Agent balance should be only state storage after withdrawal."
+    );
+
+    // Unregister agent and ensure it's removed
+    nonce += 1;
+    root_runtime
+        .resolve_tx(SignedTransaction::call(
+            nonce,
+            "agent.root".to_string(),
+            "cron.root".to_string(),
+            &agent_signer,
+            1,
+            "unregister_agent".into(),
+            "{}".as_bytes().to_vec(),
+            DEFAULT_GAS,
+            CryptoHash::default(),
+        ))
+        .expect("Issue with agent unregister transaction");
+
+    // Check that the proper amount was refunded
+    // + 1 because of the yoctoⓃ that was attached above
+    let expected_log = format!(
+        "Agent has been removed and refunded the storage cost of {}",
+        AGENT_REGISTRATION_COST + 1
+    );
+    find_log_from_outcomes(&root_runtime, &expected_log.to_string());
+
+    agent_info_result = root_runtime.view_method_call(
+        "cron.root",
+        "get_agent",
+        "{\"account\": \"agent.root\"}".as_bytes(),
+    );
+    assert!(agent_info_result.is_ok(), "Expected get_agent to return Ok");
+    let agent_info_val: Value = agent_info_result.unwrap_json_value();
+
+    assert_eq!(
+        agent_info_val,
+        Value::Null,
+        "Expected a null return for the agent meaning it no longer exists."
+    );
 }
 
 #[test]
@@ -505,56 +482,7 @@ fn simulate_agent_unregister_check() {
 
 #[test]
 fn simulate_task_creation_agent_usage() {
-    let mut genesis = GenesisConfig::default();
-    let root_account_id = "root".to_string();
-    let signer = genesis.init_root_signer(&root_account_id);
-
-    // Make agent signer
-    let agent_signer = InMemorySigner::from_seed("agent.root", KeyType::ED25519, "aloha");
-    // Push agent account to state_records
-    genesis.state_records.push(StateRecord::Account {
-        account_id: "agent.root".to_string(),
-        account: PrimitiveAccount {
-            amount: to_yocto("6000"),
-            locked: 0,
-            code_hash: Default::default(),
-            storage_usage: 0,
-        },
-    });
-    genesis.state_records.push(StateRecord::AccessKey {
-        account_id: "agent.root".to_string(),
-        public_key: agent_signer.clone().public_key(),
-        access_key: AccessKey::full_access(),
-    });
-
-    let runtime = RuntimeStandalone::new_with_store(genesis);
-    let runtime_rc = &Rc::new(RefCell::new(runtime));
-    let root_account = UserAccount::new(runtime_rc, root_account_id, signer);
-
-    // create "counter" account and deploy
-    let counter = root_account.deploy(
-        &COUNTER_WASM_BYTES,
-        "counter.root".to_string(),
-        STORAGE_AMOUNT,
-    );
-
-    // create "agent" account from signer
-    let agent = UserAccount::new(runtime_rc, "agent.root".to_string(), agent_signer.clone());
-
-    // create "cron" account, deploy and call "new"
-    let cron = root_account.deploy(
-        &CRON_MANAGER_WASM_BYTES,
-        "cron.root".to_string(),
-        STORAGE_AMOUNT,
-    );
-    cron.call(
-        cron.account_id(),
-        "new",
-        &[],
-        DEFAULT_GAS,
-        0, // attached deposit
-    )
-    .assert_success();
+    let (agent_signer, root_account, agent, counter, cron) = bootstrap_time_simulation();
 
     // Increase agent fee a bit
     cron.call(
@@ -573,13 +501,15 @@ fn simulate_task_creation_agent_usage() {
     execution_result.assert_success();
 
     // register agent
-    agent.call(
-        "cron.root".to_string(),
-        "register_agent",
-        &json!({}).to_string().into_bytes(),
-        DEFAULT_GAS,
-        AGENT_REGISTRATION_COST,
-    ).assert_success();
+    agent
+        .call(
+            "cron.root".to_string(),
+            "register_agent",
+            &json!({}).to_string().into_bytes(),
+            DEFAULT_GAS,
+            AGENT_REGISTRATION_COST,
+        )
+        .assert_success();
 
     // Here's where things get interesting. We must borrow mutable runtime
     // in order to move blocks forward. But once we do, future calls will
@@ -632,32 +562,21 @@ fn simulate_task_creation_agent_usage() {
     // Agent withdraws balance, claiming rewards
     // Here we don't resolve the transaction, but instead just send it so we can view
     // the receipts generated
-    res = root_runtime.resolve_tx(SignedTransaction::call(
-        9,
-        "agent.root".to_string(),
-        "cron.root".to_string(),
-        &agent_signer,
-        0,
-        "withdraw_task_balance".into(),
-        "{}".as_bytes().to_vec(),
-        DEFAULT_GAS,
-        CryptoHash::default(),
-    ));
+    root_runtime
+        .resolve_tx(SignedTransaction::call(
+            9,
+            "agent.root".to_string(),
+            "cron.root".to_string(),
+            &agent_signer,
+            0,
+            "withdraw_task_balance".into(),
+            "{}".as_bytes().to_vec(),
+            DEFAULT_GAS,
+            CryptoHash::default(),
+        ))
+        .expect("Error withdrawing task balance");
 
-    let (_, res_outcome) = res.unwrap();
-    root_runtime.process_all().unwrap();
-    let last_outcomes = &root_runtime.last_outcomes;
-
-    // This isn't great, but we check to make sure the log exists about the transfer
-    // At the time of this writing, finding the TransferAction with the correct
-    // deposit was not happening with simulation tests.
-    // Look for a log saying "Withdrawal of 60000000000000000000000 has been sent." in one of these
-    let mut found_withdrawal_log = false;
-    for outcome_hash in last_outcomes {
-        let eo = root_runtime.outcome(&outcome_hash).unwrap();
-        if eo.logs.contains(&"Withdrawal of 60000000000000000000000 has been sent.".to_string()) {
-            found_withdrawal_log = true;
-        }
-    }
-    assert!(found_withdrawal_log, "Expected a recent outcome to have a log about the transfer action.");
+    // Look for this log
+    let expected_log = format!("Withdrawal of {} has been sent.", AGENT_FEE);
+    find_log_from_outcomes(&root_runtime, &expected_log.to_string());
 }

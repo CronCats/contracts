@@ -249,7 +249,8 @@ impl CronManager {
             for task in tasks.iter() {
                 let task_data = self.tasks.get(&task.to_vec()).unwrap();
                 // Do not return tasks that are currently being processed
-                if task_data.status == TaskStatus::Ready || task_data.status == TaskStatus::Complete {
+                if task_data.status == TaskStatus::Ready || task_data.status == TaskStatus::Complete
+                {
                     ret.push(Base64VecU8::from(task.to_vec()));
                 }
             }
@@ -516,7 +517,8 @@ impl CronManager {
 
         // After popping, ensure state is rewritten back
         if using_floor_key {
-            self.slots.insert(&self.slots.floor_key(&current_slot).unwrap(), &slot_data);
+            self.slots
+                .insert(&self.slots.floor_key(&current_slot).unwrap(), &slot_data);
         } else {
             self.slots.insert(&current_slot, &slot_data);
         }
@@ -525,7 +527,10 @@ impl CronManager {
         log!("Found Task {:?}", &task);
 
         // Check that task status is ready or completed
-        assert!(task.status == TaskStatus::Ready || task.status == TaskStatus::Complete, "Task cannot be executed, check configuration");
+        assert!(
+            task.status == TaskStatus::Ready || task.status == TaskStatus::Complete,
+            "Task cannot be executed, check configuration"
+        );
 
         let call_balance_used = self.task_balance_uses(&task);
 
@@ -722,15 +727,17 @@ impl CronManager {
         let account = env::predecessor_account_id();
 
         // check that signer agent exists
-        if let Some(agent) = self.agents.get(&account) {
+        if let Some(mut agent) = self.agents.get(&account) {
             assert!(
                 agent.balance.0 > self.agent_storage_usage as u128,
                 "No Agent balance beyond the storage balance"
             );
-            let withdrawal_amount = agent.balance.0 - (self.agent_storage_usage as u128 * env::storage_byte_cost());
+            let withdrawal_amount =
+                agent.balance.0 - (self.agent_storage_usage as u128 * env::storage_byte_cost());
+            agent.balance = U128::from(agent.balance.0 - withdrawal_amount);
+            self.agents.insert(&account, &agent);
             log!("Withdrawal of {} has been sent.", withdrawal_amount);
-            Promise::new(agent.payable_account_id.to_string())
-                .transfer(withdrawal_amount)
+            Promise::new(agent.payable_account_id.to_string()).transfer(withdrawal_amount)
         } else {
             env::panic(b"No Agent")
         }
@@ -1164,8 +1171,15 @@ mod tests {
             .block_index(BLOCK_START_BLOCK + 12)
             .build());
         testing_env!(context.is_view(true).build());
-        println!("contract.get_tasks(None) {:?}", contract.get_tasks(Some(1)).0.len());
-        assert_eq!(contract.get_tasks(Some(1)).0.len(), 2, "Task amount diff than expected");
+        println!(
+            "contract.get_tasks(None) {:?}",
+            contract.get_tasks(Some(1)).0.len()
+        );
+        assert_eq!(
+            contract.get_tasks(Some(1)).0.len(),
+            2,
+            "Task amount diff than expected"
+        );
 
         // change the tasks status
         // contract.proxy_call();
