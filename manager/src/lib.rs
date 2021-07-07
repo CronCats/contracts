@@ -44,23 +44,6 @@ pub enum StorageKeys {
     Slots,
 }
 
-/// Allows tasks to be executed in async env
-// #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
-// #[serde(crate = "near_sdk::serde")]
-// pub enum TaskStatus {
-//     /// Shows a task is not currently active, ready for an agent to take
-//     Ready,
-
-//     /// Shows a task is currently being processed/called
-//     Active,
-
-//     /// Tasks marked as complete are ready for deletion from state.
-//     Complete,
-
-//     /// Tasks that were known to fail by checking a promise callback.
-//     Failed,
-// }
-
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Task {
@@ -79,9 +62,6 @@ pub struct Task {
 
     /// Defines if this task can continue until balance runs out
     pub recurring: bool,
-
-    /// Tasks status forces single executions per interval
-    // pub status: TaskStatus,
 
     /// Total balance of NEAR available for current and future executions
     pub total_deposit: U128,
@@ -248,11 +228,6 @@ impl CronManager {
             let tasks = self.slots.get(&k).unwrap();
 
             for task in tasks.iter() {
-                // let task_data = self.tasks.get(&task.to_vec()).unwrap();
-                // Do not return tasks that are currently being processed
-                // if task_data.status == TaskStatus::Ready || task_data.status == TaskStatus::Complete {
-                //     ret.push(Base64VecU8::from(task.to_vec()));
-                // }
                 ret.push(Base64VecU8::from(task.to_vec()));
             }
             (ret, U128::from(current_slot))
@@ -263,7 +238,7 @@ impl CronManager {
 
     /// Returns task data
     /// Used by the frontend for viewing tasks
-    /// TODO: Consider the data structure change, are there more efficient storage? https://docs.near.org/docs/concepts/data-storage#gas-consumption-examples-1
+    /// REF: https://docs.near.org/docs/concepts/data-storage#gas-consumption-examples-1
     pub fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Task> {
         let mut ret: Vec<Task> = Vec::new();
         if let Some(slot_number) = slot {
@@ -285,6 +260,7 @@ impl CronManager {
         ret
     }
 
+    // TODO: REMOVE IN PROD
     /// Most useful for debugging at this point.
     pub fn debug_slots(&self) -> Vec<u128> {
         let mut ret: Vec<u128> = Vec::new();
@@ -294,22 +270,26 @@ impl CronManager {
         ret
     }
 
+    // TODO: REMOVE IN PROD
     /// Most useful for debugging at this point.
     pub fn debug_slots_len(&self) -> u64 {
         self.slots.len()
     }
 
+    // TODO: REMOVE IN PROD
     /// Most useful for debugging at this point.
     pub fn debug_slots_min(&self) -> Option<u128> {
         self.slots.min()
     }
 
+    // TODO: REMOVE IN PROD
     /// Most useful for debugging at this point.
     pub fn debug_slots_rem(&mut self, k: u128) {
         assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Only owner");
         self.slots.remove(&k);
     }
 
+    // TODO: REMOVE IN PROD
     /// Most useful for debugging at this point.
     pub fn debug_slots_clean(&mut self) {
         assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Only owner");
@@ -365,7 +345,6 @@ impl CronManager {
             function_id,
             cadence,
             recurring: recurring.unwrap_or(false),
-            // status: TaskStatus::Ready,
             total_deposit: U128::from(env::attached_deposit()),
             deposit: U128::from(deposit.map(|v| v.0).unwrap_or(0u128)),
             gas: gas.unwrap_or(GAS_BASE_FEE),
@@ -391,7 +370,6 @@ impl CronManager {
 
         let hash = self.hash(&item);
         log!("Task Hash (as bytes) {:?}", &hash);
-        // log!("Task data {:?}", &item.to_string());
 
         // Parse cadence into a future timestamp, then convert to a slot
         let next_slot = self.get_slot_from_cadence(item.cadence.clone());
@@ -766,15 +744,17 @@ impl CronManager {
         let account = env::predecessor_account_id();
 
         // check that signer agent exists
-        if let Some(agent) = self.agents.get(&account) {
+        if let Some(mut agent) = self.agents.get(&account) {
             assert!(
                 agent.balance.0 > self.agent_storage_usage as u128,
                 "No Agent balance beyond the storage balance"
             );
-            let withdrawal_amount = agent.balance.0 - (self.agent_storage_usage as u128 * env::storage_byte_cost());
+            let withdrawal_amount =
+                agent.balance.0 - (self.agent_storage_usage as u128 * env::storage_byte_cost());
+            agent.balance = U128::from(agent.balance.0 - withdrawal_amount);
+            self.agents.insert(&account, &agent);
             log!("Withdrawal of {} has been sent.", withdrawal_amount);
-            Promise::new(agent.payable_account_id.to_string())
-                .transfer(withdrawal_amount)
+            Promise::new(agent.payable_account_id.to_string()).transfer(withdrawal_amount)
         } else {
             env::panic(b"No Agent")
         }
@@ -959,7 +939,6 @@ mod tests {
             function_id: String::from("increment"),
             cadence: String::from("@daily"),
             recurring: false,
-            // status: TaskStatus::Ready,
             total_deposit: U128::from(3000000000300),
             deposit: U128::from(100),
             gas: 200,
@@ -1208,8 +1187,15 @@ mod tests {
             .block_index(BLOCK_START_BLOCK + 12)
             .build());
         testing_env!(context.is_view(true).build());
-        println!("contract.get_tasks(None) {:?}", contract.get_tasks(Some(1)).0.len());
-        assert_eq!(contract.get_tasks(Some(1)).0.len(), 2, "Task amount diff than expected");
+        println!(
+            "contract.get_tasks(None) {:?}",
+            contract.get_tasks(Some(1)).0.len()
+        );
+        assert_eq!(
+            contract.get_tasks(Some(1)).0.len(),
+            2,
+            "Task amount diff than expected"
+        );
 
         // change the tasks status
         // contract.proxy_call();
