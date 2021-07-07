@@ -4,7 +4,7 @@ use crate::test_utils::{
     bootstrap_time_simulation, counter_create_task, find_log_from_outcomes, helper_create_task,
     sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter,
 };
-use manager::{Agent, Task, TaskStatus};
+use manager::{Agent, Task};
 use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json;
@@ -164,7 +164,7 @@ fn simulate_many_tasks() {
         ExecutionStatus::Failure(f) => {
             // Not great to use `contains` but will have to do for now.
             assert!(
-                f.to_string().contains("No tasks available"),
+                f.to_string().contains("No tasks found in slot"),
                 "Should have error that no tasks are available"
             );
         }
@@ -330,7 +330,6 @@ fn simulate_basic_task_checks() {
         function_id: "increment".to_string(),
         cadence: "0   30   9,12,15     1,15       May-Aug  Mon,Wed,Fri  2018/2".to_string(),
         recurring: true,
-        status: TaskStatus::Ready,
         total_deposit: U128::from(36000000000000),
         deposit: U128::from(12000000000000),
         gas: 3000000000000,

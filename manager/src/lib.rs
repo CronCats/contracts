@@ -5,7 +5,7 @@ use near_contract_standards::storage_management::StorageManagement;
 use near_sdk::{
     base64,
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, TreeMap},
+    collections::{LookupMap, TreeMap, UnorderedMap},
     env,
     json_types::{Base58PublicKey, Base64VecU8, ValidAccountId, U128},
     log, near_bindgen,
@@ -44,23 +44,6 @@ pub enum StorageKeys {
     Slots,
 }
 
-/// Allows tasks to be executed in async env
-#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(crate = "near_sdk::serde")]
-pub enum TaskStatus {
-    /// Shows a task is not currently active, ready for an agent to take
-    Ready,
-
-    /// Shows a task is currently being processed/called
-    Active,
-
-    /// Tasks marked as complete are ready for deletion from state.
-    Complete,
-
-    /// Tasks that were known to fail by checking a promise callback.
-    Failed,
-}
-
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Task {
@@ -79,9 +62,6 @@ pub struct Task {
 
     /// Defines if this task can continue until balance runs out
     pub recurring: bool,
-
-    /// Tasks status forces single executions per interval
-    pub status: TaskStatus,
 
     /// Total balance of NEAR available for current and future executions
     pub total_deposit: U128,
@@ -118,7 +98,7 @@ pub struct CronManager {
     // Basic management
     agents: LookupMap<AccountId, Agent>,
     slots: TreeMap<u128, Vec<Vec<u8>>>,
-    tasks: LookupMap<Vec<u8>, Task>,
+    tasks: UnorderedMap<Vec<u8>, Task>,
 
     // Economics
     available_balance: Balance,
@@ -144,7 +124,7 @@ impl CronManager {
             owner_pk: env::signer_account_pk(),
             bps_block: env::block_index(),
             bps_timestamp: env::block_timestamp(),
-            tasks: LookupMap::new(StorageKeys::Tasks),
+            tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),
             slots: TreeMap::new(StorageKeys::Slots),
             available_balance: 0,
@@ -174,6 +154,7 @@ impl CronManager {
     }
 
     // TODO:
+    // NOTE: For large state transitions, needs to be able to migrate over paginated sets?
     /// Migrate State
     /// Safely upgrade contract storage
     ///
@@ -247,12 +228,7 @@ impl CronManager {
             let tasks = self.slots.get(&k).unwrap();
 
             for task in tasks.iter() {
-                let task_data = self.tasks.get(&task.to_vec()).unwrap();
-                // Do not return tasks that are currently being processed
-                if task_data.status == TaskStatus::Ready || task_data.status == TaskStatus::Complete
-                {
-                    ret.push(Base64VecU8::from(task.to_vec()));
-                }
+                ret.push(Base64VecU8::from(task.to_vec()));
             }
             (ret, U128::from(current_slot))
         } else {
@@ -260,7 +236,9 @@ impl CronManager {
         }
     }
 
-    /// Most useful for debugging at this point.
+    /// Returns task data
+    /// Used by the frontend for viewing tasks
+    /// REF: https://docs.near.org/docs/concepts/data-storage#gas-consumption-examples-1
     pub fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Task> {
         let mut ret: Vec<Task> = Vec::new();
         if let Some(slot_number) = slot {
@@ -274,16 +252,54 @@ impl CronManager {
                 ret.push(task);
             }
         } else {
-            // Return all slots
-            for slot in self.slots.iter() {
-                let tasks_in_slot = slot.1;
-                for task_hash in tasks_in_slot.iter() {
-                    let task = self.tasks.get(&task_hash).expect("No task found by hash");
-                    ret.push(task);
-                }
+            // Return all tasks
+            for (_, task) in self.tasks.iter() {
+                ret.push(task);
             }
         }
         ret
+    }
+
+    // TODO: REMOVE IN PROD
+    /// Most useful for debugging at this point.
+    pub fn debug_slots(&self) -> Vec<u128> {
+        let mut ret: Vec<u128> = Vec::new();
+        for slot in self.slots.iter() {
+            ret.push(slot.0);
+        }
+        ret
+    }
+
+    // TODO: REMOVE IN PROD
+    /// Most useful for debugging at this point.
+    pub fn debug_slots_len(&self) -> u64 {
+        self.slots.len()
+    }
+
+    // TODO: REMOVE IN PROD
+    /// Most useful for debugging at this point.
+    pub fn debug_slots_min(&self) -> Option<u128> {
+        self.slots.min()
+    }
+
+    // TODO: REMOVE IN PROD
+    /// Most useful for debugging at this point.
+    pub fn debug_slots_rem(&mut self, k: u128) {
+        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Only owner");
+        self.slots.remove(&k);
+    }
+
+    // TODO: REMOVE IN PROD
+    /// Most useful for debugging at this point.
+    pub fn debug_slots_clean(&mut self) {
+        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Only owner");
+        let mut idx = 0;
+
+        while idx < 5 {
+            let k =self.slots.min().unwrap();
+            self.slots.remove(&k);
+            idx += 1;
+        }
     }
 
     /// Gets the data payload of a single task by hash
@@ -329,7 +345,6 @@ impl CronManager {
             function_id,
             cadence,
             recurring: recurring.unwrap_or(false),
-            status: TaskStatus::Ready,
             total_deposit: U128::from(env::attached_deposit()),
             deposit: U128::from(deposit.map(|v| v.0).unwrap_or(0u128)),
             gas: gas.unwrap_or(GAS_BASE_FEE),
@@ -355,7 +370,6 @@ impl CronManager {
 
         let hash = self.hash(&item);
         log!("Task Hash (as bytes) {:?}", &hash);
-        // log!("Task data {:?}", &item.to_string());
 
         // Parse cadence into a future timestamp, then convert to a slot
         let next_slot = self.get_slot_from_cadence(item.cadence.clone());
@@ -463,10 +477,11 @@ impl CronManager {
         // Remove task from schedule
         // Get previous task hashes in slot, find index of task hash, remove
         let next_slot = self.get_slot_from_cadence(task.cadence.clone());
-        let mut slot_slots = self.slots.get(&next_slot).unwrap_or(Vec::new());
-        let index = slot_slots.iter().position(|h| *h == task_hash).unwrap();
-        slot_slots.remove(index);
-        self.slots.insert(&next_slot, &slot_slots);
+        let mut slot_tasks = self.slots.get(&next_slot).unwrap_or(Vec::new());
+        if let Some(index) = slot_tasks.iter().position(|h| *h == task_hash) {
+            slot_tasks.remove(index);
+        }
+        self.slots.insert(&next_slot, &slot_tasks);
     }
 
     /// Executes a task based on the current task slot
@@ -477,8 +492,6 @@ impl CronManager {
     /// ```bash
     /// near call cron.testnet proxy_call --accountId YOU.testnet
     /// ```
-    // TODO: Change OOP, be careful on rewind execution!
-    // TODO: How can this promise execute and allow panics?
     pub fn proxy_call(&mut self) {
         // No adding tasks while contract is paused
         assert_eq!(self.paused, false, "Task execution paused");
@@ -491,7 +504,6 @@ impl CronManager {
         let mut agent = agent_opt.unwrap();
 
         // Get current slot based on block or timestamp
-        // TODO: Adjust this to get slot from treemap floor?
         let current_slot = self.get_slot_id(None);
         log!("current slot {:?}", current_slot);
 
@@ -517,57 +529,34 @@ impl CronManager {
 
         // After popping, ensure state is rewritten back
         if using_floor_key {
-            self.slots
-                .insert(&self.slots.floor_key(&current_slot).unwrap(), &slot_data);
+            self.slots.insert(&slot_ballpark.unwrap(), &slot_data);
         } else {
             self.slots.insert(&current_slot, &slot_data);
         }
 
+        // Clean up slot if no more data
+        if slot_data.len() < 1 { self.slots.remove(&slot_ballpark.unwrap()); }
+
         let mut task = self.tasks.get(&hash).expect("No task found by hash");
         log!("Found Task {:?}", &task);
 
-        // Check that task status is ready or completed
-        assert!(
-            task.status == TaskStatus::Ready || task.status == TaskStatus::Complete,
-            "Task cannot be executed, check configuration"
-        );
-
-        let call_balance_used = self.task_balance_uses(&task);
-
-        assert!(
-            call_balance_used <= task.total_deposit.0,
-            "Not enough task balance to execute job"
-        );
+        if self.task_balance_uses(&task) > task.total_deposit.0 {
+            log!("Not enough task balance to execute task, exiting");
+            // Process task exit, if no future task can execute
+            return self.exit_task(hash);
+        }
 
         // Increment agent reward & task count
         agent.balance = U128::from(agent.balance.0 + self.agent_fee);
         agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
-
-        // TODO: Process task exit, if no future task can execute
-
-        // only skip scheduling if user didnt intend
-        if task.recurring != false {
-            let next_slot = self.get_slot_from_cadence(task.cadence.clone());
-            log!("Scheduling Next Task {:?}", &next_slot);
-            assert!(
-                &current_slot < &next_slot,
-                "Cannot schedule task in the past"
-            );
-
-            // Get previous task hashes in slot, add as needed
-            let mut slot_slots = self.slots.get(&next_slot).unwrap_or(Vec::new());
-            slot_slots.push(hash.clone());
-            self.slots.insert(&next_slot, &slot_slots);
-        }
 
         // Update agent storage
         self.agents.insert(&env::predecessor_account_id(), &agent);
 
         // Decrease task balance
         // TODO: Change to real gas used
+        // TODO: Make sure unused gas gets returned to task as well
         task.total_deposit = U128::from(task.total_deposit.0 - self.task_balance_used());
-
-        task.status = TaskStatus::Active;
 
         // Update task storage
         self.tasks.insert(&hash, &task);
@@ -577,7 +566,6 @@ impl CronManager {
             task.contract_id.clone(),
             &task.function_id.as_bytes(),
             task.arguments.as_slice(),
-            // NOTE: Does this work if signer sends NO amount? Who pays??
             task.deposit.0,
             task.gas,
         );
@@ -592,6 +580,12 @@ impl CronManager {
         env::promise_return(promise_second);
     }
 
+    /// Logic executed on the completion of a proxy call
+    /// Internal Method
+    /// 
+    /// Responsible for:
+    /// 1. Checking if the task needs to reschedule
+    /// 2. Finalizing tasks that are done running, return balance to owner
     #[private]
     pub fn callback_for_proxy_call(&mut self, task_hash: Vec<u8>) {
         assert_eq!(
@@ -599,24 +593,47 @@ impl CronManager {
             1,
             "Expected 1 promise result."
         );
-        let mut task = self
+        let task = self
             .tasks
             .get(&task_hash.clone())
             .expect("No task found by hash");
+
         match env::promise_result(0) {
             PromiseResult::Successful(_) => {
                 log!(
                     "Task {} completed successfully",
                     base64::encode(task_hash.clone())
                 );
-                task.status = TaskStatus::Complete;
             }
             PromiseResult::Failed => {
-                task.status = TaskStatus::Failed;
+                log!(
+                    "Task {} Failed",
+                    base64::encode(task_hash.clone())
+                );
             }
             PromiseResult::NotReady => unreachable!(),
         };
-        self.tasks.insert(&task_hash, &task);
+
+        // only skip scheduling if user didnt intend
+        let current_slot = self.get_slot_id(None);
+        let call_balance_used = self.task_balance_uses(&task);
+        if task.recurring != false {
+            let next_slot = self.get_slot_from_cadence(task.cadence.clone());
+            log!("Scheduling Next Task {:?}", &next_slot);
+            assert!(
+                &current_slot < &next_slot,
+                "Cannot schedule task in the past"
+            );
+
+            // Get previous task hashes in slot, add as needed
+            let mut slot_tasks = self.slots.get(&next_slot).unwrap_or(Vec::new());
+            slot_tasks.push(task_hash.clone());
+            self.slots.insert(&next_slot, &slot_tasks);
+            self.tasks.insert(&task_hash, &task);
+        } else if call_balance_used * 2 <= task.total_deposit.0 {
+            // Process task exit, if no future task can execute
+            self.exit_task(task_hash);
+        }
     }
 
     /// Add any account as an agent that will be able to execute tasks.
@@ -922,7 +939,6 @@ mod tests {
             function_id: String::from("increment"),
             cadence: String::from("@daily"),
             recurring: false,
-            status: TaskStatus::Ready,
             total_deposit: U128::from(3000000000300),
             deposit: U128::from(100),
             gas: 200,
