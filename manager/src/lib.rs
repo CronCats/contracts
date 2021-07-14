@@ -358,12 +358,12 @@ impl CronManager {
         } else {
             call_balance_used
         };
-        // Agent fee is now t
-        assert!(
-            min_balance_needed > u128::from(GAS_BASE_FEE),
-            "Gas minimum has not been met, need at least {}",
-            min_balance_needed
-        );
+        // Agent fee is now too high for this check to matter
+        // assert!(
+        //     min_balance_needed > u128::from(GAS_BASE_FEE),
+        //     "Gas minimum has not been met, need at least {}",
+        //     min_balance_needed
+        // );
         assert!(
             min_balance_needed <= item.total_deposit.0,
             "Not enough task balance to execute job, need at least {}",
@@ -1097,23 +1097,24 @@ mod tests {
         );
     }
 
-    #[test]
-    #[should_panic(expected = "Gas minimum has not been met")]
-    fn test_task_create_gas_min() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-        let mut contract = CronManager::new();
-        testing_env!(context.is_view(false).prepaid_gas(1000000).build());
-        contract.create_task(
-            "contract.testnet".to_string(),
-            "increment".to_string(),
-            "@daily".to_string(),
-            Some(false),
-            Some(U128::from(0)),
-            Some(3000000000000000),
-            None,
-        );
-    }
+    // NOTE: Useless when agent fee is higher than base gas
+    // #[test]
+    // #[should_panic(expected = "Gas minimum has not been met")]
+    // fn test_task_create_gas_min() {
+    //     let mut context = get_context(accounts(1));
+    //     testing_env!(context.build());
+    //     let mut contract = CronManager::new();
+    //     testing_env!(context.is_view(false).attached_deposit(206000000000000000).build());
+    //     contract.create_task(
+    //         "contract.testnet".to_string(),
+    //         "increment".to_string(),
+    //         "@daily".to_string(),
+    //         Some(true),
+    //         Some(U128::from(100000000000000000)),
+    //         Some(0),
+    //         None,
+    //     );
+    // }
 
     #[test]
     fn test_task_create_slot_schedule() {
