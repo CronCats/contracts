@@ -92,8 +92,8 @@ pub struct CronManager {
     paused: bool,
     owner_id: AccountId,
     owner_pk: PublicKey,
-    bps_block: u64,
-    bps_timestamp: u64,
+    bps_block: [u64; 2],
+    bps_timestamp: [u64; 2],
 
     // Basic management
     agents: LookupMap<AccountId, Agent>,
@@ -122,8 +122,8 @@ impl CronManager {
             paused: false,
             owner_id: env::signer_account_id(),
             owner_pk: env::signer_account_pk(),
-            bps_block: env::block_index(),
-            bps_timestamp: env::block_timestamp(),
+            bps_block: [env::block_index(), env::block_index()],
+            bps_timestamp: [env::block_timestamp(), env::block_timestamp()],
             tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),
             slots: TreeMap::new(StorageKeys::Slots),
@@ -193,12 +193,17 @@ impl CronManager {
 
     /// Tick: Cron Manager Heartbeat
     /// Used to aid computation of blocks per second, manage internal use of funds
-    /// Ideally gets called every 6000 blocks
+    /// NOTE: This is a small array, allowing the adjustment of the previous block in the past
+    /// so the block tps average is always using more block distance than "now", ideally ~1000 blocks
     ///
     /// near call cron.testnet tick '{}'
     pub fn tick(&mut self) {
-        self.bps_block = env::block_index();
-        self.bps_timestamp = env::block_timestamp();
+        let prev_block = self.bps_block[0];
+        let prev_timestamp = self.bps_timestamp[0];
+        self.bps_block[0] = env::block_index();
+        self.bps_block[1] = prev_block;
+        self.bps_timestamp[0] = env::block_timestamp();
+        self.bps_timestamp[1] = prev_timestamp;
 
         // TBD: Internal staking management
         log!(
@@ -861,13 +866,13 @@ impl CronManager {
         // calculate the average blocks, to get predicted future block
         // Get the range of blocks for which we're taking the average
         // Remember `bps_block` is updated after every call to `tick`
-        let blocks_total = core::cmp::max(current_block - self.bps_block, 1);
+        let blocks_total = core::cmp::max(current_block - self.bps_block[1], 1);
         // Generally, avoiding floats can be useful, here we set a denominator
         // Since the `bps` timestamp is in nanoseconds, we multiply the
         // numerator to match the magnitude
         // We use the `max` value to avoid division by 0
         let mut bps = (blocks_total * NANO * BPS_DENOMINATOR)
-            / std::cmp::max(current_block_ts - self.bps_timestamp, 1);
+            / std::cmp::max(current_block_ts - self.bps_timestamp[1], 1);
 
         // Protect against bps being 0
         if bps < 1 {
@@ -1791,14 +1796,15 @@ mod tests {
         testing_env!(context.is_view(false).build());
         let mut contract = CronManager::new();
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.bps_block, 52201040);
+        assert_eq!(contract.bps_block[0], 52201040);
         testing_env!(context.is_view(false).block_index(52201240).build());
         contract.tick();
         testing_env!(context.is_view(false).block_index(52207040).build());
         contract.tick();
         testing_env!(context.is_view(false).block_index(52208540).build());
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.bps_block, 52207040);
+        assert_eq!(contract.bps_block[0], 52207040);
+        assert_eq!(contract.bps_block[1], 52201240);
     }
 
     #[test]
