@@ -639,7 +639,7 @@ impl CronManager {
         agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
 
         // Update agent storage
-        self.agents.insert(&env::predecessor_account_id(), &agent);
+        self.agents.insert(&env::signer_account_id(), &agent);
 
         // Decrease task balance
         task.total_deposit = U128::from(task.total_deposit.0 - call_total_fee);
