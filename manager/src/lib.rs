@@ -651,7 +651,7 @@ impl CronManager {
         // If recurring and not enough balance for another trigger, end
         // if there was some issue on the other contract, end
         // Otherwise, schedule next task
-        if task.recurring == false || call_total_fee < task.total_deposit.0 || promise_outcome_success == false {
+        if task.recurring == false || call_total_fee > task.total_deposit.0 || promise_outcome_success == false {
             // Process task exit, if no future task can execute
             self.exit_task(task_hash);
         } else {
