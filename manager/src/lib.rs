@@ -21,6 +21,7 @@ near_sdk::setup_alloc!();
 // Balance & Fee Definitions
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
+pub const GAS_BASE_PRICE: Balance = 100_000_000;
 // TODO: investigate how much this should be, currently
 // http post https://rpc.mainnet.near.org jsonrpc=2.0 id=dontcare method=EXPERIMENTAL_genesis_config
 // > mainnet-config.json
@@ -104,6 +105,7 @@ pub struct CronManager {
     available_balance: Balance,
     staked_balance: Balance,
     agent_fee: Balance,
+    gas_price: Balance,
     slot_granularity: u64,
 
     // Storage
@@ -130,6 +132,7 @@ impl CronManager {
             available_balance: 0,
             staked_balance: 0,
             agent_fee: AGENT_BASE_FEE,
+            gas_price: GAS_BASE_PRICE,
             slot_granularity: SLOT_GRANULARITY,
             agent_storage_usage: 0,
         };
@@ -499,6 +502,8 @@ impl CronManager {
     /// ```bash
     /// near call cron.testnet proxy_call --accountId YOU.testnet
     /// ```
+    // Questions:
+    // Can the call fail and second promise continue?
     pub fn proxy_call(&mut self) {
         // No adding tasks while contract is paused
         assert_eq!(self.paused, false, "Task execution paused");
@@ -511,7 +516,7 @@ impl CronManager {
 
         // Get current slot based on block or timestamp
         let current_slot = self.get_slot_id(None);
-        log!("current slot {:?}", current_slot);
+        // log!("current slot {:?}", current_slot);
 
         // get task based on current slot
         // priority goes to tasks that have fallen behind (using floor key)
@@ -528,7 +533,7 @@ impl CronManager {
             env::panic(b"No tasks found in slot");
         }
         let mut slot_data = slot_opt.unwrap();
-        log!("slot {:?}", &slot_data);
+        // log!("slot {:?}", &slot_data);
 
         // Get a single task hash, then retrieve task details
         let hash = slot_data.pop().expect("No tasks available");
@@ -544,8 +549,9 @@ impl CronManager {
         if slot_data.len() < 1 { self.slots.remove(&slot_ballpark.unwrap()); }
 
         let task = self.tasks.get(&hash).expect("No task found by hash");
-        log!("Found Task {:?}", &task);
+        // log!("Found Task {:?}", &task);
 
+        // NOTE: this is a dummy check, so it must be considered not 100% good but rather a way for task creator to safety check and not burn too much gas.
         if self.task_balance_uses(&task) > task.total_deposit.0 {
             log!("Not enough task balance to execute task, exiting");
             // Process task exit, if no future task can execute
@@ -589,8 +595,12 @@ impl CronManager {
             .get(&task_hash.clone())
             .expect("No task found by hash");
 
+        let mut promise_outcome_success = false;
+
+        // NOTE: now that logic for reschedule is here, need to store failed status for stopping task
         match env::promise_result(0) {
             PromiseResult::Successful(_) => {
+                promise_outcome_success = true;
                 log!(
                     "Task {} completed successfully",
                     base64::encode(task_hash.clone())
@@ -607,9 +617,20 @@ impl CronManager {
 
         // only skip scheduling if user didnt intend
         let current_slot = self.get_slot_id(None);
-        // let call_balance_used = self.task_balance_uses(&task);
-        let call_balance_used = u128::from(env::used_gas());
-        let mut agent = self.agents.get(&env::signer_account_id()).unwrap();
+
+        // Fee breakdown:
+        // - Used Gas: Task Txn Fee Cost
+        // - Agent Fee: Incentivize Execution SLA
+        //
+        // Task Fee Example:
+        // Gas: 50 Tgas
+        // Agent: 100 Tgas
+        // Total: 150 Tgas
+        //
+        // NOTE: Gas cost includes the cross-contract call & internal logic of this contract.
+        // Direct contract gas fee will be lower than task execution costs.
+        let call_balance_used = u128::from(env::used_gas()) * self.gas_price;
+        let mut agent = self.agents.get(&env::signer_account_id()).expect("Agent not registered");
 
         // Increment agent reward & task count
         // Reward for agent MUST include the amount of gas used as a reimbursement
@@ -626,7 +647,14 @@ impl CronManager {
         // Update task storage
         self.tasks.insert(&task_hash, &task);
 
-        if task.recurring != false {
+        // If not recurring, end
+        // If recurring and not enough balance for another trigger, end
+        // if there was some issue on the other contract, end
+        // Otherwise, schedule next task
+        if task.recurring == false || call_total_fee < task.total_deposit.0 || promise_outcome_success == false {
+            // Process task exit, if no future task can execute
+            self.exit_task(task_hash);
+        } else {
             let next_slot = self.get_slot_from_cadence(task.cadence.clone());
             log!("Scheduling Next Task {:?}", &next_slot);
             assert!(
@@ -638,10 +666,6 @@ impl CronManager {
             let mut slot_tasks = self.slots.get(&next_slot).unwrap_or(Vec::new());
             slot_tasks.push(task_hash.clone());
             self.slots.insert(&next_slot, &slot_tasks);
-            self.tasks.insert(&task_hash, &task);
-        } else if call_balance_used * 2 <= task.total_deposit.0 {
-            // Process task exit, if no future task can execute
-            self.exit_task(task_hash);
         }
     }
 
@@ -788,22 +812,6 @@ impl CronManager {
     }
 
     /// Returns the base amount required to execute 1 task
-    /// Fee breakdown:
-    /// - Used Gas: Task Txn Fee Cost
-    /// - Agent Fee: Incentivize Execution SLA
-    ///
-    /// Task Fee Example:
-    /// Gas: 50 Tgas
-    /// Agent: 100 Tgas
-    /// Total: 150 Tgas
-    ///
-    /// NOTE: Gas cost includes the cross-contract call & internal logic of this contract.
-    /// Direct contract gas fee will be lower than task execution costs.
-    // fn task_balance_used(&self) -> u128 {
-    //     u128::from(env::used_gas()) + self.agent_fee
-    // }
-
-    /// Returns the base amount required to execute 1 task
     /// NOTE: this is not the final used amount, just the user-specified amount total needed
     fn task_balance_uses(&self, task: &Task) -> u128 {
         task.deposit.0 + u128::from(task.gas) + self.agent_fee
@@ -897,6 +905,8 @@ impl CronManager {
         }
     }
 
+    /// Changes core configurations
+    /// Should only be updated by owner -- in best case DAO based :)
     pub fn update_settings(
         &mut self,
         owner_id: Option<AccountId>,
@@ -904,9 +914,11 @@ impl CronManager {
         slot_granularity: Option<u64>,
         paused: Option<bool>,
         agent_fee: Option<U128>,
+        gas_price: Option<U128>,
     ) {
         assert_eq!(self.owner_id, env::signer_account_id(), "Must be owner");
 
+        // BE CAREFUL!
         if owner_id.is_some() {
             self.owner_id = owner_id.unwrap();
         }
@@ -922,6 +934,9 @@ impl CronManager {
         }
         if agent_fee.is_some() {
             self.agent_fee = agent_fee.unwrap().0;
+        }
+        if gas_price.is_some() {
+            self.gas_price = gas_price.unwrap().0;
         }
     }
 }
@@ -1025,7 +1040,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = CronManager::new();
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, None, Some(true), None);
+        contract.update_settings(None, None, None, Some(true), None, None);
         testing_env!(context
             .is_view(false)
             .attached_deposit(3000000000000300)
@@ -1296,7 +1311,7 @@ mod tests {
             Some(200),
             None,
         );
-        contract.update_settings(None, None, None, Some(true), None);
+        contract.update_settings(None, None, None, Some(true), None, None);
         testing_env!(context.is_view(false).block_index(1260).build());
         contract.proxy_call();
     }
@@ -1562,13 +1577,13 @@ mod tests {
         assert_eq!(slot, 52201020);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(10), None, None);
+        contract.update_settings(None, None, Some(10), None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
         assert_eq!(slot, 52201040);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(1), None, None);
+        contract.update_settings(None, None, Some(1), None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
         assert_eq!(slot, 52201040);
@@ -1588,7 +1603,7 @@ mod tests {
             .signer_account_id(accounts(3))
             .predecessor_account_id(accounts(3))
             .build());
-        contract.update_settings(None, None, Some(10), None, None);
+        contract.update_settings(None, None, Some(10), None, None, None);
     }
 
     #[test]
@@ -1600,7 +1615,7 @@ mod tests {
         assert_eq!(contract.slot_granularity, SLOT_GRANULARITY);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(10), Some(true), None);
+        contract.update_settings(None, None, Some(10), Some(true), None, None);
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.slot_granularity, 10);
         assert_eq!(contract.paused, true);
