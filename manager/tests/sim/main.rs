@@ -591,7 +591,7 @@ fn simulate_task_creation_agent_usage() {
     };
     // The agent's balance should be the storage cost plus the reward
     // assert_eq!(new_agent_balance.0, AGENT_REGISTRATION_COST + AGENT_FEE);
-    assert_eq!(new_agent_balance.0, 62217222281030900000000); // NOTE: the above needs to change to gas used * gas price in addition to registration and fee.
+    assert_eq!(new_agent_balance.0, 62217593492862500000000); // NOTE: the above needs to change to gas used * gas price in addition to registration and fee.
 
     // Agent withdraws balance, claiming rewards
     // Here we don't resolve the transaction, but instead just send it so we can view
