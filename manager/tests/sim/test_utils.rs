@@ -16,6 +16,9 @@ use near_sdk_sim::{
 };
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
+use std::sync::Arc;
+use near_primitives::runtime::config::RuntimeConfig;
+use near_sdk_sim::num_rational::Rational;
 
 pub(crate) fn helper_create_task(cron: &UserAccount, counter: &UserAccount) -> TaskBase64Hash {
     let execution_result = counter.call(
@@ -105,7 +108,26 @@ pub(crate) fn bootstrap_time_simulation() -> (
     UserAccount,
     UserAccount,
 ) {
-    let mut genesis = GenesisConfig::default();
+    let mut runtime_config = RuntimeConfig::from_protocol_version(
+        &Arc::new(RuntimeConfig::default()),
+        114,
+    ).as_ref().clone();
+    runtime_config.transaction_costs.burnt_gas_reward = Rational::from_integer(1);
+    runtime_config.transaction_costs.pessimistic_gas_price_inflation_ratio = Rational::from_integer(1);
+
+    let mut genesis = GenesisConfig {
+        genesis_time: 0,
+        gas_price: 100_000_000,
+        gas_limit: runtime_config.wasm_config.limit_config.max_total_prepaid_gas,
+        genesis_height: 0,
+        epoch_length: 3u64,
+        block_prod_time: 1_000_000_000u64,
+        runtime_config,
+        state_records: vec![],
+        validators: vec![],
+    };
+    // let mut genesis = GenesisConfig::default();
+    // genesis.gas_price = 1;
     let root_account_id = "root".to_string();
     let signer = genesis.init_root_signer(&root_account_id);
 
