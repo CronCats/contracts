@@ -32,7 +32,7 @@ pub(crate) fn helper_create_task(cron: &UserAccount, counter: &UserAccount) -> T
         .to_string()
         .into_bytes(),
         DEFAULT_GAS,
-        36_000_000_000_000u128, // deposit
+        6_030_000_000_000_000u128, // deposit
     );
     execution_result.assert_success();
     let hash: Base64VecU8 = execution_result.unwrap_json();
@@ -169,8 +169,10 @@ pub(crate) fn find_log_from_outcomes(root_runtime: &RefMut<RuntimeStandalone>, m
     let mut found_withdrawal_log = false;
     for outcome_hash in last_outcomes {
         let eo = root_runtime.outcome(&outcome_hash).unwrap();
-        if eo.logs.contains(msg) {
-            found_withdrawal_log = true;
+        for log in eo.logs {
+            if log.contains(msg) {
+                found_withdrawal_log = true;
+            }
         }
     }
     assert!(

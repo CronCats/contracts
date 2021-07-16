@@ -86,6 +86,10 @@ near call counter.$NEAR_ACCT decrement --accountId $NEAR_ACCT
 
 ## Changelog
 
+### `0.1.0`
+
+Testnet version stable, gas efficiencies, initial full spec complete
+
 ### `0.0.1`
 
 Initial setup
