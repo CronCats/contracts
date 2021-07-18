@@ -488,10 +488,12 @@ impl CronManager {
         // Get previous task hashes in slot, find index of task hash, remove
         let next_slot = self.get_slot_from_cadence(task.cadence.clone());
         let mut slot_tasks = self.slots.get(&next_slot).unwrap_or(Vec::new());
-        if let Some(index) = slot_tasks.iter().position(|h| *h == task_hash) {
-            slot_tasks.remove(index);
+        if slot_tasks.len() != 0 {
+            if let Some(index) = slot_tasks.iter().position(|h| *h == task_hash) {
+                slot_tasks.remove(index);
+            }
+            self.slots.insert(&next_slot, &slot_tasks);
         }
-        self.slots.insert(&next_slot, &slot_tasks);
     }
 
     /// Executes a task based on the current task slot
