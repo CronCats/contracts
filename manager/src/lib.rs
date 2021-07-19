@@ -181,9 +181,9 @@ impl CronManager {
             owner_pk: old_contract.owner_pk,
             bps_block: old_contract.bps_block,
             bps_timestamp: old_contract.bps_timestamp,
-            tasks: UnorderedMap::new(StorageKeys::Tasks),
-            agents: LookupMap::new(StorageKeys::Agents),
-            slots: TreeMap::new(StorageKeys::Slots),
+            tasks: old_contract.tasks,
+            agents: old_contract.agents,
+            slots: old_contract.slots,
             available_balance: old_contract.available_balance,
             staked_balance: old_contract.staked_balance,
             agent_fee: old_contract.agent_fee,
@@ -346,7 +346,7 @@ impl CronManager {
             self.validate_cadence(cadence.clone()),
             "Cadence string invalid"
         );
-        log!("cadence {}", &cadence.clone());
+        // log!("cadence {}", &cadence.clone());
         let item = Task {
             owner_id: env::signer_account_id(),
             contract_id,
@@ -379,7 +379,7 @@ impl CronManager {
         );
 
         let hash = self.hash(&item);
-        log!("Task Hash (as bytes) {:?}", &hash);
+        // log!("Task Hash (as bytes) {:?}", &hash);
 
         // Parse cadence into a future timestamp, then convert to a slot
         let next_slot = self.get_slot_from_cadence(item.cadence.clone());
@@ -390,7 +390,7 @@ impl CronManager {
         // Get previous task hashes in slot, add as needed
         let mut slot_slots = self.slots.get(&next_slot).unwrap_or(Vec::new());
         slot_slots.push(hash.clone());
-        log!("Inserting into slot: {}", next_slot);
+        log!("Task next slot: {}", next_slot);
         self.slots.insert(&next_slot, &slot_slots);
 
         Base64VecU8::from(hash)
@@ -604,7 +604,7 @@ impl CronManager {
             PromiseResult::Successful(_) => {
                 promise_outcome_success = true;
                 log!(
-                    "Task {} completed successfully",
+                    "Task {} Succeeded",
                     base64::encode(task_hash.clone())
                 );
             }
