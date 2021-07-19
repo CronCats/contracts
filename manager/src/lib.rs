@@ -154,7 +154,6 @@ impl CronManager {
         self.agents.remove(&tmp_account_id);
     }
 
-    // TODO:
     // NOTE: For large state transitions, needs to be able to migrate over paginated sets?
     /// Migrate State
     /// Safely upgrade contract storage
@@ -162,35 +161,38 @@ impl CronManager {
     /// ```bash
     /// near call cron.testnet migrate --accountId cron.testnet
     /// ```
-    // #[init(ignore_state)]
-    // pub fn migrate_state(new_data: String) -> Self {
-    //     // Deserialize the state using the old contract structure.
-    //     let old_contract: CronManager = env::state_read().expect("Old state doesn't exist");
-    //     // Verify that the migration can only be done by the owner.
-    //     // This is not necessary, if the upgrade is done internally.
-    //     assert_eq!(
-    //         &env::predecessor_account_id(),
-    //         &old_contract.owner_id,
-    //         "Can only be called by the owner"
-    //     );
+    #[init(ignore_state)]
+    pub fn migrate_state() -> Self {
+        // Deserialize the state using the old contract structure.
+        let old_contract: CronManager = env::state_read().expect("Old state doesn't exist");
+        // Verify that the migration can only be done by the owner.
+        // This is not necessary, if the upgrade is done internally.
+        assert_eq!(
+            &env::predecessor_account_id(),
+            &old_contract.owner_id,
+            "Can only be called by the owner"
+        );
 
-    //     // Create the new contract using the data from the old contract.
-    //     // CronManager { owner_id: old_contract.owner_id, data: old_contract.data, new_data }
-    //     CronManager {
-    //         paused: true,
-    //         owner_id: old_contract.owner_id,
-    //         owner_pk: old_contract.owner_pk,
-    //         bps_block: env::block_index(),
-    //         bps_timestamp: env::block_timestamp(),
-    //         tasks: LookupMap::new(StorageKeys::Tasks),
-    //         agents: LookupMap::new(StorageKeys::Agents),
-    //         slots: TreeMap::new(StorageKeys::Slots),
-    //         available_balance: 0,
-    //         staked_balance: old_contract.staked_balance,
-    //         agent_fee: u128::from(GAS_BASE_FEE),
-    //         slot_granularity: SLOT_GRANULARITY
-    //     }
-    // }
+        // Create the new contract using the data from the old contract.
+        // CronManager { owner_id: old_contract.owner_id, data: old_contract.data, new_data }
+        CronManager {
+            paused: false,
+            owner_id: old_contract.owner_id,
+            owner_pk: old_contract.owner_pk,
+            bps_block: old_contract.bps_block,
+            bps_timestamp: old_contract.bps_timestamp,
+            tasks: UnorderedMap::new(StorageKeys::Tasks),
+            agents: LookupMap::new(StorageKeys::Agents),
+            slots: TreeMap::new(StorageKeys::Slots),
+            available_balance: old_contract.available_balance,
+            staked_balance: old_contract.staked_balance,
+            agent_fee: old_contract.agent_fee,
+            gas_price: old_contract.gas_price,
+            proxy_callback_gas: old_contract.proxy_callback_gas,
+            slot_granularity: old_contract.slot_granularity,
+            agent_storage_usage: old_contract.agent_storage_usage,
+        }
+    }
 
     /// Tick: Cron Manager Heartbeat
     /// Used to aid computation of blocks per second, manage internal use of funds
