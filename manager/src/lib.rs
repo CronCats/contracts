@@ -7,7 +7,7 @@ use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{LookupMap, TreeMap, UnorderedMap},
     env,
-    json_types::{Base58PublicKey, Base64VecU8, ValidAccountId, U128},
+    json_types::{Base58PublicKey, Base64VecU8, ValidAccountId, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json::json,
@@ -20,14 +20,10 @@ near_sdk::setup_alloc!();
 
 // Balance & Fee Definitions
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
-pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
 pub const GAS_BASE_PRICE: Balance = 100_000_000;
-// TODO: investigate how much this should be, currently
-// http post https://rpc.mainnet.near.org jsonrpc=2.0 id=dontcare method=EXPERIMENTAL_genesis_config
-// > mainnet-config.json
-
-pub const GAS_FOR_CALLBACK: Gas = 75_000_000_000_000;
-pub const AGENT_BASE_FEE: u128 = 3_000_000_000_000_000;
+pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
+pub const GAS_FOR_CALLBACK: Gas = 15_000_000_000_000; // actual is: 13534954161128
+pub const AGENT_BASE_FEE: Balance = 1_000_000_000_000_000_000_000; // 0.001 Ⓝ
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 // Boundary Definitions
@@ -106,6 +102,7 @@ pub struct CronManager {
     staked_balance: Balance,
     agent_fee: Balance,
     gas_price: Balance,
+    proxy_callback_gas: Gas,
     slot_granularity: u64,
 
     // Storage
@@ -133,6 +130,7 @@ impl CronManager {
             staked_balance: 0,
             agent_fee: AGENT_BASE_FEE,
             gas_price: GAS_BASE_PRICE,
+            proxy_callback_gas: GAS_FOR_CALLBACK,
             slot_granularity: SLOT_GRANULARITY,
             agent_storage_usage: 0,
         };
@@ -917,6 +915,7 @@ impl CronManager {
         paused: Option<bool>,
         agent_fee: Option<U128>,
         gas_price: Option<U128>,
+        proxy_callback_gas: Option<U64>,
     ) {
         assert_eq!(self.owner_id, env::signer_account_id(), "Must be owner");
 
@@ -939,6 +938,9 @@ impl CronManager {
         }
         if gas_price.is_some() {
             self.gas_price = gas_price.unwrap().0;
+        }
+        if proxy_callback_gas.is_some() {
+            self.proxy_callback_gas = proxy_callback_gas.unwrap().0;
         }
     }
 }
@@ -966,7 +968,7 @@ mod tests {
             function_id: String::from("increment"),
             cadence: String::from("@daily"),
             recurring: false,
-            total_deposit: U128::from(3000000000000300),
+            total_deposit: U128::from(1000000000000000000300),
             deposit: U128::from(100),
             gas: 200,
             arguments: vec![],
@@ -1016,7 +1018,7 @@ mod tests {
         assert!(contract.get_all_tasks(None).is_empty());
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .build());
         let task_id = contract.create_task(
             "contract.testnet".to_string(),
@@ -1042,10 +1044,10 @@ mod tests {
         testing_env!(context.build());
         let mut contract = CronManager::new();
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, None, Some(true), None, None);
+        contract.update_settings(None, None, None, Some(true), None, None, None);
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .build());
         contract.create_task(
             "contract.testnet".to_string(),
@@ -1066,7 +1068,7 @@ mod tests {
         let mut contract = CronManager::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .build());
         contract.create_task(
             "contract.testnet".to_string(),
@@ -1081,7 +1083,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "Not enough task balance to execute job, need at least 3000000000100200"
+        expected = "Not enough task balance to execute job, need at least 1000000000000000100200"
     )]
     fn test_task_create_deposit_not_enuf() {
         let mut context = get_context(accounts(1));
@@ -1101,7 +1103,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "Not enough task balance to execute job, need at least 6000000000200400"
+        expected = "Not enough task balance to execute job, need at least 2000000000000000200400"
     )]
     fn test_task_create_deposit_not_enuf_recurring() {
         let mut context = get_context(accounts(1));
@@ -1147,7 +1149,7 @@ mod tests {
         // Move forward time and blocks to get more accurate bps
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .block_timestamp(BLOCK_START_TS + (6 * NANO))
             .block_index(BLOCK_START_BLOCK + 6)
             .build());
@@ -1184,7 +1186,7 @@ mod tests {
         // Move forward time and blocks to get more accurate bps
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .block_timestamp(BLOCK_START_TS + (6 * NANO))
             .block_index(BLOCK_START_BLOCK + 6)
             .build());
@@ -1274,7 +1276,7 @@ mod tests {
         let mut contract = CronManager::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .build());
         contract.create_task(
             "contract.testnet".to_string(),
@@ -1302,7 +1304,7 @@ mod tests {
         let mut contract = CronManager::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .build());
         contract.create_task(
             "contract.testnet".to_string(),
@@ -1313,7 +1315,7 @@ mod tests {
             Some(200),
             None,
         );
-        contract.update_settings(None, None, None, Some(true), None, None);
+        contract.update_settings(None, None, None, Some(true), None, None, None);
         testing_env!(context.is_view(false).block_index(1260).build());
         contract.proxy_call();
     }
@@ -1339,7 +1341,7 @@ mod tests {
         assert!(contract.get_all_tasks(None).is_empty());
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .build());
         let task_hash = contract.create_task(
             "contract.testnet".to_string(),
@@ -1369,7 +1371,7 @@ mod tests {
         assert_eq!(task.cadence, "* * */12 * * *");
         assert_eq!(task.recurring, true);
         assert_eq!(task.deposit.0, 10000000000000);
-        assert_eq!(task.total_deposit.0, 3010000000000300);
+        assert_eq!(task.total_deposit.0, 1000000010000000000300);
     }
 
     #[test]
@@ -1382,7 +1384,7 @@ mod tests {
         assert!(contract.get_all_tasks(None).is_empty());
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .build());
         let task_hash = contract.create_task(
             "contract.testnet".to_string(),
@@ -1436,7 +1438,7 @@ mod tests {
         assert!(contract.get_all_tasks(None).is_empty());
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .build());
         let task_hash = contract.create_task(
             "contract.testnet".to_string(),
@@ -1503,7 +1505,7 @@ mod tests {
         assert!(contract.get_all_tasks(None).is_empty());
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
+            .attached_deposit(1000000000000000000300)
             .build());
         let task_hash = contract.create_task(
             "contract.testnet".to_string(),
@@ -1579,13 +1581,13 @@ mod tests {
         assert_eq!(slot, 52201020);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(10), None, None, None);
+        contract.update_settings(None, None, Some(10), None, None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
         assert_eq!(slot, 52201040);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(1), None, None, None);
+        contract.update_settings(None, None, Some(1), None, None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
         assert_eq!(slot, 52201040);
@@ -1605,7 +1607,7 @@ mod tests {
             .signer_account_id(accounts(3))
             .predecessor_account_id(accounts(3))
             .build());
-        contract.update_settings(None, None, Some(10), None, None, None);
+        contract.update_settings(None, None, Some(10), None, None, None, None);
     }
 
     #[test]
@@ -1617,7 +1619,7 @@ mod tests {
         assert_eq!(contract.slot_granularity, SLOT_GRANULARITY);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(10), Some(true), None, None);
+        contract.update_settings(None, None, Some(10), Some(true), None, None, None);
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.slot_granularity, 10);
         assert_eq!(contract.paused, true);
