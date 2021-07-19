@@ -159,7 +159,7 @@ impl CronManager {
     /// Safely upgrade contract storage
     ///
     /// ```bash
-    /// near call cron.testnet migrate --accountId cron.testnet
+    /// near call cron.testnet migrate_state --accountId cron.testnet
     /// ```
     #[init(ignore_state)]
     pub fn migrate_state() -> Self {
