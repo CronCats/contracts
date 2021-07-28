@@ -364,7 +364,7 @@ fn simulate_basic_task_checks() {
         function_id: "increment".to_string(),
         cadence: "0   30   9,12,15     1,15       May-Aug  Mon,Wed,Fri  2018/2".to_string(),
         recurring: true,
-        total_deposit: U128::from(6030000000000000),
+        total_deposit: U128::from(2000000030000000000000),
         deposit: U128::from(12000000000000),
         gas: 3000000000000,
         arguments: vec![],

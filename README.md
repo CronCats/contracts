@@ -49,9 +49,15 @@ near delete agent.$NEAR_ACCT $NEAR_ACCT && near create-account agent.$NEAR_ACCT 
 ## Contract Interaction
 
 ```
-# Deploy
+# Deploy New
 near deploy --wasmFile ./res/manager.wasm --accountId cron.$NEAR_ACCT --initFunction new --initArgs '{}'
 near deploy --wasmFile ./res/rust_counter_tutorial.wasm --accountId counter.$NEAR_ACCT
+
+# Deploy Migration
+near deploy --wasmFile ./res/manager.wasm --accountId cron.$NEAR_ACCT --initFunction migrate_state --initArgs '{}'
+
+# Schedule "ticks" that help provide in-contract BPS calculation
+near call cron.$NEAR_ACCT create_task '{"contract_id": "cron.'$NEAR_ACCT'","function_id": "tick","cadence": "0 0 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId cron.$NEAR_ACCT --amount 10
 
 # Tasks
 near call cron.$NEAR_ACCT create_task '{"contract_id": "counter.'$NEAR_ACCT'","function_id": "increment","cadence": "*/10 * * * * *","recurring": true,"deposit": 10,"gas": 2400000000000}' --accountId counter.$NEAR_ACCT --amount 10
