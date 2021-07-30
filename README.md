@@ -37,6 +37,7 @@ near create-account cron.$NEAR_ACCT --masterAccount $NEAR_ACCT
 near create-account counter.$NEAR_ACCT --masterAccount $NEAR_ACCT
 near create-account agent.$NEAR_ACCT --masterAccount $NEAR_ACCT
 near create-account user.$NEAR_ACCT --masterAccount $NEAR_ACCT
+near create-account crud.$NEAR_ACCT --masterAccount $NEAR_ACCT
 ```
 
 **Note**: if changes are made to the contract and it needs to be redeployed, it's a good idea to delete and recreate the subaccount like so:

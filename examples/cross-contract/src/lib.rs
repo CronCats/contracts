@@ -4,12 +4,13 @@ use near_sdk::{
     serde::{Serialize, Deserialize},
     collections::Vector,
     json_types::{Base64VecU8, U128},
-    env, log, near_bindgen, AccountId, Gas, BorshStorageKey, Promise, PromiseOrValue, PanicOnDefault,
+    env, log, near_bindgen, AccountId, Gas, BorshStorageKey, Promise, PanicOnDefault,
 };
 
 near_sdk::setup_alloc!();
 
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
+pub const NANOS: u64 = 1_000_000;
 pub const MILLISECONDS_IN_MINUTE: u64 = 60_000;
 pub const MILLISECONDS_IN_HOUR: u64 = 3_600_000;
 pub const MILLISECONDS_IN_DAY: u64 = 86_400_000;
@@ -86,8 +87,8 @@ pub enum StorageKeys {
   DailySeries,
 }
 
-#[near_bindgen]
-#[derive(Default, BorshDeserialize, BorshSerialize, Debug)]
+#[derive(Default, BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize)]
+#[serde(crate = "near_sdk::serde")]
 pub struct TickItem {
     t: u64, // point in time
     v: u128, // value at time
@@ -125,13 +126,13 @@ impl CrudContract {
     /// Returns the time series of data, for minutely, hourly, daily
     ///
     /// ```bash
-    /// near call crosscontract.testnet get_series
+    /// near view crosscontract.testnet get_series
     /// ```
-    pub fn get_series(&self) -> (Vector<TickItem>, Vector<TickItem>, Vector<TickItem>) {
+    pub fn get_series(&self) -> (Vec<TickItem>, Vec<TickItem>, Vec<TickItem>) {
       (
-        self.minutely,
-        self.hourly,
-        self.daily
+        self.minutely.to_vec(),
+        self.hourly.to_vec(),
+        self.daily.to_vec()
       )
     }
 
@@ -153,7 +154,7 @@ impl CrudContract {
       // get some data value, at a point in time
       // I chose a stupid value, but one that changes over time. This can be changed to account balances, token prices, anything that changes over time.
       let minute_tick = TickItem {
-        t: block_ts,
+        t: block_ts / NANOS,
         v: validator_num,
       };
       log!("New Tick: {:?}", minute_tick);
@@ -169,10 +170,10 @@ impl CrudContract {
       }
 
       // hourly average across last 1hr of data including NEW
-      if rem_hour <= 20_000 { // 3_600_000
-        let total_hour_ticks: u128 = 60;
-        let end_index = u128::from(self.hourly.len());
-        let start_index = end_index - total_hour_ticks;
+      if rem_hour <= 40_000 { // 3_600_000
+        let total_hour_ticks: u64 = 60;
+        let end_index = self.hourly.len();
+        let start_index = core::cmp::max(end_index - total_hour_ticks, 1);
         let mut hour_avg_num = validator_num;
 
         // minus 1 for current number above
@@ -183,8 +184,8 @@ impl CrudContract {
         }
 
         self.hourly.push(&TickItem {
-          t: block_ts,
-          v: hour_avg_num / total_hour_ticks,
+          t: block_ts / NANOS,
+          v: hour_avg_num / u128::from(total_hour_ticks),
         });
 
         // trim to max
@@ -194,9 +195,9 @@ impl CrudContract {
       }
 
       // daily average across last 1hr of data including NEW
-      if rem_hour <= 30_000 { // 86_400_000
-        let total_day_ticks: u128 = 24;
-        let end_index = u128::from(self.daily.len());
+      if rem_hour <= 120_000 { // 86_400_000
+        let total_day_ticks: u64 = 24;
+        let end_index = self.daily.len();
         let start_index = end_index - total_day_ticks;
         let mut hour_avg_num = validator_num;
 
@@ -208,8 +209,8 @@ impl CrudContract {
         }
 
         self.daily.push(&TickItem {
-          t: block_ts,
-          v: hour_avg_num / total_day_ticks,
+          t: block_ts / NANOS,
+          v: hour_avg_num / u128::from(total_day_ticks),
         });
 
         // trim to max
@@ -222,7 +223,6 @@ impl CrudContract {
     /// Create a new scheduled task, registering the "tick" method with croncat
     ///
     /// near call crosscontract.testnet schedule '{ "function_id": "tick", "period": "0 */1 * * * *" }' --accountId YOUR_ACCOUNT.testnet
-    #[result_serializer(borsh)]
     pub fn schedule(&mut self, function_id: String, period: String) -> Promise {
       // TODO: safety checks
       ext_croncat::create_task(
@@ -296,7 +296,7 @@ impl CrudContract {
     /// near call crosscontract.testnet status
     pub fn status(&self) -> Promise {
       ext_croncat::get_task(
-        self.task_hash.expect("No task hash found, need to schedule a cron task to set and get it."),
+        self.task_hash.clone().expect("No task hash found, need to schedule a cron task to set and get it."),
         &env::current_account_id(),
         0,
         env::prepaid_gas() / 3
