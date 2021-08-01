@@ -91,10 +91,10 @@ near call counter.$NEAR_ACCT decrement --accountId $NEAR_ACCT
 near view crud.$NEAR_ACCT get_series
 near view crud.$NEAR_ACCT stats
 near call crud.$NEAR_ACCT tick --accountId $NEAR_ACCT
-near call crud.$NEAR_ACCT schedule '{ "function_id": "tick", "period": "0 */5 * * * *" }' --accountId $NEAR_ACCT
-near call crud.$NEAR_ACCT update '{ "period": "0 0 */1 * * *" }' --accountId $NEAR_ACCT
-near call crud.$NEAR_ACCT remove --accountId $NEAR_ACCT
-near call crud.$NEAR_ACCT status --accountId $NEAR_ACCT
+near call crud.$NEAR_ACCT schedule '{ "function_id": "tick", "period": "0 */5 * * * *" }' --accountId crud.$NEAR_ACCT --gas 300000000000000 --amount 5
+near call crud.$NEAR_ACCT update '{ "period": "0 0 */1 * * *" }' --accountId crud.$NEAR_ACCT --gas 300000000000000 --amount 5
+near call crud.$NEAR_ACCT remove --accountId crud.$NEAR_ACCT
+near call crud.$NEAR_ACCT status --accountId crud.$NEAR_ACCT
 ```
 
 ## Changelog

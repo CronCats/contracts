@@ -5,6 +5,7 @@ use near_sdk::{
     json_types::{Base64VecU8, U128},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
+    serde_json,
     AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise,
 };
 
@@ -19,11 +20,11 @@ pub const MILLISECONDS_IN_DAY: u64 = 86_400_000;
 
 /// Gas & Balance Configs
 pub const NO_DEPOSIT: u128 = 0;
-pub const GAS_FOR_TICK_CALL: Gas = 25_000_000_000_000;
+pub const GAS_FOR_TICK_CALL: Gas = 7_000_000_000_000;
 pub const GAS_FOR_SCHEDULE_CALL: Gas = 25_000_000_000_000;
-pub const GAS_FOR_SCHEDULE_CALLBACK: Gas = 25_000_000_000_000;
-pub const GAS_FOR_UPDATE_CALL: Gas = 25_000_000_000_000;
-pub const GAS_FOR_REMOVE_CALL: Gas = 25_000_000_000_000;
+pub const GAS_FOR_SCHEDULE_CALLBACK: Gas = 5_000_000_000_000;
+pub const GAS_FOR_UPDATE_CALL: Gas = 15_000_000_000_000;
+pub const GAS_FOR_REMOVE_CALL: Gas = 20_000_000_000_000;
 pub const GAS_FOR_STATUS_CALL: Gas = 25_000_000_000_000;
 pub const GAS_FOR_STATUS_CALLBACK: Gas = 25_000_000_000_000;
 
@@ -51,7 +52,8 @@ pub struct Task {
 pub trait ExtCroncat {
     fn get_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, U128);
     fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Task>;
-    fn get_task(&self, task_hash: Base64VecU8) -> Task;
+    // fn get_task(&self, task_hash: Base64VecU8) -> Task;
+    fn get_task(&self, task_hash: String) -> Task;
     fn create_task(
         &mut self,
         contract_id: String,
@@ -357,8 +359,12 @@ impl CrudContract {
     /// near call crosscontract.testnet status
     /// ```
     pub fn status(&self) -> Promise {
+        // TODO: fix this! serialization is not working
+        let hash = self.task_hash.clone().expect(ERR_NO_TASK_CONFIGURED);
+        log!("TASK HASH: {:?} {:?} {}", &hash, serde_json::to_string(&hash).unwrap(), serde_json::to_string(&hash).unwrap());
         ext_croncat::get_task(
-            self.task_hash.clone().expect(ERR_NO_TASK_CONFIGURED),
+            // hash,
+            serde_json::to_string(&hash).unwrap().to_string(),
             &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
             NO_DEPOSIT,
             GAS_FOR_STATUS_CALL,
