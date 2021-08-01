@@ -5,7 +5,7 @@ use crate::test_utils::{
     sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter,
 };
 use manager::{Agent, Task};
-use near_sdk::{json_types::{Base64VecU8, U128}};
+use near_sdk::json_types::{Base64VecU8, U128};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json;
 use near_sdk::serde_json::{json, Value};
@@ -109,8 +109,9 @@ fn simulate_many_tasks() {
     );
 
     // Check that the counter really did update
-    let get_counter_view_res =
-        root_runtime.view_method_call("counter.root", "get_num", "{}".as_bytes()).unwrap();
+    let get_counter_view_res = root_runtime
+        .view_method_call("counter.root", "get_num", "{}".as_bytes())
+        .unwrap();
     assert_eq!(get_counter_view_res[0], 48, "Counter number before proxy");
 
     // Agent calls proxy_call using new transaction syntax with borrowed,
@@ -130,9 +131,13 @@ fn simulate_many_tasks() {
     assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
 
     // Check that the counter really did update
-    let get_counter_view_res =
-        root_runtime.view_method_call("counter.root", "get_num", "{}".as_bytes()).unwrap();
-    assert_eq!(get_counter_view_res[0], 49, "Counter updated from proxy call");
+    let get_counter_view_res = root_runtime
+        .view_method_call("counter.root", "get_num", "{}".as_bytes())
+        .unwrap();
+    assert_eq!(
+        get_counter_view_res[0], 49,
+        "Counter updated from proxy call"
+    );
 
     // Ensure it doesn't find tasks now, except for the same one that's now completed
     get_tasks_view_res = root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());

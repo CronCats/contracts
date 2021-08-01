@@ -1,19 +1,37 @@
 use near_sdk::{
-    ext_contract,
     borsh::{self, BorshDeserialize, BorshSerialize},
-    serde::{Serialize, Deserialize},
     collections::Vector,
+    env, ext_contract,
     json_types::{Base64VecU8, U128},
-    env, log, near_bindgen, AccountId, Gas, BorshStorageKey, Promise, PanicOnDefault,
+    log, near_bindgen,
+    serde::{Deserialize, Serialize},
+    AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise,
 };
 
 near_sdk::setup_alloc!();
 
+/// Basic configs
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const NANOS: u64 = 1_000_000;
 pub const MILLISECONDS_IN_MINUTE: u64 = 60_000;
 pub const MILLISECONDS_IN_HOUR: u64 = 3_600_000;
 pub const MILLISECONDS_IN_DAY: u64 = 86_400_000;
+
+/// Gas & Balance Configs
+pub const NO_DEPOSIT: u128 = 0;
+pub const GAS_FOR_TICK_CALL: Gas = 25_000_000_000_000;
+pub const GAS_FOR_SCHEDULE_CALL: Gas = 25_000_000_000_000;
+pub const GAS_FOR_SCHEDULE_CALLBACK: Gas = 25_000_000_000_000;
+pub const GAS_FOR_UPDATE_CALL: Gas = 25_000_000_000_000;
+pub const GAS_FOR_REMOVE_CALL: Gas = 25_000_000_000_000;
+pub const GAS_FOR_STATUS_CALL: Gas = 25_000_000_000_000;
+pub const GAS_FOR_STATUS_CALLBACK: Gas = 25_000_000_000_000;
+
+/// Error messages
+const ERR_ONLY_OWNER: &str = "Must be called by owner";
+const ERR_NO_CRON_CONFIGURED: &str = "No cron account configured, cannot schedule";
+const ERR_NO_TASK_CONFIGURED: &str =
+    "No task hash found, need to schedule a cron task to set and get it.";
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
@@ -59,18 +77,18 @@ pub trait ExtCroncat {
 
 #[ext_contract(ext)]
 pub trait ExtCrossContract {
-  fn schedule_callback(
-    &mut self,
-    #[callback]
-    #[serializer(borsh)]
-    task_hash: Base64VecU8
-  );
-  fn status_callback(
-    &self,
-    #[callback]
-    #[serializer(borsh)]
-    task: Option<Task>
-  );
+    fn schedule_callback(
+        &mut self,
+        #[callback]
+        #[serializer(borsh)]
+        task_hash: Base64VecU8,
+    );
+    fn status_callback(
+        &self,
+        #[callback]
+        #[serializer(borsh)]
+        task: Option<Task>,
+    );
 }
 
 // GOALs:
@@ -82,45 +100,55 @@ pub trait ExtCrossContract {
 
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
-  MinutelySeries,
-  HourlySeries,
-  DailySeries,
+    MinutelySeries,
+    HourlySeries,
+    DailySeries,
 }
 
 #[derive(Default, BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct TickItem {
-    t: u64, // point in time
+    t: u64,  // point in time
     v: u128, // value at time
 }
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct CrudContract {
-  // tick: raw, holding 24 hours of minutely items
-  minutely: Vector<TickItem>,
-  // tick: avg over 1hr of data, holding 30 days of hourly items
-  hourly: Vector<TickItem>,
-  // tick: avg over 1 day of data, holding 1 year of daily items
-  daily: Vector<TickItem>,
-  // Cron task hash, default will be running at the minutely scale
-  task_hash: Option<Base64VecU8>,
+    // tick: raw, holding 24 hours of minutely items
+    minutely: Vector<TickItem>,
+    // tick: avg over 1hr of data, holding 30 days of hourly items
+    hourly: Vector<TickItem>,
+    // tick: avg over 1 day of data, holding 1 year of daily items
+    daily: Vector<TickItem>,
+    // Cron task hash, default will be running at the minutely scale
+    task_hash: Option<Base64VecU8>,
+    // Cron account
+    cron: Option<AccountId>,
 }
 
 #[near_bindgen]
 impl CrudContract {
     /// ```bash
-    /// near call crosscontract.testnet new --accountId YOUR_ACCOUNT.testnet
+    /// near deploy --wasmFile ./res/cross_contract.wasm --accountId crosscontract.testnet --initFunction new --initArgs '{"cron": "cron.testnet"}'
     /// ```
     #[init]
-    pub fn new() -> Self {
-      assert!(!env::state_exists(), "The contract is already initialized");
-      CrudContract {
-        minutely: Vector::new(StorageKeys::MinutelySeries),
-        hourly: Vector::new(StorageKeys::HourlySeries),
-        daily: Vector::new(StorageKeys::DailySeries),
-        task_hash: None,
-      }
+    pub fn new(cron: Option<AccountId>) -> Self {
+        assert!(!env::state_exists(), "The contract is already initialized");
+        assert_eq!(
+            env::current_account_id(),
+            env::predecessor_account_id(),
+            "{}",
+            ERR_ONLY_OWNER
+        );
+
+        CrudContract {
+            minutely: Vector::new(StorageKeys::MinutelySeries),
+            hourly: Vector::new(StorageKeys::HourlySeries),
+            daily: Vector::new(StorageKeys::DailySeries),
+            task_hash: None,
+            cron,
+        }
     }
 
     /// Returns the time series of data, for minutely, hourly, daily
@@ -129,131 +157,144 @@ impl CrudContract {
     /// near view crosscontract.testnet get_series
     /// ```
     pub fn get_series(&self) -> (Vec<TickItem>, Vec<TickItem>, Vec<TickItem>) {
-      (
-        self.minutely.to_vec(),
-        self.hourly.to_vec(),
-        self.daily.to_vec()
-      )
+        (
+            self.minutely.to_vec(),
+            self.hourly.to_vec(),
+            self.daily.to_vec(),
+        )
     }
 
     /// Tick: CrudContract Heartbeat
     /// Used to compute this time periods minutely/hourly/daily
     /// This fn can be called a varying intervals to compute rolling window time series data.
     ///
+    /// ```bash
     /// near call crosscontract.testnet tick '{}' --accountId YOUR_ACCOUNT.testnet
+    /// ```
     pub fn tick(&mut self) {
-      // compute the current intervals
-      let block_ts = env::block_timestamp();
-      let validator_num = env::validator_total_stake();
-      let rem_minute = core::cmp::max(block_ts % MILLISECONDS_IN_MINUTE, 1);
-      let rem_hour = core::cmp::max(block_ts % MILLISECONDS_IN_HOUR, 1);
-      let rem_day = core::cmp::max(block_ts % MILLISECONDS_IN_DAY, 1);
-      log!("REMS: {:?} {:?} {:?}", rem_minute, rem_hour, rem_day);
-      log!("LENS: {:?} {:?} {:?}", self.minutely.len(), self.hourly.len(), self.daily.len());
+        // compute the current intervals
+        let block_ts = env::block_timestamp();
+        let validator_num = env::validator_total_stake();
+        let rem_threshold = 60_000;
+        let rem_hour = core::cmp::max(block_ts % MILLISECONDS_IN_HOUR, 1);
+        let rem_day = core::cmp::max(block_ts % MILLISECONDS_IN_DAY, 1);
+        log!("REMS: {:?} {:?}", rem_hour, rem_day);
+        log!(
+            "LENS: {:?} {:?} {:?}",
+            self.minutely.len(),
+            self.hourly.len(),
+            self.daily.len()
+        );
 
-      // get some data value, at a point in time
-      // I chose a stupid value, but one that changes over time. This can be changed to account balances, token prices, anything that changes over time.
-      let minute_tick = TickItem {
-        t: block_ts / NANOS,
-        v: validator_num,
-      };
-      log!("New Tick: {:?}", minute_tick);
+        // get some data value, at a point in time
+        // I chose a stupid value, but one that changes over time. This can be changed to account balances, token prices, anything that changes over time.
+        let minute_tick = TickItem {
+            t: block_ts / NANOS,
+            v: validator_num,
+        };
+        log!("New Tick: {:?}", minute_tick);
 
-      // compute for each interval match, made a small buffer window to make sure the computed value doesnt get computed too far out of range
-      if rem_minute <= 10_000 { // 60_000
+        // compute for each interval match, made a small buffer window to make sure the computed value doesnt get computed too far out of range
         self.minutely.push(&minute_tick);
 
         // trim to max
-        if self.minutely.len() > 1440 { // 24 hours of minutes (24*60)
-          self.minutely.pop();
-        }
-      }
-
-      // hourly average across last 1hr of data including NEW
-      if rem_hour <= 40_000 { // 3_600_000
-        let total_hour_ticks: u64 = 60;
-        let end_index = self.hourly.len();
-        let start_index = core::cmp::max(end_index - total_hour_ticks, 1);
-        let mut hour_avg_num = validator_num;
-
-        // minus 1 for current number above
-        for i in start_index..end_index {
-          if let Some(tick) = self.hourly.get(i) {
-            hour_avg_num += tick.v;
-          };
+        if self.minutely.len() > 1440 {
+            // 24 hours of minutes (24*60)
+            self.minutely.pop();
         }
 
-        self.hourly.push(&TickItem {
-          t: block_ts / NANOS,
-          v: hour_avg_num / u128::from(total_hour_ticks),
-        });
+        // hourly average across last 1hr of data including NEW
+        if rem_hour <= rem_threshold {
+            // 3_600_000
+            let total_hour_ticks: u64 = 60;
+            let end_index = self.hourly.len();
+            let start_index = core::cmp::max(end_index - total_hour_ticks, 1);
+            let mut hour_avg_num = validator_num;
 
-        // trim to max
-        if end_index > 744 { // 31 days of hours (24*31)
-          self.hourly.pop();
+            // minus 1 for current number above
+            for i in start_index..end_index {
+                if let Some(tick) = self.hourly.get(i) {
+                    hour_avg_num += tick.v;
+                };
+            }
+
+            self.hourly.push(&TickItem {
+                t: block_ts / NANOS,
+                v: hour_avg_num / u128::from(total_hour_ticks),
+            });
+
+            // trim to max
+            if end_index > 744 {
+                // 31 days of hours (24*31)
+                self.hourly.pop();
+            }
         }
-      }
 
-      // daily average across last 1hr of data including NEW
-      if rem_hour <= 120_000 { // 86_400_000
-        let total_day_ticks: u64 = 24;
-        let end_index = self.daily.len();
-        let start_index = end_index - total_day_ticks;
-        let mut hour_avg_num = validator_num;
+        // daily average across last 1hr of data including NEW
+        if rem_day <= rem_threshold {
+            // 86_400_000
+            let total_day_ticks: u64 = 24;
+            let end_index = self.daily.len();
+            let start_index = end_index - total_day_ticks;
+            let mut hour_avg_num = validator_num;
 
-        // minus 1 for current number above
-        for i in start_index..end_index {
-          if let Some(tick) = self.daily.get(i) {
-            hour_avg_num += tick.v;
-          };
+            // minus 1 for current number above
+            for i in start_index..end_index {
+                if let Some(tick) = self.daily.get(i) {
+                    hour_avg_num += tick.v;
+                };
+            }
+
+            self.daily.push(&TickItem {
+                t: block_ts / NANOS,
+                v: hour_avg_num / u128::from(total_day_ticks),
+            });
+
+            // trim to max
+            if end_index > 1825 {
+                // 5 years of days (365*5)
+                self.daily.pop();
+            }
         }
-
-        self.daily.push(&TickItem {
-          t: block_ts / NANOS,
-          v: hour_avg_num / u128::from(total_day_ticks),
-        });
-
-        // trim to max
-        if end_index > 1825 { // 5 years of days (365*5)
-          self.daily.pop();
-        }
-      }
     }
 
     /// Create a new scheduled task, registering the "tick" method with croncat
     ///
+    /// ```bash
     /// near call crosscontract.testnet schedule '{ "function_id": "tick", "period": "0 */1 * * * *" }' --accountId YOUR_ACCOUNT.testnet
+    /// ```
+    #[payable]
     pub fn schedule(&mut self, function_id: String, period: String) -> Promise {
-      // TODO: safety checks
-      ext_croncat::create_task(
-        env::current_account_id(),
-        function_id,
-        period,
-        Some(true),
-        Some(U128::from(0)),
-        Some(240000000000000000),
-        None,
-        &env::current_account_id(),
-        0,
-        env::prepaid_gas() / 3
-      ).then(
-        ext::schedule_callback(
-          &env::current_account_id(),
-          0,
-          env::prepaid_gas() / 3
+        assert_eq!(
+            env::current_account_id(),
+            env::predecessor_account_id(),
+            "{}",
+            ERR_ONLY_OWNER
+        );
+        // NOTE: Could check that the balance supplied is enough to cover XX task calls.
+
+        ext_croncat::create_task(
+            env::current_account_id(),
+            function_id,
+            period,
+            Some(true),
+            Some(U128::from(NO_DEPOSIT)),
+            Some(GAS_FOR_TICK_CALL), // 30 Tgas
+            None,
+            &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
+            env::attached_deposit(),
+            GAS_FOR_SCHEDULE_CALL,
         )
-      )
+        .then(ext::schedule_callback(
+            &env::current_account_id(),
+            NO_DEPOSIT,
+            GAS_FOR_SCHEDULE_CALLBACK,
+        ))
     }
 
     /// Get the task hash, and store in state
-    #[result_serializer(borsh)]
     #[private]
-    pub fn schedule_callback(
-        &mut self,
-        #[callback]
-        #[serializer(borsh)]
-        task_hash: Base64VecU8
-    ) {
+    pub fn schedule_callback(&mut self, #[callback] task_hash: Base64VecU8) {
         log!("schedule_callback task_hash {:?}", &task_hash);
         self.task_hash = Some(task_hash);
     }
@@ -261,111 +302,107 @@ impl CrudContract {
     /// Update a scheduled task using a known task hash, passing new updateable parameters. MUST be owner!
     /// NOTE: There's much more you could do here with the parameters, just showing an example of period update.
     ///
-    /// near call crosscontract.testnet update '{ "period": "0 0 */1 * * *", "task_hash": "r2JvrGPvDkFUuqdF4x1+L93aYKGmgp4GqXT4UAK3AE4=" }' --accountId YOUR_ACCOUNT.testnet
-    pub fn update(&mut self, period: String, task_hash: Base64VecU8) -> Promise {
-      // TODO: safety checks
-      ext_croncat::update_task(
-        task_hash,
-        Some(period),
-        None,
-        None,
-        None,
-        None,
-        &env::current_account_id(),
-        0,
-        env::prepaid_gas()
-      )
+    /// ```bash
+    /// near call crosscontract.testnet update '{ "period": "0 0 */1 * * *" }' --accountId YOUR_ACCOUNT.testnet
+    /// ```
+    #[payable]
+    pub fn update(&mut self, period: String) -> Promise {
+        assert_eq!(
+            env::current_account_id(),
+            env::predecessor_account_id(),
+            "{}",
+            ERR_ONLY_OWNER
+        );
+
+        ext_croncat::update_task(
+            self.task_hash.clone().expect(ERR_NO_TASK_CONFIGURED),
+            Some(period),
+            None,
+            None,
+            None,
+            None,
+            &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
+            env::attached_deposit(),
+            GAS_FOR_UPDATE_CALL,
+        )
     }
 
     /// Remove a scheduled task using a known hash. MUST be owner!
     ///
-    /// near call crosscontract.testnet remove '{ "task_hash": "r2JvrGPvDkFUuqdF4x1+L93aYKGmgp4GqXT4UAK3AE4=" }' --accountId YOUR_ACCOUNT.testnet
-    pub fn remove(&mut self, task_hash: Base64VecU8) -> Promise {
-      // TODO: safety checks
-      ext_croncat::remove_task(
-        task_hash,
-        &env::current_account_id(),
-        0,
-        env::prepaid_gas()
-      )
+    /// ```bash
+    /// near call crosscontract.testnet remove '{}' --accountId YOUR_ACCOUNT.testnet
+    /// ```
+    pub fn remove(&mut self) -> Promise {
+        assert_eq!(
+            env::current_account_id(),
+            env::predecessor_account_id(),
+            "{}",
+            ERR_ONLY_OWNER
+        );
+        let task_hash = self.task_hash.clone().expect(ERR_NO_TASK_CONFIGURED);
+        self.task_hash = None;
+
+        ext_croncat::remove_task(
+            task_hash,
+            &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
+            NO_DEPOSIT,
+            GAS_FOR_REMOVE_CALL,
+        )
     }
 
     /// Get the task status, including remaining balance & etc.
     /// Useful for automated on-chain task management! This method could be scheduled as well, and manage re-funding tasks or changing tasks on new data.
     ///
+    /// ```bash
     /// near call crosscontract.testnet status
+    /// ```
     pub fn status(&self) -> Promise {
-      ext_croncat::get_task(
-        self.task_hash.clone().expect("No task hash found, need to schedule a cron task to set and get it."),
-        &env::current_account_id(),
-        0,
-        env::prepaid_gas() / 3
-      ).then(
-        ext::schedule_callback(
-          &env::current_account_id(),
-          0,
-          env::prepaid_gas() / 3
+        ext_croncat::get_task(
+            self.task_hash.clone().expect(ERR_NO_TASK_CONFIGURED),
+            &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
+            NO_DEPOSIT,
+            GAS_FOR_STATUS_CALL,
         )
-      )
+        .then(ext::schedule_callback(
+            &env::current_account_id(),
+            NO_DEPOSIT,
+            GAS_FOR_STATUS_CALLBACK,
+        ))
     }
 
     /// Get the task hash, and store in state
     /// NOTE: This method helps contract understand remaining task balance, in case more is needed to continue running.
     /// NOTE: This could handle things about the task, or have logic about changing the task in some way.
-    #[result_serializer(borsh)]
     #[private]
-    pub fn status_callback(
-        &self,
-        #[callback]
-        #[serializer(borsh)]
-        task: Option<Task>
-    ) -> Option<Task> {
-      task
+    pub fn status_callback(&self, #[callback] task: Option<Task>) -> Option<Task> {
+        // TODO: Check remaining balance here
+        // NOTE: Could have logic to another callback IF the balance is running low
+        task
+    }
+
+    /// Get the stats!
+    ///
+    /// ```bash
+    /// near call crosscontract.testnet status
+    /// ```
+    pub fn stats(&self) -> (u64, u64, u64, Option<Base64VecU8>, Option<AccountId>) {
+        (
+            self.minutely.len(),
+            self.hourly.len(),
+            self.daily.len(),
+            self.task_hash.clone(),
+            self.cron.clone(),
+        )
     }
 }
 
+// NOTE: Im sorry, i didnt have time for adding tests.
+// DO YOU? If so, get a bounty reward: https://github.com/Cron-Near/bounties
+//
 // // use the attribute below for unit tests
 // #[cfg(test)]
 // mod tests {
 //     use super::*;
 //     use near_sdk::MockedBlockchain;
 //     use near_sdk::{testing_env, VMContext};
-
-//     // part of writing unit tests is setting up a mock context
-//     // in this example, this is only needed for env::log in the contract
-//     // this is also a useful list to peek at when wondering what's available in env::*
-//     fn get_context(input: Vec<u8>, is_view: bool) -> VMContext {
-//         VMContext {
-//             current_account_id: "alice.testnet".to_string(),
-//             signer_account_id: "robert.testnet".to_string(),
-//             signer_account_pk: vec![0, 1, 2],
-//             predecessor_account_id: "jane.testnet".to_string(),
-//             input,
-//             block_index: 0,
-//             block_timestamp: 0,
-//             account_balance: 0,
-//             account_locked_balance: 0,
-//             storage_usage: 0,
-//             attached_deposit: 0,
-//             prepaid_gas: 10u64.pow(18),
-//             random_seed: vec![0, 1, 2],
-//             is_view,
-//             output_data_receivers: vec![],
-//             epoch_height: 19,
-//         }
-//     }
-
-//     // mark individual unit tests with #[test] for them to be registered and fired
-//     #[test]
-//     fn increment() {
-//         // set up the mock context into the testing environment
-//         let context = get_context(vec![], false);
-//         testing_env!(context);
-//         // instantiate a contract variable with the counter at zero
-//         let mut contract = Counter { val: 0 };
-//         contract.increment();
-//         println!("Value after increment: {}", contract.get_num());
-//         // confirm that we received 1 when calling get_num
-//         assert_eq!(1, contract.get_num());
-//     }
 // }
