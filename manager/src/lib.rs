@@ -293,18 +293,26 @@ impl CronManager {
     // TODO: REMOVE IN PROD
     /// Most useful for debugging at this point.
     pub fn debug_slots_rem(&mut self, k: u128) {
-        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Only owner");
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Only owner"
+        );
         self.slots.remove(&k);
     }
 
     // TODO: REMOVE IN PROD
     /// Most useful for debugging at this point.
     pub fn debug_slots_clean(&mut self) {
-        assert_eq!(env::predecessor_account_id(), env::current_account_id(), "Only owner");
+        assert_eq!(
+            env::predecessor_account_id(),
+            env::current_account_id(),
+            "Only owner"
+        );
         let mut idx = 0;
 
         while idx < 5 {
-            let k =self.slots.min().unwrap();
+            let k = self.slots.min().unwrap();
             self.slots.remove(&k);
             idx += 1;
         }
@@ -548,7 +556,9 @@ impl CronManager {
         }
 
         // Clean up slot if no more data
-        if slot_data.len() < 1 { self.slots.remove(&slot_ballpark.unwrap()); }
+        if slot_data.len() < 1 {
+            self.slots.remove(&slot_ballpark.unwrap());
+        }
 
         let task = self.tasks.get(&hash).expect("No task found by hash");
         // log!("Found Task {:?}", &task);
@@ -581,7 +591,7 @@ impl CronManager {
 
     /// Logic executed on the completion of a proxy call
     /// Internal Method
-    /// 
+    ///
     /// Responsible for:
     /// 1. Checking if the task needs to reschedule
     /// 2. Finalizing tasks that are done running, return balance to owner
@@ -609,10 +619,7 @@ impl CronManager {
                 );
             }
             PromiseResult::Failed => {
-                log!(
-                    "Task {} Failed",
-                    base64::encode(task_hash.clone())
-                );
+                log!("Task {} Failed", base64::encode(task_hash.clone()));
             }
             PromiseResult::NotReady => unreachable!(),
         };
@@ -632,7 +639,10 @@ impl CronManager {
         // NOTE: Gas cost includes the cross-contract call & internal logic of this contract.
         // Direct contract gas fee will be lower than task execution costs.
         let call_balance_used = u128::from(env::used_gas()) * self.gas_price;
-        let mut agent = self.agents.get(&env::signer_account_id()).expect("Agent not registered");
+        let mut agent = self
+            .agents
+            .get(&env::signer_account_id())
+            .expect("Agent not registered");
 
         // Increment agent reward & task count
         // Reward for agent MUST include the amount of gas used as a reimbursement
@@ -653,7 +663,10 @@ impl CronManager {
         // If recurring and not enough balance for another trigger, end
         // if there was some issue on the other contract, end
         // Otherwise, schedule next task
-        if task.recurring == false || call_total_fee > task.total_deposit.0 || promise_outcome_success == false {
+        if task.recurring == false
+            || call_total_fee > task.total_deposit.0
+            || promise_outcome_success == false
+        {
             // Process task exit, if no future task can execute
             self.exit_task(task_hash);
         } else {

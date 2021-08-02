@@ -37,6 +37,7 @@ near create-account cron.$NEAR_ACCT --masterAccount $NEAR_ACCT
 near create-account counter.$NEAR_ACCT --masterAccount $NEAR_ACCT
 near create-account agent.$NEAR_ACCT --masterAccount $NEAR_ACCT
 near create-account user.$NEAR_ACCT --masterAccount $NEAR_ACCT
+near create-account crud.$NEAR_ACCT --masterAccount $NEAR_ACCT
 ```
 
 **Note**: if changes are made to the contract and it needs to be redeployed, it's a good idea to delete and recreate the subaccount like so:
@@ -44,6 +45,7 @@ near create-account user.$NEAR_ACCT --masterAccount $NEAR_ACCT
 ```bash
 near delete cron.$NEAR_ACCT $NEAR_ACCT && near create-account cron.$NEAR_ACCT --masterAccount $NEAR_ACCT
 near delete agent.$NEAR_ACCT $NEAR_ACCT && near create-account agent.$NEAR_ACCT --masterAccount $NEAR_ACCT
+near delete crud.$NEAR_ACCT $NEAR_ACCT && near create-account crud.$NEAR_ACCT --masterAccount $NEAR_ACCT
 ```
 
 ## Contract Interaction
@@ -52,6 +54,7 @@ near delete agent.$NEAR_ACCT $NEAR_ACCT && near create-account agent.$NEAR_ACCT 
 # Deploy New
 near deploy --wasmFile ./res/manager.wasm --accountId cron.$NEAR_ACCT --initFunction new --initArgs '{}'
 near deploy --wasmFile ./res/rust_counter_tutorial.wasm --accountId counter.$NEAR_ACCT
+near deploy --wasmFile ./res/cross_contract.wasm --accountId crud.$NEAR_ACCT --initFunction new --initArgs '{"cron": "cron.in.testnet"}'
 
 # Deploy Migration
 near deploy --wasmFile ./res/manager.wasm --accountId cron.$NEAR_ACCT --initFunction migrate_state --initArgs '{}'
@@ -60,7 +63,7 @@ near deploy --wasmFile ./res/manager.wasm --accountId cron.$NEAR_ACCT --initFunc
 near call cron.$NEAR_ACCT create_task '{"contract_id": "cron.'$NEAR_ACCT'","function_id": "tick","cadence": "0 0 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId cron.$NEAR_ACCT --amount 10
 
 # Tasks
-near call cron.$NEAR_ACCT create_task '{"contract_id": "counter.'$NEAR_ACCT'","function_id": "increment","cadence": "*/10 * * * * *","recurring": true,"deposit": 10,"gas": 2400000000000}' --accountId counter.$NEAR_ACCT --amount 10
+near call cron.$NEAR_ACCT create_task '{"contract_id": "counter.'$NEAR_ACCT'","function_id": "increment","cadence": "0 */5 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId counter.$NEAR_ACCT --amount 10
 
 near view cron.$NEAR_ACCT get_task '{"task_hash": "r2JvrGPvDkFUuqdF4x1+L93aYKGmgp4GqXT4UAK3AE4="}'
 
@@ -88,6 +91,16 @@ near call cron.$NEAR_ACCT withdraw_task_balance --accountId agent.$NEAR_ACCT
 near view counter.$NEAR_ACCT get_num
 near call counter.$NEAR_ACCT increment --accountId $NEAR_ACCT
 near call counter.$NEAR_ACCT decrement --accountId $NEAR_ACCT
+
+# ------------------------------------
+# Cross-Contract Interaction
+near view crud.$NEAR_ACCT get_series
+near view crud.$NEAR_ACCT stats
+near call crud.$NEAR_ACCT tick --accountId $NEAR_ACCT
+near call crud.$NEAR_ACCT schedule '{ "function_id": "tick", "period": "0 */5 * * * *" }' --accountId crud.$NEAR_ACCT --gas 300000000000000 --amount 5
+near call crud.$NEAR_ACCT update '{ "period": "0 0 */1 * * *" }' --accountId crud.$NEAR_ACCT --gas 300000000000000 --amount 5
+near call crud.$NEAR_ACCT remove --accountId crud.$NEAR_ACCT
+near call crud.$NEAR_ACCT status --accountId crud.$NEAR_ACCT
 ```
 
 ## Changelog
