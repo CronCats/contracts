@@ -19,6 +19,18 @@ To test run:
 cargo test --package manager -- --nocapture
 ```
 
+## Scripts
+The following scripts automate a lot of the tedious setup for contracts, and allow for quick deployments and setup. These are scripted versions of the example commands below.
+
+NOTE: See each script to change the main `NEAR_ACCT` to configure to an account you have testnet keys.
+
+Run:
+```bash
+./scripts/clear_all.sh
+./scripts/create_and_deploy.sh
+./scripts/simple_bootstrap.sh
+```
+
 ## Create testnet subaccounts
 Next, create a NEAR testnet account with [Wallet](https://wallet.testnet.near.org).
 
