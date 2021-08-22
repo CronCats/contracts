@@ -117,6 +117,10 @@ near call crud.$NEAR_ACCT status --accountId crud.$NEAR_ACCT
 
 ## Changelog
 
+### `0.2.0`
+
+Audit recommendations implemented, bug fixes. Watch audit here: https://youtu.be/KPAQbFz8RnE
+
 ### `0.1.0`
 
 Testnet version stable, gas efficiencies, initial full spec complete

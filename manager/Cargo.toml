@@ -1,7 +1,7 @@
 [package]
 name = "manager"
-version = "0.1.0"
-authors = ["Cron.near", "@trevorjtclarke"]
+version = "0.2.0"
+authors = ["cron.cat", "@trevorjtclarke", "@mikedotexe"]
 edition = "2018"
 
 [lib]

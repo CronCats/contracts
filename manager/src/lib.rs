@@ -3,7 +3,6 @@ mod storage_impl;
 use cron_schedule::Schedule;
 use near_contract_standards::storage_management::StorageManagement;
 use near_sdk::{
-    base64,
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{LookupMap, TreeMap, UnorderedMap},
     env,
@@ -11,8 +10,9 @@ use near_sdk::{
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json::json,
-    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseResult,
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise,
     StorageUsage,
+    assert_one_yocto,
 };
 use std::str::FromStr;
 
@@ -22,7 +22,8 @@ near_sdk::setup_alloc!();
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const GAS_BASE_PRICE: Balance = 100_000_000;
 pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
-pub const GAS_FOR_CALLBACK: Gas = 15_000_000_000_000; // actual is: 13534954161128
+// actual is: 13534954161128, higher in case treemap rebalance
+pub const GAS_FOR_CALLBACK: Gas = 30_000_000_000_000;
 pub const AGENT_BASE_FEE: Balance = 1_000_000_000_000_000_000_000; // 0.001 Ⓝ
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
@@ -411,6 +412,7 @@ impl CronManager {
         if agent_opt.is_none() {
             env::panic(b"Agent not registered");
         }
+        let mut agent = agent_opt.unwrap();
 
         // Get current slot based on block or timestamp
         let current_slot = self.get_slot_id(None);
@@ -429,9 +431,7 @@ impl CronManager {
             slot_ballpark = Some(current_slot);
         }
 
-        
         let mut slot_data = slot_opt.unwrap();
-        // log!("slot {:?}", &slot_data);
 
         // Get a single task hash, then retrieve task details
         let hash = slot_data.pop().expect("No tasks available");
@@ -440,19 +440,47 @@ impl CronManager {
         if slot_data.is_empty() {
             // Clean up slot if no more data
             self.slots.remove(&slot_ballpark.unwrap());
+            log!("Slot {} cleaned");
         } else {
             self.slots.insert(&slot_ballpark.unwrap(), &slot_data);
         }
 
-        let task = self.tasks.get(&hash).expect("No task found by hash");
-        // log!("Found Task {:?}", &task);
+        let mut task = self.tasks.get(&hash).expect("No task found by hash");
 
-        // NOTE: this is a dummy check, so it must be considered not 100% good but rather a way for task creator to safety check and not burn too much gas.
-        if self.task_balance_uses(&task) > task.total_deposit.0 {
+        // Fee breakdown:
+        // - Used Gas: Task Txn Fee Cost
+        // - Agent Fee: Incentivize Execution SLA
+        //
+        // Task Fee Examples:
+        // Total Fee = Gas Fee + Agent Fee
+        // Total Balance = Task Deposit + Total Fee 
+        //
+        // NOTE: Gas cost includes the cross-contract call & internal logic of this contract.
+        // Direct contract gas fee will be lower than task execution costs, however
+        // we require the task owner to appropriately estimate gas for overpayment.
+        // The gas overpayment will also acrue to the agent since there is no way to read
+        // how much gas was actually used on callback.
+        let call_fee_used = u128::from(task.gas) * self.gas_price;
+        let call_total_fee = call_fee_used + self.agent_fee;
+        let call_total_balance = task.deposit.0 + call_total_fee;
+
+        // safety check and not burn too much gas.
+        if call_total_balance > task.total_deposit.0 {
             log!("Not enough task balance to execute task, exiting");
             // Process task exit, if no future task can execute
             return self.exit_task(hash);
         }
+
+        // Update agent storage
+        // Increment agent reward & task count
+        // Reward for agent MUST include the amount of gas used as a reimbursement
+        agent.balance = U128::from(agent.balance.0 + call_total_fee);
+        agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
+        self.agents.insert(&env::signer_account_id(), &agent);
+
+        // Decrease task balance, Update task storage
+        task.total_deposit = U128::from(task.total_deposit.0 - call_total_balance);
+        self.tasks.insert(&hash, &task);
 
         // Call external contract with task variables
         let promise_first = env::promise_create(
@@ -462,110 +490,50 @@ impl CronManager {
             task.deposit.0,
             task.gas,
         );
-        let promise_second = env::promise_then(
-            promise_first,
-            env::current_account_id(),
-            b"callback_for_proxy_call",
-            json!({ "task_hash": hash }).to_string().as_bytes(),
-            0,
-            GAS_FOR_CALLBACK,
-        );
-        env::promise_return(promise_second);
+
+        // if out of balance or non-recurring, exit callback
+        if !task.recurring || call_total_balance > task.total_deposit.0 {
+            // Process task exit, if no future task can execute
+            self.exit_task(hash);
+            env::promise_return(promise_first);
+        } else {
+            // if recurring, callback for scheduling
+            let promise_second = env::promise_then(
+                promise_first,
+                env::current_account_id(),
+                b"callback_for_proxy_call",
+                json!({
+                    "task_hash": hash,
+                    "current_slot": current_slot
+                }).to_string().as_bytes(),
+                0,
+                GAS_FOR_CALLBACK,
+            );
+            env::promise_return(promise_second);
+        }   
     }
 
     /// Logic executed on the completion of a proxy call
-    /// Internal Method
-    ///
-    /// Responsible for:
-    /// 1. Checking if the task needs to reschedule
-    /// 2. Finalizing tasks that are done running, return balance to owner
+    /// Reschedule next task
     #[private]
-    pub fn callback_for_proxy_call(&mut self, task_hash: Vec<u8>) {
-        assert_eq!(
-            env::promise_results_count(),
-            1,
-            "Expected 1 promise result."
-        );
-        let mut task = self
+    pub fn callback_for_proxy_call(&mut self, task_hash: Vec<u8>, current_slot: u128) {
+        let task = self
             .tasks
             .get(&task_hash.clone())
             .expect("No task found by hash");
 
-        let mut promise_outcome_success = false;
+        // TODO: double check this can't get scheduled in current slot again
+        let next_slot = self.get_slot_from_cadence(task.cadence.clone());
+        log!("Scheduling Next Task {:?}", &next_slot);
+        assert!(
+            &current_slot < &next_slot,
+            "Cannot schedule task in the past"
+        );
 
-        // NOTE: now that logic for reschedule is here, need to store failed status for stopping task
-        match env::promise_result(0) {
-            PromiseResult::Successful(_) => {
-                promise_outcome_success = true;
-                log!(
-                    "Task {} Succeeded",
-                    base64::encode(task_hash.clone())
-                );
-            }
-            PromiseResult::Failed => {
-                log!("Task {} Failed", base64::encode(task_hash.clone()));
-            }
-            PromiseResult::NotReady => unreachable!(),
-        };
-
-        // only skip scheduling if user didnt intend
-        let current_slot = self.get_slot_id(None);
-
-        // Fee breakdown:
-        // - Used Gas: Task Txn Fee Cost
-        // - Agent Fee: Incentivize Execution SLA
-        //
-        // Task Fee Example:
-        // Gas: 50 Tgas
-        // Agent: 100 Tgas
-        // Total: 150 Tgas
-        //
-        // NOTE: Gas cost includes the cross-contract call & internal logic of this contract.
-        // Direct contract gas fee will be lower than task execution costs.
-        let call_balance_used = u128::from(env::used_gas()) * self.gas_price;
-        let mut agent = self
-            .agents
-            .get(&env::signer_account_id())
-            .expect("Agent not registered");
-
-        // Increment agent reward & task count
-        // Reward for agent MUST include the amount of gas used as a reimbursement
-        let call_total_fee = call_balance_used + self.agent_fee;
-        agent.balance = U128::from(agent.balance.0 + call_total_fee);
-        agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
-
-        // Update agent storage
-        self.agents.insert(&env::signer_account_id(), &agent);
-
-        // Decrease task balance
-        task.total_deposit = U128::from(task.total_deposit.0 - call_total_fee);
-
-        // Update task storage
-        self.tasks.insert(&task_hash, &task);
-
-        // If not recurring, end
-        // If recurring and not enough balance for another trigger, end
-        // if there was some issue on the other contract, end
-        // Otherwise, schedule next task
-        if task.recurring == false
-            || call_total_fee > task.total_deposit.0
-            || promise_outcome_success == false
-        {
-            // Process task exit, if no future task can execute
-            self.exit_task(task_hash);
-        } else {
-            let next_slot = self.get_slot_from_cadence(task.cadence.clone());
-            log!("Scheduling Next Task {:?}", &next_slot);
-            assert!(
-                &current_slot < &next_slot,
-                "Cannot schedule task in the past"
-            );
-
-            // Get previous task hashes in slot, add as needed
-            let mut slot_tasks = self.slots.get(&next_slot).unwrap_or(Vec::new());
-            slot_tasks.push(task_hash.clone());
-            self.slots.insert(&next_slot, &slot_tasks);
-        }
+        // Get previous task hashes in slot, add as needed
+        let mut slot_tasks = self.slots.get(&next_slot).unwrap_or_default();
+        slot_tasks.push(task_hash.clone());
+        self.slots.insert(&next_slot, &slot_tasks);
     }
 
     /// Add any account as an agent that will be able to execute tasks.
@@ -580,7 +548,6 @@ impl CronManager {
     #[payable]
     pub fn register_agent(
         &mut self,
-        agent_account_id: Option<ValidAccountId>,
         payable_account_id: Option<ValidAccountId>,
     ) {
         assert_eq!(self.paused, false, "Register agent paused");
@@ -595,14 +562,9 @@ impl CronManager {
             required_deposit.clone()
         );
 
-        let account = agent_account_id
-            .map(|a| a.into())
-            .unwrap_or_else(|| env::predecessor_account_id());
+        let account = env::predecessor_account_id();
         // check that account isn't already added
         if let Some(agent) = self.agents.get(&account) {
-            if deposit > 0 {
-                Promise::new(env::predecessor_account_id()).transfer(deposit);
-            }
             let panic_msg = format!("Agent already exists: {:?}. Refunding the deposit.", agent);
             env::panic(panic_msg.as_bytes());
         };
@@ -633,20 +595,14 @@ impl CronManager {
     /// ```
     pub fn update_agent(&mut self, payable_account_id: Option<ValidAccountId>) {
         assert_eq!(self.paused, false, "Update agent paused");
+        assert_one_yocto();
 
-        let account = env::signer_account_id();
+        let account = env::predecessor_account_id();
 
         // check that signer agent exists
         if let Some(mut agent) = self.agents.get(&account) {
-            // match payable_account_id.clone() {
-            //     Some(_id) => {
-            //         agent.payable_account_id = payable_account_id.unwrap().to_string();
-            //     }
-            //     None => ()
-            // }
-
             if payable_account_id.is_some() {
-                agent.payable_account_id = payable_account_id.unwrap().to_string();
+                agent.payable_account_id = payable_account_id.unwrap().into();
                 self.agents.insert(&account, &agent);
             }
         } else {
@@ -674,16 +630,17 @@ impl CronManager {
     /// ```
     pub fn withdraw_task_balance(&mut self) -> Promise {
         let account = env::predecessor_account_id();
+        let storage_fee = self.agent_storage_usage as u128 * env::storage_byte_cost();
 
         // check that signer agent exists
         if let Some(mut agent) = self.agents.get(&account) {
+            let agent_balance = agent.balance.0;
             assert!(
-                agent.balance.0 > self.agent_storage_usage as u128,
+                agent_balance > storage_fee,
                 "No Agent balance beyond the storage balance"
             );
-            let withdrawal_amount =
-                agent.balance.0 - (self.agent_storage_usage as u128 * env::storage_byte_cost());
-            agent.balance = U128::from(agent.balance.0 - withdrawal_amount);
+            let withdrawal_amount = agent_balance - storage_fee;
+            agent.balance = U128::from(agent_balance - withdrawal_amount);
             self.agents.insert(&account, &agent);
             log!("Withdrawal of {} has been sent.", withdrawal_amount);
             Promise::new(agent.payable_account_id.to_string()).transfer(withdrawal_amount)
@@ -778,13 +735,8 @@ impl CronManager {
         // Since the `bps` timestamp is in nanoseconds, we multiply the
         // numerator to match the magnitude
         // We use the `max` value to avoid division by 0
-        let mut bps = (blocks_total * NANO * BPS_DENOMINATOR)
-            / std::cmp::max(current_block_ts - self.bps_timestamp[1], 1);
-
-        // Protect against bps being 0
-        if bps < 1 {
-            bps = 1;
-        }
+        let bps = ((blocks_total * NANO * BPS_DENOMINATOR)
+            / std::cmp::max(current_block_ts - self.bps_timestamp[1], 1)).max(1);
 
         /*
         seconds * nano      blocks           1
@@ -815,27 +767,27 @@ impl CronManager {
         gas_price: Option<U128>,
         proxy_callback_gas: Option<U64>,
     ) {
-        assert_eq!(self.owner_id, env::signer_account_id(), "Must be owner");
+        assert_eq!(self.owner_id, env::predecessor_account_id(), "Must be owner");
 
         // BE CAREFUL!
-        if owner_id.is_some() {
-            self.owner_id = owner_id.unwrap();
+        if let Some(owner_id) = owner_id {
+            self.owner_id = owner_id;
         }
 
-        if slot_granularity.is_some() {
-            self.slot_granularity = slot_granularity.unwrap();
+        if let Some(slot_granularity) = slot_granularity {
+            self.slot_granularity = slot_granularity;
         }
-        if paused.is_some() {
-            self.paused = paused.unwrap();
+        if let Some(paused) = paused {
+            self.paused = paused;
         }
-        if agent_fee.is_some() {
-            self.agent_fee = agent_fee.unwrap().0;
+        if let Some(agent_fee) = agent_fee {
+            self.agent_fee = agent_fee.0;
         }
-        if gas_price.is_some() {
-            self.gas_price = gas_price.unwrap().0;
+        if let Some(gas_price) = gas_price {
+            self.gas_price = gas_price.0;
         }
-        if proxy_callback_gas.is_some() {
-            self.proxy_callback_gas = proxy_callback_gas.unwrap().0;
+        if let Some(proxy_callback_gas) = proxy_callback_gas {
+            self.proxy_callback_gas = proxy_callback_gas.0;
         }
     }
 }
@@ -1160,7 +1112,7 @@ mod tests {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let mut contract = CronManager::new();
-        contract.callback_for_proxy_call(vec![0, 1, 2, 3]);
+        contract.callback_for_proxy_call(vec![0, 1, 2, 3], 123400);
     }
 
     #[test]
@@ -1222,7 +1174,7 @@ mod tests {
         context.attached_deposit(2090000000000000000000);
         testing_env!(context.build());
         let mut contract = CronManager::new();
-        contract.register_agent(None, None);
+        contract.register_agent(None);
         testing_env!(context.is_view(false).block_index(1260).build());
         contract.proxy_call();
     }
@@ -1485,7 +1437,7 @@ mod tests {
         context.attached_deposit(2090000000000000000000);
         testing_env!(context.is_view(false).build());
         let mut contract = CronManager::new();
-        contract.register_agent(None, Some(accounts(1)));
+        contract.register_agent(Some(accounts(1)));
 
         testing_env!(context.is_view(true).build());
         let _agent = contract.get_agent(accounts(1).to_string());
@@ -1515,7 +1467,7 @@ mod tests {
         context.attached_deposit(2090000000000000000000);
         testing_env!(context.is_view(false).build());
         let mut contract = CronManager::new();
-        contract.register_agent(None, Some(accounts(1)));
+        contract.register_agent(Some(accounts(1)));
         contract.update_agent(Some(accounts(2)));
 
         testing_env!(context.is_view(true).build());
@@ -1536,7 +1488,7 @@ mod tests {
         context.attached_deposit(2090000000000000000000);
         testing_env!(context.is_view(false).build());
         let mut contract = CronManager::new();
-        contract.register_agent(None, Some(accounts(1)));
+        contract.register_agent(Some(accounts(1)));
         context.attached_deposit(1);
         testing_env!(context.build());
         contract.unregister_agent();

@@ -29,7 +29,7 @@ impl StorageManagement for CronManager {
         account_id: Option<ValidAccountId>,
         registration_only: Option<bool>,
     ) -> StorageBalance {
-        self.register_agent(account_id.clone(), None);
+        self.register_agent(account_id.clone());
         let account_id = account_id
             .map(|a| a.into())
             .unwrap_or_else(|| env::predecessor_account_id());
