@@ -7,11 +7,11 @@ use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{LookupMap, TreeMap, UnorderedMap},
     env,
-    json_types::{Base58PublicKey, Base64VecU8, ValidAccountId, U128, U64},
+    json_types::{Base64VecU8, ValidAccountId, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json::json,
-    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseResult, PublicKey,
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseResult,
     StorageUsage,
 };
 use std::str::FromStr;
@@ -70,7 +70,7 @@ pub struct Task {
     pub gas: Gas,
 
     // NOTE: Only allow static pre-defined bytes
-    pub arguments: Vec<u8>,
+    pub arguments: Base64VecU8,
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
@@ -85,10 +85,8 @@ pub struct Agent {
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct CronManager {
     // Runtime
-    // TODO: Setup DAO based management & ownership
     paused: bool,
     owner_id: AccountId,
-    owner_pk: PublicKey,
     bps_block: [u64; 2],
     bps_timestamp: [u64; 2],
 
@@ -116,11 +114,9 @@ impl CronManager {
     /// ```
     #[init]
     pub fn new() -> Self {
-        assert!(!env::state_exists(), "The contract is already initialized");
         let mut this = CronManager {
             paused: false,
             owner_id: env::signer_account_id(),
-            owner_pk: env::signer_account_pk(),
             bps_block: [env::block_index(), env::block_index()],
             bps_timestamp: [env::block_timestamp(), env::block_timestamp()],
             tasks: UnorderedMap::new(StorageKeys::Tasks),
@@ -162,6 +158,7 @@ impl CronManager {
     /// near call cron.testnet migrate_state --accountId cron.testnet
     /// ```
     #[init(ignore_state)]
+    #[private]
     pub fn migrate_state() -> Self {
         // Deserialize the state using the old contract structure.
         let old_contract: CronManager = env::state_read().expect("Old state doesn't exist");
@@ -178,7 +175,6 @@ impl CronManager {
         CronManager {
             paused: false,
             owner_id: old_contract.owner_id,
-            owner_pk: old_contract.owner_pk,
             bps_block: old_contract.bps_block,
             bps_timestamp: old_contract.bps_timestamp,
             tasks: old_contract.tasks,
@@ -203,6 +199,10 @@ impl CronManager {
     pub fn tick(&mut self) {
         let prev_block = self.bps_block[0];
         let prev_timestamp = self.bps_timestamp[0];
+
+        // Check that we dont allow 0 BPS
+        assert!(prev_block + 10 < env::block_index(), "Tick triggered too soon");
+
         self.bps_block[0] = env::block_index();
         self.bps_block[1] = prev_block;
         self.bps_timestamp[0] = env::block_timestamp();
@@ -232,12 +232,9 @@ impl CronManager {
         // (Or closest past slot if there are leftovers.)
         let slot_ballpark = self.slots.floor_key(&current_slot);
         if let Some(k) = slot_ballpark {
-            let mut ret: Vec<Base64VecU8> = Vec::new();
-            let tasks = self.slots.get(&k).unwrap();
+            let ret: Vec<Base64VecU8> =
+                self.slots.get(&k).unwrap().into_iter().map(Base64VecU8::from).collect();
 
-            for task in tasks.iter() {
-                ret.push(Base64VecU8::from(task.to_vec()));
-            }
             (ret, U128::from(current_slot))
         } else {
             (vec![], U128::from(current_slot))
@@ -247,14 +244,15 @@ impl CronManager {
     /// Returns task data
     /// Used by the frontend for viewing tasks
     /// REF: https://docs.near.org/docs/concepts/data-storage#gas-consumption-examples-1
+    // TODO: Add offset, limit for pagination
     pub fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Task> {
         let mut ret: Vec<Task> = Vec::new();
-        if let Some(slot_number) = slot {
+        if let Some(U128(slot_number)) = slot {
             // User specified a slot number, only return tasks in there.
             let tasks_in_slot = self
                 .slots
-                .get(&slot_number.0)
-                .expect("Couldn't find tasks for given slot.");
+                .get(&slot_number)
+                .unwrap_or_default();
             for task_hash in tasks_in_slot.iter() {
                 let task = self.tasks.get(&task_hash).expect("No task found by hash");
                 ret.push(task);
@@ -266,56 +264,6 @@ impl CronManager {
             }
         }
         ret
-    }
-
-    // TODO: REMOVE IN PROD
-    /// Most useful for debugging at this point.
-    pub fn debug_slots(&self) -> Vec<u128> {
-        let mut ret: Vec<u128> = Vec::new();
-        for slot in self.slots.iter() {
-            ret.push(slot.0);
-        }
-        ret
-    }
-
-    // TODO: REMOVE IN PROD
-    /// Most useful for debugging at this point.
-    pub fn debug_slots_len(&self) -> u64 {
-        self.slots.len()
-    }
-
-    // TODO: REMOVE IN PROD
-    /// Most useful for debugging at this point.
-    pub fn debug_slots_min(&self) -> Option<u128> {
-        self.slots.min()
-    }
-
-    // TODO: REMOVE IN PROD
-    /// Most useful for debugging at this point.
-    pub fn debug_slots_rem(&mut self, k: u128) {
-        assert_eq!(
-            env::predecessor_account_id(),
-            env::current_account_id(),
-            "Only owner"
-        );
-        self.slots.remove(&k);
-    }
-
-    // TODO: REMOVE IN PROD
-    /// Most useful for debugging at this point.
-    pub fn debug_slots_clean(&mut self) {
-        assert_eq!(
-            env::predecessor_account_id(),
-            env::current_account_id(),
-            "Only owner"
-        );
-        let mut idx = 0;
-
-        while idx < 5 {
-            let k = self.slots.min().unwrap();
-            self.slots.remove(&k);
-            idx += 1;
-        }
     }
 
     /// Gets the data payload of a single task by hash
@@ -339,37 +287,37 @@ impl CronManager {
     #[payable]
     pub fn create_task(
         &mut self,
-        contract_id: String,
+        contract_id: ValidAccountId,
         function_id: String,
         cadence: String,
         recurring: Option<bool>,
         deposit: Option<U128>,
         gas: Option<Gas>,
-        arguments: Option<Vec<u8>>,
+        arguments: Option<Base64VecU8>,
     ) -> Base64VecU8 {
         // No adding tasks while contract is paused
         assert_eq!(self.paused, false, "Create task paused");
         // check cadence can be parsed
         assert!(
-            self.validate_cadence(cadence.clone()),
+            self.validate_cadence(&cadence),
             "Cadence string invalid"
         );
-        // log!("cadence {}", &cadence.clone());
+
         let item = Task {
-            owner_id: env::signer_account_id(),
-            contract_id,
+            owner_id: env::predecessor_account_id(),
+            contract_id: contract_id.into(),
             function_id,
             cadence,
             recurring: recurring.unwrap_or(false),
             total_deposit: U128::from(env::attached_deposit()),
             deposit: U128::from(deposit.map(|v| v.0).unwrap_or(0u128)),
             gas: gas.unwrap_or(GAS_BASE_FEE),
-            arguments: arguments.unwrap_or(b"".to_vec()),
+            arguments: arguments.unwrap_or_else(|| Base64VecU8::from(vec![])),
         };
 
         // Check that balance is sufficient for 1 execution minimum
         let call_balance_used = self.task_balance_uses(&item);
-        let min_balance_needed: u128 = if recurring.is_some() && recurring.unwrap() == true {
+        let min_balance_needed: u128 = if recurring == Some(true) {
             call_balance_used * 2
         } else {
             call_balance_used
@@ -393,7 +341,7 @@ impl CronManager {
         let next_slot = self.get_slot_from_cadence(item.cadence.clone());
 
         // Add task to catalog
-        self.tasks.insert(&hash, &item);
+        assert!(self.tasks.insert(&hash, &item).is_none(), "Task already exists");
 
         // Get previous task hashes in slot, add as needed
         let mut slot_slots = self.slots.get(&next_slot).unwrap_or(Vec::new());
@@ -402,60 +350,6 @@ impl CronManager {
         self.slots.insert(&next_slot, &slot_slots);
 
         Base64VecU8::from(hash)
-    }
-
-    /// ```bash
-    /// near call cron.testnet update_task '{"task_hash": "","cadence": "@weekly","recurring": true,"deposit": 0,"gas": 2400000000000}' --accountId YOU.testnet
-    /// ```
-    #[payable]
-    pub fn update_task(
-        &mut self,
-        task_hash: Base64VecU8,
-        cadence: Option<String>,
-        recurring: Option<bool>,
-        deposit: Option<U128>,
-        gas: Option<Gas>,
-        arguments: Option<Vec<u8>>,
-    ) {
-        assert_eq!(self.paused, false, "Update task paused");
-        let hash = task_hash.0;
-        let mut task = self.tasks.get(&hash).expect("No task found by hash");
-
-        assert_eq!(
-            task.owner_id,
-            env::predecessor_account_id(),
-            "Only owner can update their task."
-        );
-
-        if cadence.is_some() {
-            // check cadence can be parsed
-            assert!(
-                self.validate_cadence(cadence.clone().unwrap()),
-                "Cadence string invalid"
-            );
-            task.cadence = cadence.unwrap();
-        }
-
-        // Update args that exist
-        if recurring.is_some() {
-            task.recurring = recurring.unwrap();
-        }
-        if deposit.is_some() {
-            task.deposit = deposit.unwrap();
-        }
-        if gas.is_some() {
-            task.gas = gas.unwrap();
-        }
-        if arguments.is_some() {
-            task.arguments = arguments.unwrap();
-        }
-
-        // Update task total available balance, if this function was given a deposit.
-        if env::attached_deposit() > 0 {
-            task.total_deposit = U128::from(task.total_deposit.0 + env::attached_deposit());
-        }
-
-        self.tasks.insert(&hash, &task);
     }
 
     /// Deletes a task in its entirety, returning any remaining balance to task owner.
@@ -480,26 +374,20 @@ impl CronManager {
     /// Internal management of finishing a task.
     /// Responsible for cleaning up storage &
     /// returning any remaining balance to task owner.
-    #[private]
-    pub fn exit_task(&mut self, task_hash: Vec<u8>) {
-        let task = self.tasks.get(&task_hash).expect("No task found by hash");
+    fn exit_task(&mut self, task_hash: Vec<u8>) {
+        let task = self.tasks.remove(&task_hash).expect("No task found by hash");
 
         // return any balance
         if task.total_deposit.0 > 0 {
             Promise::new(task.owner_id.to_string()).transfer(task.total_deposit.0);
         }
 
-        // Remove task from map
-        self.tasks.remove(&task_hash);
-
         // Remove task from schedule
         // Get previous task hashes in slot, find index of task hash, remove
         let next_slot = self.get_slot_from_cadence(task.cadence.clone());
         let mut slot_tasks = self.slots.get(&next_slot).unwrap_or(Vec::new());
         if slot_tasks.len() != 0 {
-            if let Some(index) = slot_tasks.iter().position(|h| *h == task_hash) {
-                slot_tasks.remove(index);
-            }
+            slot_tasks.retain(|h| h != &task_hash);
             self.slots.insert(&next_slot, &slot_tasks);
         }
     }
@@ -519,7 +407,7 @@ impl CronManager {
         assert_eq!(self.paused, false, "Task execution paused");
 
         // only registered agent signed, because micropayments will benefit long term
-        let agent_opt = self.agents.get(&env::signer_account_id());
+        let agent_opt = self.agents.get(&env::predecessor_account_id());
         if agent_opt.is_none() {
             env::panic(b"Agent not registered");
         }
@@ -531,17 +419,17 @@ impl CronManager {
         // get task based on current slot
         // priority goes to tasks that have fallen behind (using floor key)
         let mut slot_opt = self.slots.get(&current_slot);
-        let slot_ballpark = self.slots.floor_key(&current_slot);
-        let using_floor_key: bool = if let Some(k) = slot_ballpark {
-            slot_opt = self.slots.get(&k);
-            true
-        } else {
-            false
-        };
-
+        let mut slot_ballpark = None;
         if slot_opt.is_none() {
-            env::panic(b"No tasks found in slot");
+            slot_ballpark = self.slots.floor_key(&current_slot);
+            if let Some(k) = slot_ballpark {
+                slot_opt = self.slots.get(&k);
+            }
+        } else {
+            slot_ballpark = Some(current_slot);
         }
+
+        
         let mut slot_data = slot_opt.unwrap();
         // log!("slot {:?}", &slot_data);
 
@@ -549,15 +437,11 @@ impl CronManager {
         let hash = slot_data.pop().expect("No tasks available");
 
         // After popping, ensure state is rewritten back
-        if using_floor_key {
-            self.slots.insert(&slot_ballpark.unwrap(), &slot_data);
-        } else {
-            self.slots.insert(&current_slot, &slot_data);
-        }
-
-        // Clean up slot if no more data
-        if slot_data.len() < 1 {
+        if slot_data.is_empty() {
+            // Clean up slot if no more data
             self.slots.remove(&slot_ballpark.unwrap());
+        } else {
+            self.slots.insert(&slot_ballpark.unwrap(), &slot_data);
         }
 
         let task = self.tasks.get(&hash).expect("No task found by hash");
@@ -818,22 +702,22 @@ impl CronManager {
     }
 
     fn hash(&self, item: &Task) -> Vec<u8> {
-        // Generate hash
+        // Generate hash, needs to be from known values so we can reproduce the hash without storing
         let input = format!(
-            "{:?}{:?}{:?}",
-            item.contract_id, item.function_id, item.cadence
+            "{:?}{:?}{:?}{:?}",
+            item.contract_id, item.function_id, item.cadence, item.owner_id
         );
-        env::keccak256(input.as_bytes())
+        env::sha256(input.as_bytes())
     }
 
     /// Returns the base amount required to execute 1 task
     /// NOTE: this is not the final used amount, just the user-specified amount total needed
     fn task_balance_uses(&self, task: &Task) -> u128 {
-        task.deposit.0 + u128::from(task.gas) + self.agent_fee
+        task.deposit.0 + (u128::from(task.gas) * self.gas_price) + self.agent_fee
     }
 
     /// Check if a cadence string is valid by attempting to parse it
-    fn validate_cadence(&self, cadence: String) -> bool {
+    fn validate_cadence(&self, cadence: &str) -> bool {
         let s = Schedule::from_str(&cadence);
         if s.is_ok() {
             true
@@ -925,7 +809,6 @@ impl CronManager {
     pub fn update_settings(
         &mut self,
         owner_id: Option<AccountId>,
-        owner_pk: Option<Base58PublicKey>,
         slot_granularity: Option<u64>,
         paused: Option<bool>,
         agent_fee: Option<U128>,
@@ -937,9 +820,6 @@ impl CronManager {
         // BE CAREFUL!
         if owner_id.is_some() {
             self.owner_id = owner_id.unwrap();
-        }
-        if owner_pk.is_some() {
-            self.owner_pk = owner_pk.unwrap().into();
         }
 
         if slot_granularity.is_some() {
@@ -986,7 +866,7 @@ mod tests {
             total_deposit: U128::from(1000000000000000000300),
             deposit: U128::from(100),
             gas: 200,
-            arguments: vec![],
+            arguments: Base64VecU8::from(vec![]),
         }
     }
 
@@ -1036,7 +916,7 @@ mod tests {
             .attached_deposit(1000000000000000000300)
             .build());
         let task_id = contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "@daily".to_string(),
             Some(false),
@@ -1059,13 +939,13 @@ mod tests {
         testing_env!(context.build());
         let mut contract = CronManager::new();
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, None, Some(true), None, None, None);
+        contract.update_settings(None, None, Some(true), None, None, None);
         testing_env!(context
             .is_view(false)
             .attached_deposit(1000000000000000000300)
             .build());
         contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "@daily".to_string(),
             Some(true),
@@ -1086,7 +966,7 @@ mod tests {
             .attached_deposit(1000000000000000000300)
             .build());
         contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "raspberry_oat_milk".to_string(),
             Some(true),
@@ -1106,7 +986,7 @@ mod tests {
         let mut contract = CronManager::new();
         testing_env!(context.is_view(false).attached_deposit(0).build());
         contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "@daily".to_string(),
             Some(false),
@@ -1126,7 +1006,7 @@ mod tests {
         let mut contract = CronManager::new();
         testing_env!(context.is_view(false).attached_deposit(0).build());
         contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "@daily".to_string(),
             Some(true),
@@ -1145,7 +1025,7 @@ mod tests {
     //     let mut contract = CronManager::new();
     //     testing_env!(context.is_view(false).attached_deposit(206000000000000000).build());
     //     contract.create_task(
-    //         "contract.testnet".to_string(),
+    //         accounts(3),
     //         "increment".to_string(),
     //         "@daily".to_string(),
     //         Some(true),
@@ -1170,7 +1050,7 @@ mod tests {
             .build());
 
         contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "*/10 * * * * *".to_string(),
             Some(false),
@@ -1208,7 +1088,7 @@ mod tests {
 
         // create a some tasks
         contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "*/10 * * * * *".to_string(),
             Some(false),
@@ -1217,7 +1097,7 @@ mod tests {
             None,
         );
         contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "decrement".to_string(),
             "*/10 * * * * *".to_string(),
             Some(false),
@@ -1256,7 +1136,7 @@ mod tests {
     //     let mut contract = CronManager::new();
     //     testing_env!(context.is_view(false).attached_deposit(6000000000000).build());
     //     contract.create_task(
-    //         "contract.testnet".to_string(),
+    //         accounts(3),
     //         "increment".to_string(),
     //         "*/10 * * * * *".to_string(),
     //         Some(false),
@@ -1294,7 +1174,7 @@ mod tests {
             .attached_deposit(1000000000000000000300)
             .build());
         contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "@daily".to_string(),
             Some(false),
@@ -1322,7 +1202,7 @@ mod tests {
             .attached_deposit(1000000000000000000300)
             .build());
         contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "@daily".to_string(),
             Some(false),
@@ -1330,7 +1210,7 @@ mod tests {
             Some(200),
             None,
         );
-        contract.update_settings(None, None, None, Some(true), None, None, None);
+        contract.update_settings(None, None, Some(true), None, None, None);
         testing_env!(context.is_view(false).block_index(1260).build());
         contract.proxy_call();
     }
@@ -1348,138 +1228,6 @@ mod tests {
     }
 
     #[test]
-    fn test_task_update() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-        let mut contract = CronManager::new();
-        testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
-        testing_env!(context
-            .is_view(false)
-            .attached_deposit(1000000000000000000300)
-            .build());
-        let task_hash = contract.create_task(
-            "contract.testnet".to_string(),
-            "increment".to_string(),
-            "@daily".to_string(),
-            Some(false),
-            Some(U128::from(100)),
-            Some(200),
-            None,
-        );
-
-        testing_env!(context
-            .is_view(false)
-            .attached_deposit(10000000000000)
-            .build());
-        contract.update_task(
-            task_hash.clone(),
-            Some("* * */12 * * *".to_string()),
-            Some(true),
-            Some(U128::from(10000000000000)),
-            None,
-            None,
-        );
-
-        testing_env!(context.is_view(true).build());
-        let task = contract.get_task(task_hash);
-        assert_eq!(task.cadence, "* * */12 * * *");
-        assert_eq!(task.recurring, true);
-        assert_eq!(task.deposit.0, 10000000000000);
-        assert_eq!(task.total_deposit.0, 1000000010000000000300);
-    }
-
-    #[test]
-    #[should_panic(expected = "Only owner can update their task.")]
-    fn test_task_update_not_owner() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-        let mut contract = CronManager::new();
-        testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
-        testing_env!(context
-            .is_view(false)
-            .attached_deposit(1000000000000000000300)
-            .build());
-        let task_hash = contract.create_task(
-            "contract.testnet".to_string(),
-            "increment".to_string(),
-            "@daily".to_string(),
-            Some(false),
-            Some(U128::from(100)),
-            Some(200),
-            None,
-        );
-
-        testing_env!(context
-            .is_view(false)
-            .attached_deposit(10000000000000)
-            .signer_account_id(accounts(4))
-            .predecessor_account_id(accounts(4))
-            .build());
-        contract.update_task(
-            task_hash.clone(),
-            Some("* * */12 * * *".to_string()),
-            Some(true),
-            Some(U128::from(10000000000000)),
-            None,
-            None,
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "No task found by hash")]
-    fn test_task_update_no_task() {
-        let context = get_context(accounts(1));
-        testing_env!(context.build());
-        let mut contract = CronManager::new();
-        contract.update_task(
-            Base64VecU8::from(vec![0, 1, 2, 3]),
-            Some("* * */12 * * *".to_string()),
-            Some(true),
-            Some(U128::from(10000000000000)),
-            None,
-            None,
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "Cadence string invalid")]
-    fn test_task_update_bad_cadence() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-        let mut contract = CronManager::new();
-        testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
-        testing_env!(context
-            .is_view(false)
-            .attached_deposit(1000000000000000000300)
-            .build());
-        let task_hash = contract.create_task(
-            "contract.testnet".to_string(),
-            "increment".to_string(),
-            "@daily".to_string(),
-            Some(false),
-            Some(U128::from(100)),
-            Some(200),
-            None,
-        );
-
-        testing_env!(context
-            .is_view(false)
-            .attached_deposit(10000000000000)
-            .build());
-        contract.update_task(
-            task_hash.clone(),
-            Some("dunder_mifflin".to_string()),
-            Some(true),
-            Some(U128::from(10000000000000)),
-            None,
-            None,
-        );
-    }
-
-    #[test]
     fn test_task_remove() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
@@ -1491,7 +1239,7 @@ mod tests {
             .attached_deposit(ONE_NEAR * 100)
             .build());
         let task_hash = contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "@daily".to_string(),
             Some(false),
@@ -1523,7 +1271,7 @@ mod tests {
             .attached_deposit(1000000000000000000300)
             .build());
         let task_hash = contract.create_task(
-            "contract.testnet".to_string(),
+            accounts(3),
             "increment".to_string(),
             "@daily".to_string(),
             Some(false),
@@ -1596,13 +1344,13 @@ mod tests {
         assert_eq!(slot, 52201020);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(10), None, None, None, None);
+        contract.update_settings(None, Some(10), None, None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
         assert_eq!(slot, 52201040);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(1), None, None, None, None);
+        contract.update_settings(None, Some(1), None, None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
         assert_eq!(slot, 52201040);
@@ -1622,7 +1370,7 @@ mod tests {
             .signer_account_id(accounts(3))
             .predecessor_account_id(accounts(3))
             .build());
-        contract.update_settings(None, None, Some(10), None, None, None, None);
+        contract.update_settings(None, Some(10), None, None, None, None);
     }
 
     #[test]
@@ -1634,7 +1382,7 @@ mod tests {
         assert_eq!(contract.slot_granularity, SLOT_GRANULARITY);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(10), Some(true), None, None, None);
+        contract.update_settings(None, Some(10), Some(true), None, None, None);
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.slot_granularity, 10);
         assert_eq!(contract.paused, true);
