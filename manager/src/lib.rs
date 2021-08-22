@@ -458,7 +458,7 @@ impl CronManager {
         let promise_first = env::promise_create(
             task.contract_id.clone(),
             &task.function_id.as_bytes(),
-            task.arguments.as_slice(),
+            task.arguments.0.as_slice(),
             task.deposit.0,
             task.gas,
         );
