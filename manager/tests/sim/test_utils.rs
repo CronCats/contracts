@@ -32,7 +32,7 @@ pub(crate) fn helper_create_task(cron: &UserAccount, counter: &UserAccount) -> T
         .to_string()
         .into_bytes(),
         DEFAULT_GAS,
-        2_000_000_030_000_000_000_000u128, // deposit
+        2_600_000_024_000_000_000_000u128, // deposit
     );
     execution_result.assert_success();
     let hash: Base64VecU8 = execution_result.unwrap_json();
@@ -94,7 +94,7 @@ pub(crate) fn counter_create_task(
         .to_string()
         .into_bytes(),
         DEFAULT_GAS,
-        120000000200000000000000, // deposit (0.120000000002 Ⓝ)
+        120480000000000000000000, // deposit (0.120000000002 Ⓝ)
     )
 }
 

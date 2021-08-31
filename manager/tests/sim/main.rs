@@ -98,6 +98,7 @@ fn simulate_many_tasks() {
     // Should find a task
     let mut get_tasks_view_res =
         root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
+    println!("get_tasks_view_res {:?}", get_tasks_view_res);
     let mut success_val = r#"
         [["/YD9yxy6pZjlvra3qkvybKdodL3alsfvR6S62/FiYow="],"120"]
     "#;
@@ -372,7 +373,7 @@ fn simulate_basic_task_checks() {
         total_deposit: U128::from(2000000030000000000000),
         deposit: U128::from(12000000000000),
         gas: 3000000000000,
-        arguments: vec![],
+        arguments: Base64VecU8::from(vec![]),
     };
     assert_eq!(
         expected_task, returned_task,
@@ -488,7 +489,7 @@ fn simulate_basic_agent_registration_update() {
         .to_string()
         .into_bytes(),
         DEFAULT_GAS,
-        0, // deposit
+        1, // deposit 1 yocto
     );
 
     let agent_result: Agent = root
@@ -502,6 +503,7 @@ fn simulate_basic_agent_registration_update() {
             .into_bytes(),
         )
         .unwrap_json();
+    println!("agent result {:?}", agent_result.payable_account_id);
 
     assert_eq!(agent_result.payable_account_id, "newname.sim".to_string());
 }

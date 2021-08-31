@@ -283,7 +283,7 @@ impl CronManager {
     /// the task is no longer executed, any additional funds will be returned to task owner.
     ///
     /// ```bash
-    /// near call cron.testnet create_task '{"contract_id": "counter.in.testnet","function_id": "increment","cadence": "@daily","recurring": true,"deposit": 0,"gas": 2400000000000}' --accountId YOU.testnet
+    /// near call cron.testnet create_task '{"contract_id": "counter.in.testnet","function_id": "increment","cadence": "0 0 */1 * * *","recurring": true,"deposit": 0,"gas": 2400000000000}' --accountId YOU.testnet
     /// ```
     #[payable]
     pub fn create_task(
@@ -811,11 +811,11 @@ mod tests {
     pub fn get_sample_task() -> Task {
         Task {
             owner_id: String::from("bob"),
-            contract_id: String::from("contract.testnet"),
+            contract_id: String::from("danny"),
             function_id: String::from("increment"),
-            cadence: String::from("@daily"),
+            cadence: String::from("0 0 */1 * * *"),
             recurring: false,
-            total_deposit: U128::from(1000000000000000000300),
+            total_deposit: U128::from(1000000000020000000100),
             deposit: U128::from(100),
             gas: 200,
             arguments: Base64VecU8::from(vec![]),
@@ -865,12 +865,12 @@ mod tests {
         assert!(contract.get_all_tasks(None).is_empty());
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000000000000300)
+            .attached_deposit(1000000000020000000100)
             .build());
         let task_id = contract.create_task(
             accounts(3),
             "increment".to_string(),
-            "@daily".to_string(),
+            "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
             Some(200),
@@ -894,12 +894,12 @@ mod tests {
         contract.update_settings(None, None, Some(true), None, None, None);
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000000000000300)
+            .attached_deposit(1000000000020000000100)
             .build());
         contract.create_task(
             accounts(3),
             "increment".to_string(),
-            "@daily".to_string(),
+            "0 0 */1 * * *".to_string(),
             Some(true),
             Some(U128::from(100)),
             Some(200),
@@ -915,7 +915,7 @@ mod tests {
         let mut contract = CronManager::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000000000000300)
+            .attached_deposit(1000000000020000000100)
             .build());
         contract.create_task(
             accounts(3),
@@ -930,7 +930,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "Not enough task balance to execute job, need at least 1000000000000000100200"
+        expected = "Not enough task balance to execute job, need at least 1000000000020000100000"
     )]
     fn test_task_create_deposit_not_enuf() {
         let mut context = get_context(accounts(1));
@@ -940,7 +940,7 @@ mod tests {
         contract.create_task(
             accounts(3),
             "increment".to_string(),
-            "@daily".to_string(),
+            "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100000)),
             Some(200),
@@ -950,7 +950,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "Not enough task balance to execute job, need at least 2000000000000000200400"
+        expected = "Not enough task balance to execute job, need at least 2000000000040000200000"
     )]
     fn test_task_create_deposit_not_enuf_recurring() {
         let mut context = get_context(accounts(1));
@@ -960,7 +960,7 @@ mod tests {
         contract.create_task(
             accounts(3),
             "increment".to_string(),
-            "@daily".to_string(),
+            "0 0 */1 * * *".to_string(),
             Some(true),
             Some(U128::from(100000)),
             Some(200),
@@ -979,7 +979,7 @@ mod tests {
     //     contract.create_task(
     //         accounts(3),
     //         "increment".to_string(),
-    //         "@daily".to_string(),
+    //         "0 0 */1 * * *".to_string(),
     //         Some(true),
     //         Some(U128::from(100000000000000000)),
     //         Some(0),
@@ -996,7 +996,7 @@ mod tests {
         // Move forward time and blocks to get more accurate bps
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000000000000300)
+            .attached_deposit(1000000000020000000100)
             .block_timestamp(BLOCK_START_TS + (6 * NANO))
             .block_index(BLOCK_START_BLOCK + 6)
             .build());
@@ -1017,10 +1017,7 @@ mod tests {
             .expect("Should have something here");
         assert_eq!(
             slot[0],
-            [
-                233, 217, 1, 85, 174, 36, 220, 148, 248, 181, 105, 12, 71, 127, 52, 183, 172, 171,
-                193, 186, 212, 162, 3, 139, 78, 84, 11, 30, 30, 194, 160, 130
-            ]
+            [21, 209, 124, 71, 241, 6, 3, 102, 114, 186, 60, 89, 64, 69, 99, 43, 141, 4, 101, 196, 41, 133, 9, 73, 102, 127, 6, 197, 80, 247, 8, 116]
         );
     }
 
@@ -1033,7 +1030,7 @@ mod tests {
         // Move forward time and blocks to get more accurate bps
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000000000000300)
+            .attached_deposit(1000000000020000000100)
             .block_timestamp(BLOCK_START_TS + (6 * NANO))
             .block_index(BLOCK_START_BLOCK + 6)
             .build());
@@ -1107,7 +1104,8 @@ mod tests {
     // }
 
     #[test]
-    #[should_panic(expected = "Expected 1 promise result.")]
+    // #[should_panic(expected = "Expected 1 promise result.")]
+    #[should_panic(expected = "No task found by hash")]
     fn test_task_proxy_callback() {
         let context = get_context(accounts(1));
         testing_env!(context.build());
@@ -1123,12 +1121,12 @@ mod tests {
         let mut contract = CronManager::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000000000000300)
+            .attached_deposit(1000000000020000000100)
             .build());
         contract.create_task(
             accounts(3),
             "increment".to_string(),
-            "@daily".to_string(),
+            "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
             Some(200),
@@ -1151,12 +1149,12 @@ mod tests {
         let mut contract = CronManager::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000000000000300)
+            .attached_deposit(1000000000020000000100)
             .build());
         contract.create_task(
             accounts(3),
             "increment".to_string(),
-            "@daily".to_string(),
+            "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
             Some(200),
@@ -1167,17 +1165,18 @@ mod tests {
         contract.proxy_call();
     }
 
-    #[test]
-    #[should_panic(expected = "No tasks found in slot")]
-    fn test_task_proxy_no_tasks() {
-        let mut context = get_context(accounts(1));
-        context.attached_deposit(2090000000000000000000);
-        testing_env!(context.build());
-        let mut contract = CronManager::new();
-        contract.register_agent(None);
-        testing_env!(context.is_view(false).block_index(1260).build());
-        contract.proxy_call();
-    }
+    // TODO: No longer relevant because agent can use this opp to clean slots... need to check and validate this
+    // #[test]
+    // #[should_panic(expected = "No tasks found in slot")]
+    // fn test_task_proxy_no_tasks() {
+    //     let mut context = get_context(accounts(1));
+    //     context.attached_deposit(2090000000000000000000);
+    //     testing_env!(context.build());
+    //     let mut contract = CronManager::new();
+    //     contract.register_agent(None);
+    //     testing_env!(context.is_view(false).block_index(1260).build());
+    //     contract.proxy_call();
+    // }
 
     #[test]
     fn test_task_remove() {
@@ -1193,7 +1192,7 @@ mod tests {
         let task_hash = contract.create_task(
             accounts(3),
             "increment".to_string(),
-            "@daily".to_string(),
+            "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
             Some(200),
@@ -1220,12 +1219,12 @@ mod tests {
         assert!(contract.get_all_tasks(None).is_empty());
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000000000000300)
+            .attached_deposit(1000000000020000000100)
             .build());
         let task_hash = contract.create_task(
             accounts(3),
             "increment".to_string(),
-            "@daily".to_string(),
+            "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
             Some(200),
@@ -1454,7 +1453,8 @@ mod tests {
     #[test]
     #[should_panic(expected = "Agent must register")]
     fn test_agent_update_check() {
-        let context = get_context(accounts(1));
+        let mut context = get_context(accounts(1));
+        context.attached_deposit(1);
         testing_env!(context.build());
         let mut contract = CronManager::new();
         contract.update_agent(None);
@@ -1468,6 +1468,8 @@ mod tests {
         testing_env!(context.is_view(false).build());
         let mut contract = CronManager::new();
         contract.register_agent(Some(accounts(1)));
+        context.attached_deposit(1);
+        testing_env!(context.build());
         contract.update_agent(Some(accounts(2)));
 
         testing_env!(context.is_view(true).build());
@@ -1516,10 +1518,7 @@ mod tests {
         let hash = contract.hash(&task);
         assert_eq!(
             hash,
-            [
-                239, 129, 115, 87, 45, 53, 242, 8, 151, 179, 26, 143, 84, 131, 173, 197, 248, 228,
-                81, 103, 58, 131, 238, 15, 9, 201, 157, 197, 202, 113, 69, 139
-            ],
+            [32, 154, 253, 118, 34, 137, 134, 24, 119, 224, 187, 34, 173, 65, 86, 153, 220, 236, 185, 254, 202, 216, 153, 93, 113, 214, 29, 191, 129, 85, 146, 169],
             "Hash is not equivalent"
         )
     }
