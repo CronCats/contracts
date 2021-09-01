@@ -593,13 +593,14 @@ impl CronManager {
     /// ```bash
     /// near call cron.testnet update_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
     /// ```
+    #[payable]
     pub fn update_agent(&mut self, payable_account_id: Option<ValidAccountId>) {
         assert_eq!(self.paused, false, "Update agent paused");
         assert_one_yocto();
 
         let account = env::predecessor_account_id();
 
-        // check that signer agent exists
+        // check that predecessor agent exists
         if let Some(mut agent) = self.agents.get(&account) {
             if payable_account_id.is_some() {
                 agent.payable_account_id = payable_account_id.unwrap().into();
