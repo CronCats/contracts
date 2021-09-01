@@ -23,7 +23,8 @@ const MANAGER_ID: &str = "manager.sim";
 const COUNTER_ID: &str = "counter.sim";
 const AGENT_ID: &str = "agent.sim";
 const USER_ID: &str = "user.sim";
-const TASK_BASE64: &str = "chUCZxP6uO5xZIjwI9XagXVUCV7nmE09HVRUap8qauo=";
+const NEW_NAME_ID: &str = "newname.sim";
+const TASK_BASE64: &str = "QgpuCtvr2ZRq87F8FG9qKaiKA400LXBOut5WohwCTxI=";
 const AGENT_REGISTRATION_COST: u128 = 2_090_000_000_000_000_000_000;
 const AGENT_FEE: u128 = 60_000_000_000_000_000_000_000u128;
 
@@ -370,7 +371,7 @@ fn simulate_basic_task_checks() {
         function_id: "increment".to_string(),
         cadence: "0   30   9,12,15     1,15       May-Aug  Mon,Wed,Fri  2018/2".to_string(),
         recurring: true,
-        total_deposit: U128::from(2000000030000000000000),
+        total_deposit: U128::from(2_600_000_024_000_000_000_000u128),
         deposit: U128::from(12000000000000),
         gas: 3000000000000,
         arguments: Base64VecU8::from(vec![]),
@@ -484,7 +485,7 @@ fn simulate_basic_agent_registration_update() {
         cron.account_id(),
         "update_agent",
         &json!({
-            "payable_account_id": "newname.sim"
+            "payable_account_id": NEW_NAME_ID
         })
         .to_string()
         .into_bytes(),
@@ -503,9 +504,8 @@ fn simulate_basic_agent_registration_update() {
             .into_bytes(),
         )
         .unwrap_json();
-    println!("agent result {:?}", agent_result.payable_account_id);
 
-    assert_eq!(agent_result.payable_account_id, "newname.sim".to_string());
+    assert_eq!(agent_result.payable_account_id, NEW_NAME_ID);
 }
 
 #[test]
