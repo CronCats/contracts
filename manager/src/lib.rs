@@ -458,7 +458,7 @@ impl CronManager {
         // NOTE: Gas cost includes the cross-contract call & internal logic of this contract.
         // Direct contract gas fee will be lower than task execution costs, however
         // we require the task owner to appropriately estimate gas for overpayment.
-        // The gas overpayment will also acrue to the agent since there is no way to read
+        // The gas overpayment will also accrue to the agent since there is no way to read
         // how much gas was actually used on callback.
         let call_fee_used = u128::from(task.gas) * self.gas_price;
         let call_total_fee = call_fee_used + self.agent_fee;
@@ -504,7 +504,7 @@ impl CronManager {
                 b"callback_for_proxy_call",
                 json!({
                     "task_hash": hash,
-                    "current_slot": current_slot
+                    "current_slot": U128::from(current_slot)
                 }).to_string().as_bytes(),
                 0,
                 GAS_FOR_CALLBACK,
@@ -516,7 +516,7 @@ impl CronManager {
     /// Logic executed on the completion of a proxy call
     /// Reschedule next task
     #[private]
-    pub fn callback_for_proxy_call(&mut self, task_hash: Vec<u8>, current_slot: u128) {
+    pub fn callback_for_proxy_call(&mut self, task_hash: Vec<u8>, current_slot: U128) {
         let task = self
             .tasks
             .get(&task_hash.clone())
@@ -526,7 +526,7 @@ impl CronManager {
         let next_slot = self.get_slot_from_cadence(task.cadence.clone());
         log!("Scheduling Next Task {:?}", &next_slot);
         assert!(
-            &current_slot < &next_slot,
+            &current_slot.0 < &next_slot,
             "Cannot schedule task in the past"
         );
 
@@ -1111,7 +1111,7 @@ mod tests {
         let context = get_context(accounts(1));
         testing_env!(context.build());
         let mut contract = CronManager::new();
-        contract.callback_for_proxy_call(vec![0, 1, 2, 3], 123400);
+        contract.callback_for_proxy_call(vec![0, 1, 2, 3], U128::from(123400));
     }
 
     #[test]

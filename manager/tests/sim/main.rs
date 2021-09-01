@@ -101,7 +101,7 @@ fn simulate_many_tasks() {
         root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
     println!("get_tasks_view_res {:?}", get_tasks_view_res);
     let mut success_val = r#"
-        [["/YD9yxy6pZjlvra3qkvybKdodL3alsfvR6S62/FiYow="],"120"]
+        [["xdnWQtc0KAq2i+/vyFQSHGvr5K0DPgyVUYfE8886qMs="],"120"]
     "#;
     let mut success_vec: Vec<u8> = success_val.trim().into(); // trim because of multiline assignment above
     assert_eq!(
