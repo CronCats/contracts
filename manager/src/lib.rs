@@ -416,22 +416,17 @@ impl CronManager {
 
         // Get current slot based on block or timestamp
         let current_slot = self.get_slot_id(None);
-        // log!("current slot {:?}", current_slot);
 
         // get task based on current slot
         // priority goes to tasks that have fallen behind (using floor key)
-        let mut slot_opt = self.slots.get(&current_slot);
-        let mut slot_ballpark = None;
-        if slot_opt.is_none() {
-            slot_ballpark = self.slots.floor_key(&current_slot);
-            if let Some(k) = slot_ballpark {
-                slot_opt = self.slots.get(&k);
-            }
+        let (slot_opt, slot_ballpark) = if let Some(k) = self.slots.floor_key(&current_slot) {
+            (self.slots.get(&k), k)
         } else {
-            slot_ballpark = Some(current_slot);
-        }
+            env::log(b"aloha ow my brain");
+            (self.slots.get(&current_slot), current_slot)
+        };
 
-        let mut slot_data = slot_opt.unwrap();
+        let mut slot_data = slot_opt.expect("No tasks found in slot");
 
         // Get a single task hash, then retrieve task details
         let hash = slot_data.pop().expect("No tasks available");
@@ -439,10 +434,10 @@ impl CronManager {
         // After popping, ensure state is rewritten back
         if slot_data.is_empty() {
             // Clean up slot if no more data
-            self.slots.remove(&slot_ballpark.unwrap());
+            self.slots.remove(&slot_ballpark);
             log!("Slot {} cleaned");
         } else {
-            self.slots.insert(&slot_ballpark.unwrap(), &slot_data);
+            self.slots.insert(&slot_ballpark, &slot_data);
         }
 
         let mut task = self.tasks.get(&hash).expect("No task found by hash");
