@@ -1,11 +1,11 @@
-use crate::CronManager;
+use crate::Contract;
 use near_contract_standards::storage_management::{
     StorageBalance, StorageBalanceBounds, StorageManagement,
 };
 use near_sdk::json_types::{ValidAccountId, U128};
 use near_sdk::{assert_one_yocto, env, log, AccountId, Balance, Promise};
 
-impl CronManager {
+impl Contract {
     fn internal_storage_balance_of(&self, account_id: &AccountId) -> Option<StorageBalance> {
         if self.agents.contains_key(account_id) {
             // The "available" balance is always zero because the storage isn't
@@ -20,7 +20,7 @@ impl CronManager {
     }
 }
 
-impl StorageManagement for CronManager {
+impl StorageManagement for Contract {
     // `registration_only` doesn't affect the implementation here, as there's no need to add additional
     // storage, so there's only one balance to attach.
     #[allow(unused_variables)]
