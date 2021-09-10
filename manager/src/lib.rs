@@ -189,6 +189,15 @@ impl Contract {
             next_slot
         }
     }
+
+    /// Returns semver of this contract.
+    ///
+    /// ```bash
+    /// near view cron.in.testnet version
+    /// ```
+    pub fn version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
