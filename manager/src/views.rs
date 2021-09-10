@@ -2,6 +2,15 @@ use crate::*;
 
 #[near_bindgen]
 impl Contract {
+    /// Returns semver of this contract.
+    ///
+    /// ```bash
+    /// near view cron.in.testnet version
+    /// ```
+    pub fn version(&self) -> String {
+        env!("CARGO_PKG_VERSION").to_string()
+    }
+
     /// Gets a set of tasks.
     /// Default: Returns the next executable set of tasks hashes.
     ///
