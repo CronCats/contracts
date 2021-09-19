@@ -170,6 +170,10 @@ impl Contract {
         }
         let mut agent = agent_opt.unwrap();
 
+        // TODO: Check if agent has exceeded their slot task allotment
+        // TODO: Update their slot task count
+        // TODO: Eject logic?
+
         // Get current slot based on block or timestamp
         let current_slot = self.get_slot_id(None);
 
@@ -415,7 +419,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(true), None, None, None);
+        contract.update_settings(None, None, Some(true), None, None, None, None);
         testing_env!(context
             .is_view(false)
             .attached_deposit(1000000000020000000100)
@@ -545,62 +549,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_task_get_only_active() {
-        let mut context = get_context(accounts(1));
-        testing_env!(context.build());
-        let mut contract = Contract::new();
-
-        // Move forward time and blocks to get more accurate bps
-        testing_env!(context
-            .is_view(false)
-            .attached_deposit(1000000000020000000100)
-            .block_timestamp(BLOCK_START_TS + (6 * NANO))
-            .block_index(BLOCK_START_BLOCK + 6)
-            .build());
-
-        // create a some tasks
-        contract.create_task(
-            accounts(3),
-            "increment".to_string(),
-            "*/10 * * * * *".to_string(),
-            Some(false),
-            Some(U128::from(0)),
-            Some(200),
-            None,
-        );
-        contract.create_task(
-            accounts(3),
-            "decrement".to_string(),
-            "*/10 * * * * *".to_string(),
-            Some(false),
-            Some(U128::from(0)),
-            Some(200),
-            None,
-        );
-        testing_env!(context
-            .is_view(false)
-            .attached_deposit(3000000000000300)
-            .block_timestamp(BLOCK_START_TS + (12 * NANO))
-            .block_index(BLOCK_START_BLOCK + 12)
-            .build());
-        testing_env!(context.is_view(true).build());
-        println!(
-            "contract.get_tasks(None) {:?}",
-            contract.get_tasks(Some(1)).0.len()
-        );
-        assert_eq!(
-            contract.get_tasks(Some(1)).0.len(),
-            2,
-            "Task amount diff than expected"
-        );
-
-        // change the tasks status
-        // contract.proxy_call();
-        // testing_env!(context.is_view(true).build());
-        // assert_eq!(contract.get_tasks(Some(2)).0.len(), 0, "Task amount should be less");
-    }
-
     // TODO: Finish
     // #[test]
     // fn test_task_proxy() {
@@ -684,7 +632,7 @@ mod tests {
             Some(200),
             None,
         );
-        contract.update_settings(None, None, Some(true), None, None, None);
+        contract.update_settings(None, None, Some(true), None, None, None, None);
         testing_env!(context.is_view(false).block_index(1260).build());
         contract.proxy_call();
     }
@@ -819,13 +767,13 @@ mod tests {
         assert_eq!(slot, 52201020);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, Some(10), None, None, None, None);
+        contract.update_settings(None, Some(10), None, None, None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
         assert_eq!(slot, 52201040);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, Some(1), None, None, None, None);
+        contract.update_settings(None, Some(1), None, None, None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
         assert_eq!(slot, 52201040);
@@ -833,7 +781,6 @@ mod tests {
 
     #[test]
     fn test_get_slot_from_cadence_ts_check() {
-        // let start_ts: u64 = 1_624_151_500_000_000_000;
         let rem = BLOCK_START_TS.clone() % 1_000_000;
         let secs = ((BLOCK_START_TS.clone() - rem) / 1_000_000_000) + 1;
         let start_ts = Utc.timestamp(secs as i64, 0).naive_utc().timestamp_nanos() as u64;

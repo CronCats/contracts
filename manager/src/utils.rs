@@ -30,15 +30,22 @@ impl Contract {
             bps_block: old_contract.bps_block,
             bps_timestamp: old_contract.bps_timestamp,
             tasks: old_contract.tasks,
-            agents: old_contract.agents,
             slots: old_contract.slots,
+            slot_granularity: old_contract.slot_granularity,
+            active_slot: ActiveSlot {
+                id: env::block_index(),
+                total_tasks: 0,
+            },
             available_balance: old_contract.available_balance,
             staked_balance: old_contract.staked_balance,
             agent_fee: old_contract.agent_fee,
             gas_price: old_contract.gas_price,
             proxy_callback_gas: old_contract.proxy_callback_gas,
-            slot_granularity: old_contract.slot_granularity,
+            agents: old_contract.agents,
             agent_storage_usage: old_contract.agent_storage_usage,
+            agent_pending_queue: LookupSet::new(StorageKeys::AgentsPending),
+            agent_task_ratio: [1, 2],
+            agents_total: 0,
         }
     }
 

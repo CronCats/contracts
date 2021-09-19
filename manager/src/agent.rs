@@ -4,10 +4,33 @@ use crate::*;
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
+pub enum AgentStatus {
+    // Default for any new agent, if tasks ratio allows
+    Active,
+
+    // Default for any new agent, until more tasks come online
+    Pending,
+
+    // Happens when an agent misses too many slot tasks
+    Ejected,
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(crate = "near_sdk::serde")]
 pub struct Agent {
+    pub status: AgentStatus,
+    
+    // Where rewards get transfered
     pub payable_account_id: AccountId,
+
+    // accrued reward balance
     pub balance: U128,
+
+    // stats
     pub total_tasks_executed: U128,
+
+    // Holds last known execution of task, so we know how many tasks this agent can execute within this slot
+    pub slot_execs: [u64; 2],
 }
 
 #[near_bindgen]
@@ -51,9 +74,12 @@ impl Contract {
             .unwrap_or_else(|| env::predecessor_account_id());
 
         let agent = Agent {
+            // TODO: change this to check if tasks amount allows, otherwise pending
+            status: AgentStatus::Pending,
             payable_account_id: payable_id,
             balance: U128::from(required_deposit),
             total_tasks_executed: U128::from(0),
+            slot_execs: [0, 0],
         };
 
         self.agents.insert(&account, &agent);
@@ -77,6 +103,10 @@ impl Contract {
 
         let account = env::predecessor_account_id();
 
+        // TODO: setup logic to change from pending if task amount allows
+        // TODO: Also setup a way for agent to check if they are next allowed
+        // TODO: Setup ejected logic (where?)
+
         // check that predecessor agent exists
         if let Some(mut agent) = self.agents.get(&account) {
             if payable_account_id.is_some() {
@@ -99,6 +129,8 @@ impl Contract {
     pub fn unregister_agent(&mut self) {
         // This method name is quite explicit, so calling storage_unregister and setting the 'force' option to true.
         self.storage_unregister(Some(true));
+
+        // TODO: check unregister for agent status
     }
 
     /// Allows an agent to withdraw all rewards, paid to the specified payable account id.
@@ -181,9 +213,11 @@ mod tests {
         assert_eq!(
             contract.get_agent(accounts(1).to_string()),
             Some(Agent {
+                status: AgentStatus::Pending,
                 payable_account_id: accounts(1).to_string(),
                 balance: U128::from(2090000000000000000000),
-                total_tasks_executed: U128::from(0)
+                total_tasks_executed: U128::from(0),
+                slot_execs: [0,0],
             })
         );
     }
@@ -215,9 +249,11 @@ mod tests {
         assert_eq!(
             contract.get_agent(accounts(1).to_string()),
             Some(Agent {
+                status: AgentStatus::Pending,
                 payable_account_id: accounts(2).to_string(),
                 balance: U128::from(2090000000000000000000),
-                total_tasks_executed: U128::from(0)
+                total_tasks_executed: U128::from(0),
+                slot_execs: [0,0],
             })
         );
     }

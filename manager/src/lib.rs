@@ -1,7 +1,7 @@
 use cron_schedule::Schedule;
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, TreeMap, UnorderedMap},
+    collections::{LookupMap, LookupSet, TreeMap, UnorderedMap},
     env,
     json_types::{Base64VecU8, ValidAccountId, U128, U64},
     log, near_bindgen,
@@ -46,6 +46,14 @@ pub enum StorageKeys {
     Tasks,
     Agents,
     Slots,
+    AgentsPending,
+}
+
+#[near_bindgen]
+#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+pub struct ActiveSlot {
+    id: u64,
+    total_tasks: u32,
 }
 
 #[near_bindgen]
@@ -57,9 +65,20 @@ pub struct Contract {
     bps_block: [u64; 2],
     bps_timestamp: [u64; 2],
 
-    // Basic management
+    // Agent management
     agents: LookupMap<AccountId, Agent>,
+    agent_pending_queue: LookupSet<AccountId>,
+    // The ratio of tasks to agents, where index 0 is agents, index 1 is tasks
+    // Example: [1, 10]
+    // Explanation: For every 1 agent, 10 tasks per slot are available. 
+    // NOTE: Caveat, when there are odd number of tasks or agents, the overflow will be available to first-come first-serve. This doesnt negate the possibility of a failed txn from race case choosing winner inside a block.
+    // NOTE: The overflow will be adjusted to be handled by sweeper in next implementation.
+    agent_task_ratio: [u64; 2],
+    agents_total: u64,
+
+    // Basic management
     slots: TreeMap<u128, Vec<Vec<u8>>>,
+    active_slot: ActiveSlot,
     tasks: UnorderedMap<Vec<u8>, Task>,
 
     // Economics
@@ -88,6 +107,9 @@ impl Contract {
             bps_timestamp: [env::block_timestamp(), env::block_timestamp()],
             tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),
+            agent_pending_queue: LookupSet::new(StorageKeys::AgentsPending),
+            agent_task_ratio: [1, 2],
+            agents_total: 0,
             slots: TreeMap::new(StorageKeys::Slots),
             available_balance: 0,
             staked_balance: 0,
@@ -96,6 +118,10 @@ impl Contract {
             proxy_callback_gas: GAS_FOR_CALLBACK,
             slot_granularity: SLOT_GRANULARITY,
             agent_storage_usage: 0,
+            active_slot: ActiveSlot {
+                id: env::block_index(),
+                total_tasks: 0,
+            }
         };
         this.measure_account_storage_usage();
         this
@@ -107,9 +133,11 @@ impl Contract {
         // Create a temporary, dummy entry and measure the storage used.
         let tmp_account_id = "a".repeat(64);
         let tmp_agent = Agent {
+            status: agent::AgentStatus::Pending,
             payable_account_id: tmp_account_id.clone(),
             balance: U128::from(0),
             total_tasks_executed: U128::from(0),
+            slot_execs: [0, 0],
         };
         self.agents.insert(&tmp_account_id, &tmp_agent);
         self.agent_storage_usage = env::storage_usage() - initial_storage_usage;
