@@ -10,9 +10,6 @@ pub enum AgentStatus {
 
     // Default for any new agent, until more tasks come online
     Pending,
-
-    // Happens when an agent misses too many slot tasks
-    Ejected,
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
@@ -30,6 +27,8 @@ pub struct Agent {
     pub total_tasks_executed: U128,
 
     // Holds last known execution of task, so we know how many tasks this agent can execute within this slot
+    // Model: [block_height, exec_count]
+    // Example data: [23456789, 7]
     pub slot_execs: [u64; 2],
 }
 
@@ -72,9 +71,11 @@ impl Contract {
         let payable_id = payable_account_id
             .map(|a| a.into())
             .unwrap_or_else(|| env::predecessor_account_id());
+        
+        // TODO: check if agent will be pending or active here
 
         let agent = Agent {
-            // TODO: change this to check if tasks amount allows, otherwise pending
+            // TODO: change this
             status: AgentStatus::Pending,
             payable_account_id: payable_id,
             balance: U128::from(required_deposit),
@@ -83,6 +84,8 @@ impl Contract {
         };
 
         self.agents.insert(&account, &agent);
+
+        // TODO: insert into active or pending agents queue
 
         // If the user deposited more than needed, refund them.
         let refund = deposit - required_deposit;
@@ -102,10 +105,6 @@ impl Contract {
         assert_one_yocto();
 
         let account = env::predecessor_account_id();
-
-        // TODO: setup logic to change from pending if task amount allows
-        // TODO: Also setup a way for agent to check if they are next allowed
-        // TODO: Setup ejected logic (where?)
 
         // check that predecessor agent exists
         if let Some(mut agent) = self.agents.get(&account) {
@@ -129,17 +128,17 @@ impl Contract {
     pub fn unregister_agent(&mut self) {
         // This method name is quite explicit, so calling storage_unregister and setting the 'force' option to true.
         self.storage_unregister(Some(true));
-
-        // TODO: check unregister for agent status
     }
 
-    /// Allows an agent to withdraw all rewards, paid to the specified payable account id.
-    ///
-    /// ```bash
-    /// near call cron.testnet withdraw_task_balance --accountId YOUR_AGENT.testnet
-    /// ```
-    pub fn withdraw_task_balance(&mut self) -> Promise {
-        let account = env::predecessor_account_id();
+    /// Removes the agent from the active set of agents.
+    /// Withdraws all reward balances to the agent payable account id.
+    #[private]
+    pub fn exit_agent(&mut self, account_id: Option<AccountId>, remove: Option<bool>) -> Promise {
+        let mut account = env::predecessor_account_id();
+        if let Some(account_id) = account_id {
+            account = account_id;
+        }
+
         let storage_fee = self.agent_storage_usage as u128 * env::storage_byte_cost();
 
         // check that signer agent exists
@@ -151,12 +150,44 @@ impl Contract {
             );
             let withdrawal_amount = agent_balance - storage_fee;
             agent.balance = U128::from(agent_balance - withdrawal_amount);
-            self.agents.insert(&account, &agent);
+
+            // if this is a full exit, remove agent. Otherwise, update agent
+            if remove.is_some() && remove.unwrap() {
+                self.remove_agent(account);
+            } else {
+                self.agents.insert(&account, &agent);
+            }
+
             log!("Withdrawal of {} has been sent.", withdrawal_amount);
             Promise::new(agent.payable_account_id.to_string()).transfer(withdrawal_amount)
         } else {
             env::panic(b"No Agent")
         }
+    }
+
+    /// Removes the agent from the active & pending set of agents.
+    #[private]
+    pub fn remove_agent(&mut self, account_id: AccountId) {
+        self.agents.remove(&account_id);
+        // remove agent from agent_active_queue
+        let index = self.agent_active_queue.iter().position(|x| x == account_id);
+        if let Some(index) = index {
+            self.agent_active_queue.swap_remove(index as u64);
+        }
+        // remove agent from agent_pending_queue
+        let p_index = self.agent_pending_queue.iter().position(|x| x == account_id);
+        if let Some(p_index) = p_index {
+            self.agent_pending_queue.swap_remove(p_index as u64);
+        }
+    }
+
+    /// Allows an agent to withdraw all rewards, paid to the specified payable account id.
+    ///
+    /// ```bash
+    /// near call cron.testnet withdraw_task_balance --accountId YOUR_AGENT.testnet
+    /// ```
+    pub fn withdraw_task_balance(&mut self) -> Promise {
+        self.exit_agent(None, None)
     }
 
     /// Gets the agent data stats

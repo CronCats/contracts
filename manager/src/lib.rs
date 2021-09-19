@@ -1,7 +1,7 @@
 use cron_schedule::Schedule;
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, LookupSet, TreeMap, UnorderedMap},
+    collections::{LookupMap, Vector, TreeMap, UnorderedMap},
     env,
     json_types::{Base64VecU8, ValidAccountId, U128, U64},
     log, near_bindgen,
@@ -38,6 +38,7 @@ pub const MAX_BLOCK_RANGE: u64 = 1_000_000_000_000_000;
 pub const MAX_EPOCH_RANGE: u32 = 10_000;
 pub const MAX_SECOND_RANGE: u32 = 600_000_000;
 pub const SLOT_GRANULARITY: u64 = 60; // NOTE: Connection drain.. might be required if slot granularity changes
+pub const AGENT_EJECT_THRESHOLD: u128 = 10;
 pub const NANO: u64 = 1_000_000_000;
 pub const BPS_DENOMINATOR: u64 = 1_000;
 
@@ -46,6 +47,7 @@ pub enum StorageKeys {
     Tasks,
     Agents,
     Slots,
+    AgentsActive,
     AgentsPending,
 }
 
@@ -67,14 +69,15 @@ pub struct Contract {
 
     // Agent management
     agents: LookupMap<AccountId, Agent>,
-    agent_pending_queue: LookupSet<AccountId>,
+    agent_active_queue: Vector<AccountId>,
+    agent_pending_queue: Vector<AccountId>,
     // The ratio of tasks to agents, where index 0 is agents, index 1 is tasks
     // Example: [1, 10]
     // Explanation: For every 1 agent, 10 tasks per slot are available. 
     // NOTE: Caveat, when there are odd number of tasks or agents, the overflow will be available to first-come first-serve. This doesnt negate the possibility of a failed txn from race case choosing winner inside a block.
     // NOTE: The overflow will be adjusted to be handled by sweeper in next implementation.
     agent_task_ratio: [u64; 2],
-    agents_total: u64,
+    agents_eject_threshold: u128,
 
     // Basic management
     slots: TreeMap<u128, Vec<Vec<u8>>>,
@@ -107,9 +110,10 @@ impl Contract {
             bps_timestamp: [env::block_timestamp(), env::block_timestamp()],
             tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),
-            agent_pending_queue: LookupSet::new(StorageKeys::AgentsPending),
+            agent_active_queue: Vector::new(StorageKeys::AgentsPending),
+            agent_pending_queue: Vector::new(StorageKeys::AgentsPending),
             agent_task_ratio: [1, 2],
-            agents_total: 0,
+            agents_eject_threshold: AGENT_EJECT_THRESHOLD,
             slots: TreeMap::new(StorageKeys::Slots),
             available_balance: 0,
             staked_balance: 0,

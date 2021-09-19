@@ -43,9 +43,10 @@ impl Contract {
             proxy_callback_gas: old_contract.proxy_callback_gas,
             agents: old_contract.agents,
             agent_storage_usage: old_contract.agent_storage_usage,
-            agent_pending_queue: LookupSet::new(StorageKeys::AgentsPending),
+            agent_active_queue: Vector::new(StorageKeys::AgentsActive),
+            agent_pending_queue: Vector::new(StorageKeys::AgentsPending),
             agent_task_ratio: [1, 2],
-            agents_total: 0,
+            agents_eject_threshold: 10,
         }
     }
 
@@ -73,6 +74,35 @@ impl Contract {
             self.available_balance,
             self.staked_balance
         );
+
+        self.manage_agents();
+    }
+
+    /// Manage agents
+    fn manage_agents(&mut self) {
+        let current_slot = self.get_slot_id(None);
+        assert!(self.agent_active_queue.len() > 0, "No agents found");
+
+        // Loop all agents to assess if really active
+        for agent_id in self.agent_active_queue.iter() {
+            let agent = self.agents.get(&agent_id).expect("Agent not found");
+            let last_slot = u128::from(agent.slot_execs[0]);
+
+            // Check if any agents need to be ejected, looking at previous task slot and current
+            if current_slot > last_slot + self.agents_eject_threshold {
+                // EJECT!
+                self.exit_agent(Some(agent_id), Some(true));
+            }
+        }
+
+        // TODO:
+        // // Check if agents are low, and accept an available pending agent
+        // if agent_pending_queue.len() > 0 {
+        //     // TODO:
+        //     // get the total tasks for the next few slots
+        //     // get the len of active agents
+        //     // assess if the task ratio would support a new agent
+        // }
     }
 }
 
