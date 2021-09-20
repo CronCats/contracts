@@ -29,7 +29,7 @@ pub struct Agent {
     // Holds last known execution of task, so we know how many tasks this agent can execute within this slot
     // Model: [block_height, exec_count]
     // Example data: [23456789, 7]
-    pub slot_execs: [u64; 2],
+    pub slot_execs: [u128; 2],
 }
 
 #[near_bindgen]
@@ -72,10 +72,7 @@ impl Contract {
             .map(|a| a.into())
             .unwrap_or_else(|| env::predecessor_account_id());
         
-        // TODO: check if agent will be pending or active here
-
         let agent = Agent {
-            // TODO: change this
             status: AgentStatus::Pending,
             payable_account_id: payable_id,
             balance: U128::from(required_deposit),
@@ -84,8 +81,7 @@ impl Contract {
         };
 
         self.agents.insert(&account, &agent);
-
-        // TODO: insert into active or pending agents queue
+        self.agent_pending_queue.push(&account);
 
         // If the user deposited more than needed, refund them.
         let refund = deposit - required_deposit;

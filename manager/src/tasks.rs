@@ -170,9 +170,9 @@ impl Contract {
         }
         let mut agent = agent_opt.unwrap();
 
-        // TODO: Check if agent has exceeded their slot task allotment
-        // TODO: Update their slot task count
-        // TODO: Eject logic?
+        // Check if agent has exceeded their slot task allotment
+        let task_per_agent = self.get_total_tasks_per_agent_per_slot();
+        assert!(agent.slot_execs[1] < u128::from(task_per_agent), "Agent has exceeded execution for this slot");
 
         // Get current slot based on block or timestamp
         let current_slot = self.get_slot_id(None);
@@ -231,6 +231,13 @@ impl Contract {
         // Reward for agent MUST include the amount of gas used as a reimbursement
         agent.balance = U128::from(agent.balance.0 + call_total_fee);
         agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
+        
+        // Update their slot task count
+        if agent.slot_execs[0] == current_slot {
+            agent.slot_execs = [current_slot, agent.slot_execs[1] + 1];
+        } else {
+            agent.slot_execs = [current_slot, 0];
+        }
         self.agents.insert(&env::signer_account_id(), &agent);
 
         // Decrease task balance, Update task storage

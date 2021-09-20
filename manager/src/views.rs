@@ -84,6 +84,21 @@ impl Contract {
         let task = self.tasks.get(&task_hash).expect("No task found by hash");
         task
     }
+
+    /// Gets amount of tasks alotted for a single agent per slot
+    ///
+    /// ```bash
+    /// near view cron.testnet get_total_tasks_per_agent_per_slot
+    /// ```
+    pub fn get_total_tasks_per_agent_per_slot(&self) -> u64 {
+        // assess if the task ratio would support a new agent
+        let [agent_ratio, task_ratio] = self.agent_task_ratio;
+
+        // Math example:
+        // ratio [2 agents, 5 tasks]
+        // agent can execute 5 tasks per slot
+        task_ratio.div_euclid(agent_ratio)
+    }
 }
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -93,39 +108,8 @@ mod tests {
     use near_sdk::test_utils::{accounts, VMContextBuilder};
     use near_sdk::{testing_env, MockedBlockchain};
 
-    use chrono::prelude::DateTime;
-    use chrono::Utc;
-    use chrono::*;
-
     const BLOCK_START_BLOCK: u64 = 52_201_040;
     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
-
-    pub fn get_sample_task() -> Task {
-        Task {
-            owner_id: String::from("bob"),
-            contract_id: String::from("danny"),
-            function_id: String::from("increment"),
-            cadence: String::from("0 0 */1 * * *"),
-            recurring: false,
-            total_deposit: U128::from(1000000000020000000100),
-            deposit: U128::from(100),
-            gas: 200,
-            arguments: Base64VecU8::from(vec![]),
-        }
-    }
-
-    // from https://stackoverflow.com/a/50072164/711863
-    pub fn human_readable_time(time_nano: u64) -> String {
-        let timestamp = (time_nano / 1_000_000_000)
-            .to_string()
-            .parse::<i64>()
-            .unwrap();
-        let naive = NaiveDateTime::from_timestamp(timestamp, 0);
-        let datetime: DateTime<Utc> = DateTime::from_utc(naive, Utc);
-        let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
-        // Print the newly formatted date and time
-        newdate.to_string()
-    }
 
     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();

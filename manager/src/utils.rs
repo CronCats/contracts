@@ -116,14 +116,7 @@ impl Contract {
 
             let sum: u128 = Iterator::sum(slots.iter());
             let avg_tasks = sum.div_euclid(slots.len() as u128);
-
-            // assess if the task ratio would support a new agent
-            let [agent_ratio, task_ratio] = self.agent_task_ratio;
-
-            // Math example:
-            // ratio [2 agents, 5 tasks]
-            // agent can execute 5 tasks per slot
-            let task_per_agent = task_ratio.div_euclid(agent_ratio);
+            let task_per_agent = self.get_total_tasks_per_agent_per_slot();
             let agent_queue_available = avg_tasks.div_euclid(task_per_agent as u128);
 
             // if agent threshold is 1 below or more, iterate to add pending agents into active queue
