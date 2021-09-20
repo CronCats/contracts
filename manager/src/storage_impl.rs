@@ -65,10 +65,10 @@ impl StorageManagement for Contract {
         if let Some(agent) = self.agents.get(&account_id) {
             let balance = agent.balance.0;
             if balance == 0 || force {
-                self.remove_agent(account_id);
+                self.remove_agent(account_id.clone());
 
                 // We add 1 to reimburse for the 1 yoctoⓃ used to call this method
-                Promise::new(account_id.clone()).transfer(balance + 1);
+                Promise::new(account_id).transfer(balance + 1);
                 log!(
                     "Agent has been removed and refunded the storage cost of {}",
                     balance + 1

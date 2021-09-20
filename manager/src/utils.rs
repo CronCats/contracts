@@ -75,34 +75,73 @@ impl Contract {
             self.staked_balance
         );
 
+        // execute agent management every tick so we can allow coming/going of agents without each agent paying to manage themselves
+        // NOTE: the agent CAN pay to execute "tick" method if they are anxious to become an active agent. The most they can query is every 10s.
         self.manage_agents();
     }
 
     /// Manage agents
     fn manage_agents(&mut self) {
         let current_slot = self.get_slot_id(None);
-        assert!(self.agent_active_queue.len() > 0, "No agents found");
+        let total_agents = self.agent_active_queue.len();
+        assert!(total_agents > 0, "No agents found");
 
         // Loop all agents to assess if really active
         for agent_id in self.agent_active_queue.iter() {
-            let agent = self.agents.get(&agent_id).expect("Agent not found");
-            let last_slot = u128::from(agent.slot_execs[0]);
+            let agent = self.agents.get(&agent_id);
 
-            // Check if any agents need to be ejected, looking at previous task slot and current
-            if current_slot > last_slot + self.agents_eject_threshold {
-                // EJECT!
-                self.exit_agent(Some(agent_id), Some(true));
+            if let Some(agent) = agent {
+                let last_slot = u128::from(agent.slot_execs[0]);
+
+                // Check if any agents need to be ejected, looking at previous task slot and current
+                if current_slot > last_slot + self.agents_eject_threshold {
+                    // EJECT!
+                    // TODO: finish immutable issue here
+                    // self.exit_agent(Some(agent_id), Some(true));
+                }
             }
         }
 
-        // TODO:
-        // // Check if agents are low, and accept an available pending agent
-        // if agent_pending_queue.len() > 0 {
-        //     // TODO:
-        //     // get the total tasks for the next few slots
-        //     // get the len of active agents
-        //     // assess if the task ratio would support a new agent
-        // }
+        // TODO: Check this insane logic. Def feels scary with the while statements. (check for rounding of div_euclid!)
+        // Check if agents are low, and accept an available pending agent
+        if self.agent_pending_queue.len() > 0 {
+            // get the total tasks for the next few slots, and take the average
+            let mut i = 0;
+            let mut slots: Vec<u128> = Vec::new();
+            while i < 5 {
+                let tmp_slot = self.get_slot_id(None);
+                slots.push(tmp_slot);
+                i += 1;
+            }
+
+            let sum: u128 = Iterator::sum(slots.iter());
+            let avg_tasks = sum.div_euclid(slots.len() as u128);
+
+            // assess if the task ratio would support a new agent
+            let [agent_ratio, task_ratio] = self.agent_task_ratio;
+
+            // Math example:
+            // ratio [2 agents, 5 tasks]
+            // agent can execute 5 tasks per slot
+            let task_per_agent = task_ratio.div_euclid(agent_ratio);
+            let agent_queue_available = avg_tasks.div_euclid(task_per_agent as u128);
+
+            // if agent threshold is 1 below or more, iterate to add pending agents into active queue
+            if agent_queue_available > 0 {
+                let mut a = agent_queue_available;
+                while a > 0 {
+                    // FIFO grab pending agents
+                    let agent_id = self.agent_pending_queue.swap_remove(0);
+                    if let Some(mut agent) = self.agents.get(&agent_id) {
+                        agent.status = agent::AgentStatus::Active;
+                        self.agents.insert(&agent_id, &agent);
+                        self.agent_active_queue.push(&agent_id);
+                    }
+
+                    a -= 1;
+                }
+            }
+        }
     }
 }
 
