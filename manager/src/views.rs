@@ -173,17 +173,16 @@ mod tests {
         );
         testing_env!(context
             .is_view(false)
-            .attached_deposit(3000000000000300)
-            .block_timestamp(BLOCK_START_TS + (12 * NANO))
-            .block_index(BLOCK_START_BLOCK + 12)
+            .block_timestamp(BLOCK_START_TS + (120 * NANO))
+            .block_index(BLOCK_START_BLOCK + 120)
             .build());
         testing_env!(context.is_view(true).build());
         println!(
             "contract.get_tasks(None) {:?}",
-            contract.get_tasks(None, Some(accounts(1))).0.len()
+            contract.get_tasks(None, None).0.len()
         );
         assert_eq!(
-            contract.get_tasks(None, Some(accounts(1))).0.len(),
+            contract.get_tasks(None, None).0.len(),
             2,
             "Task amount diff than expected"
         );

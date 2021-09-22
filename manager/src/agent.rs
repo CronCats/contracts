@@ -72,8 +72,17 @@ impl Contract {
             .map(|a| a.into())
             .unwrap_or_else(|| env::predecessor_account_id());
         
+        let total_agents = self.agent_active_queue.len();
+        let agent_status = if total_agents == 0 {
+            self.agent_active_queue.push(&account);
+            AgentStatus::Active
+        } else {
+            self.agent_pending_queue.push(&account);
+            AgentStatus::Pending
+        };
+        
         let agent = Agent {
-            status: AgentStatus::Pending,
+            status: agent_status,
             payable_account_id: payable_id,
             balance: U128::from(required_deposit),
             total_tasks_executed: U128::from(0),
@@ -81,7 +90,6 @@ impl Contract {
         };
 
         self.agents.insert(&account, &agent);
-        self.agent_pending_queue.push(&account);
 
         // If the user deposited more than needed, refund them.
         let refund = deposit - required_deposit;
@@ -201,6 +209,7 @@ mod tests {
 
     const BLOCK_START_BLOCK: u64 = 52_201_040;
     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
+    const AGENT_REGISTRATION_COST: u128 = 2_420_000_000_000_000_000_000;
 
     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -226,7 +235,7 @@ mod tests {
     #[test]
     fn test_agent_register_new() {
         let mut context = get_context(accounts(1));
-        context.attached_deposit(2090000000000000000000);
+        context.attached_deposit(AGENT_REGISTRATION_COST);
         testing_env!(context.is_view(false).build());
         let mut contract = Contract::new();
         contract.register_agent(Some(accounts(1)));
@@ -236,9 +245,9 @@ mod tests {
         assert_eq!(
             contract.get_agent(accounts(1).to_string()),
             Some(Agent {
-                status: AgentStatus::Pending,
+                status: AgentStatus::Active,
                 payable_account_id: accounts(1).to_string(),
-                balance: U128::from(2090000000000000000000),
+                balance: U128::from(AGENT_REGISTRATION_COST),
                 total_tasks_executed: U128::from(0),
                 slot_execs: [0,0],
             })
@@ -259,7 +268,7 @@ mod tests {
     #[test]
     fn test_agent_update() {
         let mut context = get_context(accounts(1));
-        context.attached_deposit(2090000000000000000000);
+        context.attached_deposit(AGENT_REGISTRATION_COST);
         testing_env!(context.is_view(false).build());
         let mut contract = Contract::new();
         contract.register_agent(Some(accounts(1)));
@@ -272,9 +281,9 @@ mod tests {
         assert_eq!(
             contract.get_agent(accounts(1).to_string()),
             Some(Agent {
-                status: AgentStatus::Pending,
+                status: AgentStatus::Active,
                 payable_account_id: accounts(2).to_string(),
-                balance: U128::from(2090000000000000000000),
+                balance: U128::from(AGENT_REGISTRATION_COST),
                 total_tasks_executed: U128::from(0),
                 slot_execs: [0,0],
             })
@@ -284,7 +293,7 @@ mod tests {
     #[test]
     fn test_agent_unregister_no_balance() {
         let mut context = get_context(accounts(1));
-        context.attached_deposit(2090000000000000000000);
+        context.attached_deposit(AGENT_REGISTRATION_COST);
         testing_env!(context.is_view(false).build());
         let mut contract = Contract::new();
         contract.register_agent(Some(accounts(1)));
@@ -312,7 +321,7 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         assert_eq!(
-            209, contract.agent_storage_usage,
+            242, contract.agent_storage_usage,
             "Expected different storage usage for the agent."
         );
     }

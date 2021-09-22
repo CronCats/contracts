@@ -80,9 +80,11 @@ impl Contract {
     fn manage_agents(&mut self) {
         let current_slot = self.get_slot_id(None);
         let total_agents = self.agent_active_queue.len();
-        assert!(total_agents > 0, "No agents found");
+        // No agents found, but dont panic.
+        if total_agents == 0 { return; }
 
         // Loop all agents to assess if really active
+        // Why the copy here? had to get a mutable reference from immutable self instance
         let mut bad_agents: Vec<AccountId> = Vec::from(self.agent_active_queue.to_vec());
         bad_agents.retain(|agent_id| {
             let _agent = self.agents.get(&agent_id);
