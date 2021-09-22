@@ -14,7 +14,11 @@ impl Contract {
         proxy_callback_gas: Option<U64>,
         agent_task_ratio: Option<Vec<u16>>,
     ) {
-        assert_eq!(self.owner_id, env::predecessor_account_id(), "Must be owner");
+        assert_eq!(
+            self.owner_id,
+            env::predecessor_account_id(),
+            "Must be owner"
+        );
 
         // BE CAREFUL!
         if let Some(owner_id) = owner_id {
@@ -42,7 +46,6 @@ impl Contract {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -64,7 +67,6 @@ mod tests {
             .block_timestamp(BLOCK_START_TS);
         builder
     }
-
 
     #[test]
     #[should_panic(expected = "Must be owner")]

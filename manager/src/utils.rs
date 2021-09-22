@@ -57,7 +57,10 @@ impl Contract {
         let prev_timestamp = self.bps_timestamp[0];
 
         // Check that we dont allow 0 BPS
-        assert!(prev_block + 10 < env::block_index(), "Tick triggered too soon");
+        assert!(
+            prev_block + 10 < env::block_index(),
+            "Tick triggered too soon"
+        );
 
         self.bps_block[0] = env::block_index();
         self.bps_block[1] = prev_block;
@@ -81,7 +84,9 @@ impl Contract {
         let current_slot = self.get_slot_id(None);
         let total_agents = self.agent_active_queue.len();
         // No agents found, but dont panic.
-        if total_agents == 0 { return; }
+        if total_agents == 0 {
+            return;
+        }
 
         // Loop all agents to assess if really active
         // Why the copy here? had to get a mutable reference from immutable self instance
@@ -95,8 +100,12 @@ impl Contract {
                 // Check if any agents need to be ejected, looking at previous task slot and current
                 if current_slot > last_slot + self.agents_eject_threshold {
                     true
-                } else { false }
-            } else { false }
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
         });
 
         // EJECT!

@@ -1,18 +1,17 @@
+pub use agent::Agent;
 use cron_schedule::Schedule;
 use near_sdk::{
+    assert_one_yocto,
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{LookupMap, Vector, TreeMap, UnorderedMap},
+    collections::{LookupMap, TreeMap, UnorderedMap, Vector},
     env,
     json_types::{Base64VecU8, ValidAccountId, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json::json,
-    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise,
-    StorageUsage,
-    assert_one_yocto,
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, StorageUsage,
 };
 use std::str::FromStr;
-pub use agent::Agent;
 pub use tasks::Task;
 
 mod agent;
@@ -66,7 +65,7 @@ pub struct Contract {
     agent_pending_queue: Vector<AccountId>,
     // The ratio of tasks to agents, where index 0 is agents, index 1 is tasks
     // Example: [1, 10]
-    // Explanation: For every 1 agent, 10 tasks per slot are available. 
+    // Explanation: For every 1 agent, 10 tasks per slot are available.
     // NOTE: Caveat, when there are odd number of tasks or agents, the overflow will be available to first-come first-serve. This doesnt negate the possibility of a failed txn from race case choosing winner inside a block.
     // NOTE: The overflow will be adjusted to be handled by sweeper in next implementation.
     agent_task_ratio: [u16; 2],
@@ -113,7 +112,7 @@ impl Contract {
             gas_price: GAS_BASE_PRICE,
             proxy_callback_gas: GAS_FOR_CALLBACK,
             slot_granularity: SLOT_GRANULARITY,
-            agent_storage_usage: 0
+            agent_storage_usage: 0,
         };
         this.measure_account_storage_usage();
         this
@@ -190,7 +189,8 @@ impl Contract {
         // numerator to match the magnitude
         // We use the `max` value to avoid division by 0
         let bps = ((blocks_total * NANO * BPS_DENOMINATOR)
-            / std::cmp::max(current_block_ts - self.bps_timestamp[1], 1)).max(1);
+            / std::cmp::max(current_block_ts - self.bps_timestamp[1], 1))
+        .max(1);
 
         /*
         seconds * nano      blocks           1

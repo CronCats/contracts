@@ -20,14 +20,18 @@ impl Contract {
     /// ```bash
     /// near view cron.testnet get_tasks
     /// ```
-    pub fn get_tasks(&self, offset: Option<u64>, account_id: Option<ValidAccountId>) -> (Vec<Base64VecU8>, U128) {
+    pub fn get_tasks(
+        &self,
+        offset: Option<u64>,
+        account_id: Option<ValidAccountId>,
+    ) -> (Vec<Base64VecU8>, U128) {
         let current_slot = self.get_slot_id(offset);
         let empty = (vec![], U128::from(current_slot));
 
         // Get tasks only for my agent
         // - Get agent IF account
         // - then check current slot against agent latest executions
-        // - if agent has done max slot executions, return empty 
+        // - if agent has done max slot executions, return empty
         if let Some(id) = account_id {
             if let Some(a) = self.agents.get(&id.to_string()) {
                 // Look at previous slot ID
@@ -42,12 +46,13 @@ impl Contract {
         // (Or closest past slot if there are leftovers.)
         let slot_ballpark = self.slots.floor_key(&current_slot);
         if let Some(k) = slot_ballpark {
-            let ret: Vec<Base64VecU8> =
-                self.slots.get(&k)
-                    .unwrap()
-                    .into_iter()
-                    .map(Base64VecU8::from)
-                    .collect();
+            let ret: Vec<Base64VecU8> = self
+                .slots
+                .get(&k)
+                .unwrap()
+                .into_iter()
+                .map(Base64VecU8::from)
+                .collect();
 
             (ret, U128::from(current_slot))
         } else {
@@ -63,10 +68,7 @@ impl Contract {
         let mut ret: Vec<Task> = Vec::new();
         if let Some(U128(slot_number)) = slot {
             // User specified a slot number, only return tasks in there.
-            let tasks_in_slot = self
-                .slots
-                .get(&slot_number)
-                .unwrap_or_default();
+            let tasks_in_slot = self.slots.get(&slot_number).unwrap_or_default();
             for task_hash in tasks_in_slot.iter() {
                 let task = self.tasks.get(&task_hash).expect("No task found by hash");
                 ret.push(task);

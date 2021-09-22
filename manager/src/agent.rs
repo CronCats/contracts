@@ -16,7 +16,7 @@ pub enum AgentStatus {
 #[serde(crate = "near_sdk::serde")]
 pub struct Agent {
     pub status: AgentStatus,
-    
+
     // Where rewards get transfered
     pub payable_account_id: AccountId,
 
@@ -34,7 +34,6 @@ pub struct Agent {
 
 #[near_bindgen]
 impl Contract {
-
     /// Add any account as an agent that will be able to execute tasks.
     /// Registering allows for rewards accruing with micro-payments which will accumulate to more long-term.
     ///
@@ -45,10 +44,7 @@ impl Contract {
     /// near call cron.testnet register_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
     /// ```
     #[payable]
-    pub fn register_agent(
-        &mut self,
-        payable_account_id: Option<ValidAccountId>,
-    ) {
+    pub fn register_agent(&mut self, payable_account_id: Option<ValidAccountId>) {
         assert_eq!(self.paused, false, "Register agent paused");
 
         let deposit: Balance = env::attached_deposit();
@@ -71,7 +67,7 @@ impl Contract {
         let payable_id = payable_account_id
             .map(|a| a.into())
             .unwrap_or_else(|| env::predecessor_account_id());
-        
+
         let total_agents = self.agent_active_queue.len();
         let agent_status = if total_agents == 0 {
             self.agent_active_queue.push(&account);
@@ -80,7 +76,7 @@ impl Contract {
             self.agent_pending_queue.push(&account);
             AgentStatus::Pending
         };
-        
+
         let agent = Agent {
             status: agent_status,
             payable_account_id: payable_id,
@@ -153,7 +149,9 @@ impl Contract {
 
             // if this is a full exit, remove agent. Otherwise, update agent
             if let Some(remove) = remove {
-                if remove { self.remove_agent(account); }
+                if remove {
+                    self.remove_agent(account);
+                }
             } else {
                 self.agents.insert(&account, &agent);
             }
@@ -175,7 +173,10 @@ impl Contract {
             self.agent_active_queue.swap_remove(index as u64);
         }
         // remove agent from agent_pending_queue
-        let p_index = self.agent_pending_queue.iter().position(|x| x == account_id);
+        let p_index = self
+            .agent_pending_queue
+            .iter()
+            .position(|x| x == account_id);
         if let Some(p_index) = p_index {
             self.agent_pending_queue.swap_remove(p_index as u64);
         }
@@ -249,7 +250,7 @@ mod tests {
                 payable_account_id: accounts(1).to_string(),
                 balance: U128::from(AGENT_REGISTRATION_COST),
                 total_tasks_executed: U128::from(0),
-                slot_execs: [0,0],
+                slot_execs: [0, 0],
             })
         );
     }
@@ -285,7 +286,7 @@ mod tests {
                 payable_account_id: accounts(2).to_string(),
                 balance: U128::from(AGENT_REGISTRATION_COST),
                 total_tasks_executed: U128::from(0),
-                slot_execs: [0,0],
+                slot_execs: [0, 0],
             })
         );
     }

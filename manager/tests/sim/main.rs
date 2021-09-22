@@ -484,11 +484,9 @@ fn simulate_basic_agent_registration_update() {
     agent.call(
         cron.account_id(),
         "update_agent",
-        &json!({
-            "payable_account_id": NEW_NAME_ID
-        })
-        .to_string()
-        .into_bytes(),
+        &json!({ "payable_account_id": NEW_NAME_ID })
+            .to_string()
+            .into_bytes(),
         DEFAULT_GAS,
         1, // deposit 1 yocto
     );

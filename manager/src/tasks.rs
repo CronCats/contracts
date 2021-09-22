@@ -55,10 +55,7 @@ impl Contract {
         // No adding tasks while contract is paused
         assert_eq!(self.paused, false, "Create task paused");
         // check cadence can be parsed
-        assert!(
-            self.validate_cadence(&cadence),
-            "Cadence string invalid"
-        );
+        assert!(self.validate_cadence(&cadence), "Cadence string invalid");
 
         let item = Task {
             owner_id: env::predecessor_account_id(),
@@ -98,7 +95,10 @@ impl Contract {
         let next_slot = self.get_slot_from_cadence(item.cadence.clone());
 
         // Add task to catalog
-        assert!(self.tasks.insert(&hash, &item).is_none(), "Task already exists");
+        assert!(
+            self.tasks.insert(&hash, &item).is_none(),
+            "Task already exists"
+        );
 
         // Get previous task hashes in slot, add as needed
         let mut slot_slots = self.slots.get(&next_slot).unwrap_or(Vec::new());
@@ -132,7 +132,10 @@ impl Contract {
     /// Responsible for cleaning up storage &
     /// returning any remaining balance to task owner.
     fn exit_task(&mut self, task_hash: Vec<u8>) {
-        let task = self.tasks.remove(&task_hash).expect("No task found by hash");
+        let task = self
+            .tasks
+            .remove(&task_hash)
+            .expect("No task found by hash");
 
         // return any balance
         if task.total_deposit.0 > 0 {
@@ -172,7 +175,10 @@ impl Contract {
 
         // Check if agent has exceeded their slot task allotment
         let task_per_agent = self.get_total_tasks_per_agent_per_slot();
-        assert!(agent.slot_execs[1] < u128::from(task_per_agent), "Agent has exceeded execution for this slot");
+        assert!(
+            agent.slot_execs[1] < u128::from(task_per_agent),
+            "Agent has exceeded execution for this slot"
+        );
 
         // Get current slot based on block or timestamp
         let current_slot = self.get_slot_id(None);
@@ -208,7 +214,7 @@ impl Contract {
         //
         // Task Fee Examples:
         // Total Fee = Gas Fee + Agent Fee
-        // Total Balance = Task Deposit + Total Fee 
+        // Total Balance = Task Deposit + Total Fee
         //
         // NOTE: Gas cost includes the cross-contract call & internal logic of this contract.
         // Direct contract gas fee will be lower than task execution costs, however
@@ -231,7 +237,7 @@ impl Contract {
         // Reward for agent MUST include the amount of gas used as a reimbursement
         agent.balance = U128::from(agent.balance.0 + call_total_fee);
         agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
-        
+
         // Update their slot task count
         if agent.slot_execs[0] == current_slot {
             agent.slot_execs = [current_slot, agent.slot_execs[1] + 1];
@@ -267,12 +273,14 @@ impl Contract {
                 json!({
                     "task_hash": hash,
                     "current_slot": U128::from(current_slot)
-                }).to_string().as_bytes(),
+                })
+                .to_string()
+                .as_bytes(),
                 0,
                 GAS_FOR_CALLBACK,
             );
             env::promise_return(promise_second);
-        }   
+        }
     }
 
     /// Logic executed on the completion of a proxy call
@@ -552,7 +560,10 @@ mod tests {
             .expect("Should have something here");
         assert_eq!(
             slot[0],
-            [21, 209, 124, 71, 241, 6, 3, 102, 114, 186, 60, 89, 64, 69, 99, 43, 141, 4, 101, 196, 41, 133, 9, 73, 102, 127, 6, 197, 80, 247, 8, 116]
+            [
+                21, 209, 124, 71, 241, 6, 3, 102, 114, 186, 60, 89, 64, 69, 99, 43, 141, 4, 101,
+                196, 41, 133, 9, 73, 102, 127, 6, 197, 80, 247, 8, 116
+            ]
         );
     }
 
@@ -876,7 +887,10 @@ mod tests {
         let hash = contract.hash(&task);
         assert_eq!(
             hash,
-            [32, 154, 253, 118, 34, 137, 134, 24, 119, 224, 187, 34, 173, 65, 86, 153, 220, 236, 185, 254, 202, 216, 153, 93, 113, 214, 29, 191, 129, 85, 146, 169],
+            [
+                32, 154, 253, 118, 34, 137, 134, 24, 119, 224, 187, 34, 173, 65, 86, 153, 220, 236,
+                185, 254, 202, 216, 153, 93, 113, 214, 29, 191, 129, 85, 146, 169
+            ],
             "Hash is not equivalent"
         )
     }
