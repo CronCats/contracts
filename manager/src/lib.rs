@@ -53,13 +53,6 @@ pub enum StorageKeys {
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
-pub struct ActiveSlot {
-    id: u64,
-    total_tasks: u32,
-}
-
-#[near_bindgen]
-#[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct Contract {
     // Runtime
     paused: bool,
@@ -76,12 +69,11 @@ pub struct Contract {
     // Explanation: For every 1 agent, 10 tasks per slot are available. 
     // NOTE: Caveat, when there are odd number of tasks or agents, the overflow will be available to first-come first-serve. This doesnt negate the possibility of a failed txn from race case choosing winner inside a block.
     // NOTE: The overflow will be adjusted to be handled by sweeper in next implementation.
-    agent_task_ratio: [u64; 2],
+    agent_task_ratio: [u16; 2],
     agents_eject_threshold: u128,
 
     // Basic management
     slots: TreeMap<u128, Vec<Vec<u8>>>,
-    active_slot: ActiveSlot,
     tasks: UnorderedMap<Vec<u8>, Task>,
 
     // Economics
@@ -121,11 +113,7 @@ impl Contract {
             gas_price: GAS_BASE_PRICE,
             proxy_callback_gas: GAS_FOR_CALLBACK,
             slot_granularity: SLOT_GRANULARITY,
-            agent_storage_usage: 0,
-            active_slot: ActiveSlot {
-                id: env::block_index(),
-                total_tasks: 0,
-            }
+            agent_storage_usage: 0
         };
         this.measure_account_storage_usage();
         this
@@ -223,7 +211,7 @@ impl Contract {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use near_sdk::json_types::ValidAccountId;

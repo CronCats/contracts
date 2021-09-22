@@ -12,7 +12,7 @@ impl Contract {
         agent_fee: Option<U128>,
         gas_price: Option<U128>,
         proxy_callback_gas: Option<U64>,
-        agent_task_ratio: Option<Vec<U64>>,
+        agent_task_ratio: Option<Vec<u16>>,
     ) {
         assert_eq!(self.owner_id, env::predecessor_account_id(), "Must be owner");
 
@@ -37,13 +37,13 @@ impl Contract {
             self.agent_fee = agent_fee.0;
         }
         if let Some(agent_task_ratio) = agent_task_ratio {
-            self.agent_task_ratio = [agent_task_ratio[0].0, agent_task_ratio[1].0];
+            self.agent_task_ratio = [agent_task_ratio[0], agent_task_ratio[1]];
         }
     }
 }
 
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use near_sdk::json_types::ValidAccountId;
@@ -107,7 +107,7 @@ mod tests {
         assert_eq!(contract.slot_granularity, SLOT_GRANULARITY);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(true), None, None, None, Some(vec![U64::from(2),U64::from(5)]));
+        contract.update_settings(None, None, Some(true), None, None, None, Some(vec![2, 5]));
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.agent_task_ratio[0], 2);
         assert_eq!(contract.agent_task_ratio[1], 5);

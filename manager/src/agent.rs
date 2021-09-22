@@ -130,11 +130,7 @@ impl Contract {
     /// Withdraws all reward balances to the agent payable account id.
     #[private]
     pub fn exit_agent(&mut self, account_id: Option<AccountId>, remove: Option<bool>) -> Promise {
-        let mut account = env::predecessor_account_id();
-        if let Some(account_id) = account_id {
-            account = account_id;
-        }
-
+        let account = account_id.unwrap_or_else(env::predecessor_account_id);
         let storage_fee = self.agent_storage_usage as u128 * env::storage_byte_cost();
 
         // check that signer agent exists
@@ -148,8 +144,8 @@ impl Contract {
             agent.balance = U128::from(agent_balance - withdrawal_amount);
 
             // if this is a full exit, remove agent. Otherwise, update agent
-            if remove.is_some() && remove.unwrap() {
-                self.remove_agent(account);
+            if let Some(remove) = remove {
+                if remove { self.remove_agent(account); }
             } else {
                 self.agents.insert(&account, &agent);
             }
@@ -196,7 +192,7 @@ impl Contract {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use near_sdk::json_types::ValidAccountId;

@@ -32,10 +32,6 @@ impl Contract {
             tasks: old_contract.tasks,
             slots: old_contract.slots,
             slot_granularity: old_contract.slot_granularity,
-            active_slot: ActiveSlot {
-                id: env::block_index(),
-                total_tasks: 0,
-            },
             available_balance: old_contract.available_balance,
             staked_balance: old_contract.staked_balance,
             agent_fee: old_contract.agent_fee,
@@ -87,19 +83,23 @@ impl Contract {
         assert!(total_agents > 0, "No agents found");
 
         // Loop all agents to assess if really active
-        for agent_id in self.agent_active_queue.iter() {
-            let agent = self.agents.get(&agent_id);
+        let mut bad_agents: Vec<AccountId> = Vec::from(self.agent_active_queue.to_vec());
+        bad_agents.retain(|agent_id| {
+            let _agent = self.agents.get(&agent_id);
 
-            if let Some(agent) = agent {
-                let last_slot = u128::from(agent.slot_execs[0]);
+            if let Some(_agent) = _agent {
+                let last_slot = u128::from(_agent.slot_execs[0]);
 
                 // Check if any agents need to be ejected, looking at previous task slot and current
                 if current_slot > last_slot + self.agents_eject_threshold {
-                    // EJECT!
-                    // TODO: finish immutable issue here
-                    // self.exit_agent(Some(agent_id), Some(true));
-                }
-            }
+                    true
+                } else { false }
+            } else { false }
+        });
+
+        // EJECT!
+        for id in bad_agents {
+            self.exit_agent(Some(id), Some(true));
         }
 
         // TODO: Check this insane logic. Def feels scary with the while statements. (check for rounding of div_euclid!)
@@ -138,7 +138,7 @@ impl Contract {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use near_sdk::json_types::ValidAccountId;

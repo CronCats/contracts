@@ -20,17 +20,23 @@ impl Contract {
     /// ```bash
     /// near view cron.testnet get_tasks
     /// ```
-    pub fn get_tasks(&self, account_id: Option<ValidAccountId>, offset: Option<u64>) -> (Vec<Base64VecU8>, U128) {
+    pub fn get_tasks(&self, offset: Option<u64>, account_id: Option<ValidAccountId>) -> (Vec<Base64VecU8>, U128) {
         let current_slot = self.get_slot_id(offset);
+        let empty = (vec![], U128::from(current_slot));
 
-        // // TODO: Get tasks only for my agent
-        // // Get agent IF account, then check current slot and if agent has done X executions
-        // if let Some(id) = account_id {
-        //     if let Some(a) = self.agents.get(id) {
-        //         // Look at previous slot ID
-
-        //     }
-        // }
+        // Get tasks only for my agent
+        // - Get agent IF account
+        // - then check current slot against agent latest executions
+        // - if agent has done max slot executions, return empty 
+        if let Some(id) = account_id {
+            if let Some(a) = self.agents.get(&id.to_string()) {
+                // Look at previous slot ID
+                let last_slot = u128::from(a.slot_execs[0]);
+                if current_slot > last_slot + self.agents_eject_threshold {
+                    return empty;
+                }
+            }
+        }
 
         // Get tasks based on current slot.
         // (Or closest past slot if there are leftovers.)
@@ -45,7 +51,7 @@ impl Contract {
 
             (ret, U128::from(current_slot))
         } else {
-            (vec![], U128::from(current_slot))
+            empty
         }
     }
 
@@ -90,18 +96,18 @@ impl Contract {
     /// ```bash
     /// near view cron.testnet get_total_tasks_per_agent_per_slot
     /// ```
-    pub fn get_total_tasks_per_agent_per_slot(&self) -> u64 {
+    pub fn get_total_tasks_per_agent_per_slot(&self) -> u16 {
         // assess if the task ratio would support a new agent
         let [agent_ratio, task_ratio] = self.agent_task_ratio;
 
         // Math example:
-        // ratio [2 agents, 5 tasks]
+        // ratio [2 agents, 10 tasks]
         // agent can execute 5 tasks per slot
         task_ratio.div_euclid(agent_ratio)
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use near_sdk::json_types::ValidAccountId;
@@ -174,10 +180,10 @@ mod tests {
         testing_env!(context.is_view(true).build());
         println!(
             "contract.get_tasks(None) {:?}",
-            contract.get_tasks(Some(accounts(1)), None).0.len()
+            contract.get_tasks(None, Some(accounts(1))).0.len()
         );
         assert_eq!(
-            contract.get_tasks(Some(accounts(1)), None).0.len(),
+            contract.get_tasks(None, Some(accounts(1))).0.len(),
             2,
             "Task amount diff than expected"
         );
