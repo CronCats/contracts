@@ -80,4 +80,4 @@ FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
 # Call sputnik factory for deploying new dao with custom policy
 near call $DAO_ROOT_ACC create "{\"name\": \"$DAO_NAME\", \"args\": \"$FIXED_ARGS\"}" --accountId $MASTER_ACC --amount 5 --gas 150000000000000
 near view $DAO_ACCOUNT get_policy
-echo "'$NODE_ENV' Deploy Complete!"
+echo "'$NEAR_ENV' Deploy Complete!"
