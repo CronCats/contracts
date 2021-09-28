@@ -3,7 +3,7 @@ DAO_ROOT_ACC=sputnik-dao.near
 DAO_NAME=croncat
 DAO_ACCOUNT=$DAO_NAME.$DAO_ROOT_ACC
 
-##Change NODE_ENV between mainnet, testnet and betanet
+##Change NEAR_ENV between mainnet, testnet and betanet
 # export NODE_ENV=testnet
 export NEAR_ENV=mainnet
 
