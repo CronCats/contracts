@@ -7,10 +7,10 @@ DAO_ACCOUNT=$DAO_NAME.$DAO_ROOT_ACC
 # export NODE_ENV=testnet
 export NODE_ENV=mainnet
 
-FOUNDERS='["tjtc.near", "mike.near", "bbentley.near"]'
-APPLICATIONS='["prod.near"]'
-AGENTS='["prod.near"]'
-COMMANDERS='["prod.near"]'
+FOUNDERS='["tjtc.near", "mike.near", "ozymandius.near", "daobox.near", "bbentley.near"]'
+APPLICATIONS='["cron.near"]'
+AGENTS='["cron.near"]'
+COMMANDERS='["cron.near"]'
 
 #DAO Policy
 export POLICY='{

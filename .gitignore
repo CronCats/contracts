@@ -16,3 +16,4 @@ neardev
 **/*.rs.bk
 
 .idea
+dump.rdb
