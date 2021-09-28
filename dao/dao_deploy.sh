@@ -5,7 +5,7 @@ DAO_ACCOUNT=$DAO_NAME.$DAO_ROOT_ACC
 
 ##Change NODE_ENV between mainnet, testnet and betanet
 # export NODE_ENV=testnet
-export NODE_ENV=mainnet
+export NEAR_ENV=mainnet
 
 FOUNDERS='["tjtc.near", "mike.near", "bbentley.near"]'
 APPLICATIONS='["prod.near"]'
