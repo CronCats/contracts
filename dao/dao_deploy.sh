@@ -3,9 +3,9 @@ DAO_ROOT_ACC=sputnik-dao.near
 DAO_NAME=croncat
 DAO_ACCOUNT=$DAO_NAME.$DAO_ROOT_ACC
 
-##Change NODE_ENV between mainnet, testnet and betanet
-# export NODE_ENV=testnet
-export NODE_ENV=mainnet
+##Change NEAR_ENV between mainnet, testnet and betanet
+# export NEAR_ENV=testnet
+export NEAR_ENV=mainnet
 
 FOUNDERS='["tjtc.near", "mike.near", "ozymandius.near", "daobox.near", "bbentley.near"]'
 APPLICATIONS='["cron.near"]'
@@ -80,4 +80,4 @@ FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
 # Call sputnik factory for deploying new dao with custom policy
 near call $DAO_ROOT_ACC create "{\"name\": \"$DAO_NAME\", \"args\": \"$FIXED_ARGS\"}" --accountId $MASTER_ACC --amount 5 --gas 150000000000000
 near view $DAO_ACCOUNT get_policy
-echo "'$NODE_ENV' Deploy Complete!"
+echo "'$NEAR_ENV' Deploy Complete!"
