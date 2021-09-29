@@ -1,16 +1,14 @@
-MASTER_ACC=cron.near
-DAO_ROOT_ACC=sputnik-dao.near
-DAO_NAME=croncat
+MASTER_ACC=in.testnet
+DAO_ROOT_ACC=sputnikv2.testnet
+DAO_NAME=croncat_testnet_v3
 DAO_ACCOUNT=$DAO_NAME.$DAO_ROOT_ACC
 
-##Change NEAR_ENV between mainnet, testnet and betanet
-# export NEAR_ENV=testnet
-export NEAR_ENV=mainnet
+export NEAR_ENV=testnet
 
-FOUNDERS='["tjtc.near", "mike.near", "ozymandius.near", "daobox.near", "bbentley.near"]'
-APPLICATIONS='["cron.near"]'
-AGENTS='["cron.near"]'
-COMMANDERS='["cron.near"]'
+FOUNDERS='["per.testnet", "in.testnet", "escrow.testnet", "cron.testnet", "ion.testnet"]'
+APPLICATIONS='[]'
+AGENTS='[]'
+COMMANDERS='[]'
 
 #DAO Policy
 export POLICY='{
@@ -18,12 +16,18 @@ export POLICY='{
     {
       "name": "founders",
       "kind": { "Group": '$FOUNDERS' },
-      "permissions": ["*:*"],
+      "permissions": [
+        "*:Finalize",
+        "*:AddProposal",
+        "*:VoteApprove",
+        "*:VoteReject",
+        "*:VoteRemove"
+      ],
       "vote_policy": {
         "Group": {
           "weight_kind": "RoleWeight",
           "quorum": "0",
-          "threshold": [2, 5]
+          "threshold": [1, 5]
         }
       }
     },
