@@ -4,13 +4,13 @@ DAO_NAME=croncat
 DAO_ACCOUNT=$DAO_NAME.$DAO_ROOT_ACC
 
 ##Change NEAR_ENV between mainnet, testnet and betanet
-# export NODE_ENV=testnet
+# export NEAR_ENV=testnet
 export NEAR_ENV=mainnet
 
-FOUNDERS='["tjtc.near", "mike.near", "bbentley.near"]'
-APPLICATIONS='["prod.near"]'
-AGENTS='["prod.near"]'
-COMMANDERS='["prod.near"]'
+FOUNDERS='["tjtc.near", "mike.near", "ozymandius.near", "daobox.near", "bbentley.near"]'
+APPLICATIONS='["cron.near"]'
+AGENTS='["cron.near"]'
+COMMANDERS='["cron.near"]'
 
 #DAO Policy
 export POLICY='{
