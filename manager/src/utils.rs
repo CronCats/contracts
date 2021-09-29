@@ -30,15 +30,19 @@ impl Contract {
             bps_block: old_contract.bps_block,
             bps_timestamp: old_contract.bps_timestamp,
             tasks: old_contract.tasks,
-            agents: old_contract.agents,
             slots: old_contract.slots,
+            slot_granularity: old_contract.slot_granularity,
             available_balance: old_contract.available_balance,
             staked_balance: old_contract.staked_balance,
             agent_fee: old_contract.agent_fee,
             gas_price: old_contract.gas_price,
             proxy_callback_gas: old_contract.proxy_callback_gas,
-            slot_granularity: old_contract.slot_granularity,
+            agents: old_contract.agents,
             agent_storage_usage: old_contract.agent_storage_usage,
+            agent_active_queue: Vector::new(StorageKeys::AgentsActive),
+            agent_pending_queue: Vector::new(StorageKeys::AgentsPending),
+            agent_task_ratio: [1, 2],
+            agents_eject_threshold: 10,
         }
     }
 
@@ -53,7 +57,10 @@ impl Contract {
         let prev_timestamp = self.bps_timestamp[0];
 
         // Check that we dont allow 0 BPS
-        assert!(prev_block + 10 < env::block_index(), "Tick triggered too soon");
+        assert!(
+            prev_block + 10 < env::block_index(),
+            "Tick triggered too soon"
+        );
 
         self.bps_block[0] = env::block_index();
         self.bps_block[1] = prev_block;
@@ -66,10 +73,83 @@ impl Contract {
             self.available_balance,
             self.staked_balance
         );
+
+        // execute agent management every tick so we can allow coming/going of agents without each agent paying to manage themselves
+        // NOTE: the agent CAN pay to execute "tick" method if they are anxious to become an active agent. The most they can query is every 10s.
+        self.manage_agents();
+    }
+
+    /// Manage agents
+    fn manage_agents(&mut self) {
+        let current_slot = self.get_slot_id(None);
+        let total_agents = self.agent_active_queue.len();
+        // No agents found, but dont panic.
+        if total_agents == 0 {
+            return;
+        }
+
+        // Loop all agents to assess if really active
+        // Why the copy here? had to get a mutable reference from immutable self instance
+        let mut bad_agents: Vec<AccountId> = Vec::from(self.agent_active_queue.to_vec());
+        bad_agents.retain(|agent_id| {
+            let _agent = self.agents.get(&agent_id);
+
+            if let Some(_agent) = _agent {
+                let last_slot = u128::from(_agent.slot_execs[0]);
+
+                // Check if any agents need to be ejected, looking at previous task slot and current
+                if current_slot > last_slot + self.agents_eject_threshold {
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        });
+
+        // EJECT!
+        for id in bad_agents {
+            self.exit_agent(Some(id), Some(true));
+        }
+
+        // TODO: Check this insane logic. Def feels scary with the while statements. (check for rounding of div_euclid!)
+        // Check if agents are low, and accept an available pending agent
+        if self.agent_pending_queue.len() > 0 {
+            // get the total tasks for the next few slots, and take the average
+            let mut i = 0;
+            let mut slots: Vec<u128> = Vec::new();
+            while i < 5 {
+                let tmp_slot = self.get_slot_id(None);
+                slots.push(tmp_slot);
+                i += 1;
+            }
+
+            let sum: u128 = Iterator::sum(slots.iter());
+            let avg_tasks = sum.div_euclid(slots.len() as u128);
+            let task_per_agent = self.get_total_tasks_per_agent_per_slot();
+            let agent_queue_available = avg_tasks.div_euclid(task_per_agent as u128);
+
+            // if agent threshold is 1 below or more, iterate to add pending agents into active queue
+            if agent_queue_available > 0 {
+                let mut a = agent_queue_available;
+                while a > 0 {
+                    // FIFO grab pending agents
+                    let agent_id = self.agent_pending_queue.swap_remove(0);
+                    if let Some(mut agent) = self.agents.get(&agent_id) {
+                        agent.status = agent::AgentStatus::Active;
+                        self.agents.insert(&agent_id, &agent);
+                        self.agent_active_queue.push(&agent_id);
+                    }
+
+                    a -= 1;
+                }
+            }
+        }
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use near_sdk::json_types::ValidAccountId;

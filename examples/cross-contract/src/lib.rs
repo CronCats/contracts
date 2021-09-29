@@ -5,8 +5,7 @@ use near_sdk::{
     json_types::{Base64VecU8, U128},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
-    serde_json,
-    AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise,
+    serde_json, AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise,
 };
 
 near_sdk::setup_alloc!();
@@ -361,7 +360,12 @@ impl CrudContract {
     pub fn status(&self) -> Promise {
         // TODO: fix this! serialization is not working
         let hash = self.task_hash.clone().expect(ERR_NO_TASK_CONFIGURED);
-        log!("TASK HASH: {:?} {:?} {}", &hash, serde_json::to_string(&hash).unwrap(), serde_json::to_string(&hash).unwrap());
+        log!(
+            "TASK HASH: {:?} {:?} {}",
+            &hash,
+            serde_json::to_string(&hash).unwrap(),
+            serde_json::to_string(&hash).unwrap()
+        );
         ext_croncat::get_task(
             // hash,
             serde_json::to_string(&hash).unwrap().to_string(),

@@ -4,15 +4,36 @@ use crate::*;
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
+pub enum AgentStatus {
+    // Default for any new agent, if tasks ratio allows
+    Active,
+
+    // Default for any new agent, until more tasks come online
+    Pending,
+}
+
+#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(crate = "near_sdk::serde")]
 pub struct Agent {
+    pub status: AgentStatus,
+
+    // Where rewards get transfered
     pub payable_account_id: AccountId,
+
+    // accrued reward balance
     pub balance: U128,
+
+    // stats
     pub total_tasks_executed: U128,
+
+    // Holds last known execution of task, so we know how many tasks this agent can execute within this slot
+    // Model: [block_height, exec_count]
+    // Example data: [23456789, 7]
+    pub slot_execs: [u128; 2],
 }
 
 #[near_bindgen]
 impl Contract {
-
     /// Add any account as an agent that will be able to execute tasks.
     /// Registering allows for rewards accruing with micro-payments which will accumulate to more long-term.
     ///
@@ -23,10 +44,7 @@ impl Contract {
     /// near call cron.testnet register_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
     /// ```
     #[payable]
-    pub fn register_agent(
-        &mut self,
-        payable_account_id: Option<ValidAccountId>,
-    ) {
+    pub fn register_agent(&mut self, payable_account_id: Option<ValidAccountId>) {
         assert_eq!(self.paused, false, "Register agent paused");
 
         let deposit: Balance = env::attached_deposit();
@@ -50,10 +68,21 @@ impl Contract {
             .map(|a| a.into())
             .unwrap_or_else(|| env::predecessor_account_id());
 
+        let total_agents = self.agent_active_queue.len();
+        let agent_status = if total_agents == 0 {
+            self.agent_active_queue.push(&account);
+            AgentStatus::Active
+        } else {
+            self.agent_pending_queue.push(&account);
+            AgentStatus::Pending
+        };
+
         let agent = Agent {
+            status: agent_status,
             payable_account_id: payable_id,
             balance: U128::from(required_deposit),
             total_tasks_executed: U128::from(0),
+            slot_execs: [0, 0],
         };
 
         self.agents.insert(&account, &agent);
@@ -101,13 +130,11 @@ impl Contract {
         self.storage_unregister(Some(true));
     }
 
-    /// Allows an agent to withdraw all rewards, paid to the specified payable account id.
-    ///
-    /// ```bash
-    /// near call cron.testnet withdraw_task_balance --accountId YOUR_AGENT.testnet
-    /// ```
-    pub fn withdraw_task_balance(&mut self) -> Promise {
-        let account = env::predecessor_account_id();
+    /// Removes the agent from the active set of agents.
+    /// Withdraws all reward balances to the agent payable account id.
+    #[private]
+    pub fn exit_agent(&mut self, account_id: Option<AccountId>, remove: Option<bool>) -> Promise {
+        let account = account_id.unwrap_or_else(env::predecessor_account_id);
         let storage_fee = self.agent_storage_usage as u128 * env::storage_byte_cost();
 
         // check that signer agent exists
@@ -119,12 +146,49 @@ impl Contract {
             );
             let withdrawal_amount = agent_balance - storage_fee;
             agent.balance = U128::from(agent_balance - withdrawal_amount);
-            self.agents.insert(&account, &agent);
+
+            // if this is a full exit, remove agent. Otherwise, update agent
+            if let Some(remove) = remove {
+                if remove {
+                    self.remove_agent(account);
+                }
+            } else {
+                self.agents.insert(&account, &agent);
+            }
+
             log!("Withdrawal of {} has been sent.", withdrawal_amount);
             Promise::new(agent.payable_account_id.to_string()).transfer(withdrawal_amount)
         } else {
             env::panic(b"No Agent")
         }
+    }
+
+    /// Removes the agent from the active & pending set of agents.
+    #[private]
+    pub fn remove_agent(&mut self, account_id: AccountId) {
+        self.agents.remove(&account_id);
+        // remove agent from agent_active_queue
+        let index = self.agent_active_queue.iter().position(|x| x == account_id);
+        if let Some(index) = index {
+            self.agent_active_queue.swap_remove(index as u64);
+        }
+        // remove agent from agent_pending_queue
+        let p_index = self
+            .agent_pending_queue
+            .iter()
+            .position(|x| x == account_id);
+        if let Some(p_index) = p_index {
+            self.agent_pending_queue.swap_remove(p_index as u64);
+        }
+    }
+
+    /// Allows an agent to withdraw all rewards, paid to the specified payable account id.
+    ///
+    /// ```bash
+    /// near call cron.testnet withdraw_task_balance --accountId YOUR_AGENT.testnet
+    /// ```
+    pub fn withdraw_task_balance(&mut self) -> Promise {
+        self.exit_agent(None, None)
     }
 
     /// Gets the agent data stats
@@ -137,7 +201,7 @@ impl Contract {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use near_sdk::json_types::ValidAccountId;
@@ -146,6 +210,7 @@ mod tests {
 
     const BLOCK_START_BLOCK: u64 = 52_201_040;
     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
+    const AGENT_REGISTRATION_COST: u128 = 2_420_000_000_000_000_000_000;
 
     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -171,7 +236,7 @@ mod tests {
     #[test]
     fn test_agent_register_new() {
         let mut context = get_context(accounts(1));
-        context.attached_deposit(2090000000000000000000);
+        context.attached_deposit(AGENT_REGISTRATION_COST);
         testing_env!(context.is_view(false).build());
         let mut contract = Contract::new();
         contract.register_agent(Some(accounts(1)));
@@ -181,9 +246,11 @@ mod tests {
         assert_eq!(
             contract.get_agent(accounts(1).to_string()),
             Some(Agent {
+                status: AgentStatus::Active,
                 payable_account_id: accounts(1).to_string(),
-                balance: U128::from(2090000000000000000000),
-                total_tasks_executed: U128::from(0)
+                balance: U128::from(AGENT_REGISTRATION_COST),
+                total_tasks_executed: U128::from(0),
+                slot_execs: [0, 0],
             })
         );
     }
@@ -202,7 +269,7 @@ mod tests {
     #[test]
     fn test_agent_update() {
         let mut context = get_context(accounts(1));
-        context.attached_deposit(2090000000000000000000);
+        context.attached_deposit(AGENT_REGISTRATION_COST);
         testing_env!(context.is_view(false).build());
         let mut contract = Contract::new();
         contract.register_agent(Some(accounts(1)));
@@ -215,9 +282,11 @@ mod tests {
         assert_eq!(
             contract.get_agent(accounts(1).to_string()),
             Some(Agent {
+                status: AgentStatus::Active,
                 payable_account_id: accounts(2).to_string(),
-                balance: U128::from(2090000000000000000000),
-                total_tasks_executed: U128::from(0)
+                balance: U128::from(AGENT_REGISTRATION_COST),
+                total_tasks_executed: U128::from(0),
+                slot_execs: [0, 0],
             })
         );
     }
@@ -225,7 +294,7 @@ mod tests {
     #[test]
     fn test_agent_unregister_no_balance() {
         let mut context = get_context(accounts(1));
-        context.attached_deposit(2090000000000000000000);
+        context.attached_deposit(AGENT_REGISTRATION_COST);
         testing_env!(context.is_view(false).build());
         let mut contract = Contract::new();
         contract.register_agent(Some(accounts(1)));
@@ -253,7 +322,7 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         assert_eq!(
-            209, contract.agent_storage_usage,
+            242, contract.agent_storage_usage,
             "Expected different storage usage for the agent."
         );
     }

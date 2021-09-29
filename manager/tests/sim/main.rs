@@ -25,7 +25,7 @@ const AGENT_ID: &str = "agent.sim";
 const USER_ID: &str = "user.sim";
 const NEW_NAME_ID: &str = "newname.sim";
 const TASK_BASE64: &str = "QgpuCtvr2ZRq87F8FG9qKaiKA400LXBOut5WohwCTxI=";
-const AGENT_REGISTRATION_COST: u128 = 2_090_000_000_000_000_000_000;
+const AGENT_REGISTRATION_COST: u128 = 2_420_000_000_000_000_000_000;
 const AGENT_FEE: u128 = 60_000_000_000_000_000_000_000u128;
 
 type TaskBase64Hash = String;
@@ -484,11 +484,9 @@ fn simulate_basic_agent_registration_update() {
     agent.call(
         cron.account_id(),
         "update_agent",
-        &json!({
-            "payable_account_id": NEW_NAME_ID
-        })
-        .to_string()
-        .into_bytes(),
+        &json!({ "payable_account_id": NEW_NAME_ID })
+            .to_string()
+            .into_bytes(),
         DEFAULT_GAS,
         1, // deposit 1 yocto
     );

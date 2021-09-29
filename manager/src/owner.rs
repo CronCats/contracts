@@ -12,8 +12,13 @@ impl Contract {
         agent_fee: Option<U128>,
         gas_price: Option<U128>,
         proxy_callback_gas: Option<U64>,
+        agent_task_ratio: Option<Vec<u16>>,
     ) {
-        assert_eq!(self.owner_id, env::predecessor_account_id(), "Must be owner");
+        assert_eq!(
+            self.owner_id,
+            env::predecessor_account_id(),
+            "Must be owner"
+        );
 
         // BE CAREFUL!
         if let Some(owner_id) = owner_id {
@@ -26,20 +31,22 @@ impl Contract {
         if let Some(paused) = paused {
             self.paused = paused;
         }
-        if let Some(agent_fee) = agent_fee {
-            self.agent_fee = agent_fee.0;
-        }
         if let Some(gas_price) = gas_price {
             self.gas_price = gas_price.0;
         }
         if let Some(proxy_callback_gas) = proxy_callback_gas {
             self.proxy_callback_gas = proxy_callback_gas.0;
         }
+        if let Some(agent_fee) = agent_fee {
+            self.agent_fee = agent_fee.0;
+        }
+        if let Some(agent_task_ratio) = agent_task_ratio {
+            self.agent_task_ratio = [agent_task_ratio[0], agent_task_ratio[1]];
+        }
     }
 }
 
-
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use near_sdk::json_types::ValidAccountId;
@@ -61,7 +68,6 @@ mod tests {
         builder
     }
 
-
     #[test]
     #[should_panic(expected = "Must be owner")]
     fn test_update_settings_fail() {
@@ -76,7 +82,7 @@ mod tests {
             .signer_account_id(accounts(3))
             .predecessor_account_id(accounts(3))
             .build());
-        contract.update_settings(None, Some(10), None, None, None, None);
+        contract.update_settings(None, Some(10), None, None, None, None, None);
     }
 
     #[test]
@@ -88,9 +94,25 @@ mod tests {
         assert_eq!(contract.slot_granularity, SLOT_GRANULARITY);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, Some(10), Some(true), None, None, None);
+        contract.update_settings(None, Some(10), Some(true), None, None, None, None);
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.slot_granularity, 10);
+        assert_eq!(contract.paused, true);
+    }
+
+    #[test]
+    fn test_update_settings_agent_ratio() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.slot_granularity, SLOT_GRANULARITY);
+
+        testing_env!(context.is_view(false).build());
+        contract.update_settings(None, None, Some(true), None, None, None, Some(vec![2, 5]));
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.agent_task_ratio[0], 2);
+        assert_eq!(contract.agent_task_ratio[1], 5);
         assert_eq!(contract.paused, true);
     }
 }
