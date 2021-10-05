@@ -36,12 +36,10 @@ const ERR_NO_TASK_CONFIGURED: &str =
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Task {
-    pub owner_id: AccountId,
     pub contract_id: AccountId,
     pub function_id: String,
     pub cadence: String,
     pub recurring: bool,
-    pub total_deposit: U128,
     pub deposit: U128,
     pub gas: Gas,
     pub arguments: Vec<u8>,
@@ -63,15 +61,6 @@ pub trait ExtCroncat {
         gas: Option<Gas>,
         arguments: Option<Vec<u8>>,
     ) -> Base64VecU8;
-    fn update_task(
-        &mut self,
-        task_hash: Base64VecU8,
-        cadence: Option<String>,
-        recurring: Option<bool>,
-        deposit: Option<U128>,
-        gas: Option<Gas>,
-        arguments: Option<Vec<u8>>,
-    );
     fn remove_task(&mut self, task_hash: Base64VecU8);
     fn proxy_call(&mut self);
 }
@@ -298,34 +287,6 @@ impl CrudContract {
     pub fn schedule_callback(&mut self, #[callback] task_hash: Base64VecU8) {
         log!("schedule_callback task_hash {:?}", &task_hash);
         self.task_hash = Some(task_hash);
-    }
-
-    /// Update a scheduled task using a known task hash, passing new updateable parameters. MUST be owner!
-    /// NOTE: There's much more you could do here with the parameters, just showing an example of period update.
-    ///
-    /// ```bash
-    /// near call crosscontract.testnet update '{ "period": "0 0 */1 * * *" }' --accountId YOUR_ACCOUNT.testnet
-    /// ```
-    #[payable]
-    pub fn update(&mut self, period: String) -> Promise {
-        assert_eq!(
-            env::current_account_id(),
-            env::predecessor_account_id(),
-            "{}",
-            ERR_ONLY_OWNER
-        );
-
-        ext_croncat::update_task(
-            self.task_hash.clone().expect(ERR_NO_TASK_CONFIGURED),
-            Some(period),
-            None,
-            None,
-            None,
-            None,
-            &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
-            env::attached_deposit(),
-            GAS_FOR_UPDATE_CALL,
-        )
     }
 
     /// Remove a scheduled task using a known hash. MUST be owner!

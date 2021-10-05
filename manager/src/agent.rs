@@ -194,10 +194,10 @@ impl Contract {
     /// Gets the agent data stats
     ///
     /// ```bash
-    /// near view cron.testnet get_agent '{"account": "YOUR_AGENT.testnet"}'
+    /// near view cron.testnet get_agent '{"account_id": "YOUR_AGENT.testnet"}'
     /// ```
-    pub fn get_agent(&self, account: AccountId) -> Option<Agent> {
-        self.agents.get(&account)
+    pub fn get_agent(&self, account_id: AccountId) -> Option<Agent> {
+        self.agents.get(&account_id)
     }
 }
 

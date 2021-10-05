@@ -10,7 +10,7 @@ export FACTORY=testnet
 # export FACTORY=registrar
 
 if [ -z ${NEAR_ACCT+x} ]; then
-  export NEAR_ACCT=you.testnet
+  export NEAR_ACCT=ion.testnet
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi

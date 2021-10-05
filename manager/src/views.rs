@@ -11,6 +11,48 @@ impl Contract {
         env!("CARGO_PKG_VERSION").to_string()
     }
 
+    /// Gets the configurations and stats
+    ///
+    /// ```bash
+    /// near view cron.testnet get_info
+    /// ```
+    pub fn get_info(&self) -> (
+        // Runtime
+        bool,
+        AccountId,
+        u64,
+        u64,
+        [u16; 2],
+        u128,
+        u64,
+        u64,
+        Balance,
+        Balance,
+        Balance,
+        Balance,
+        Gas,
+        u64,
+        StorageUsage,
+    ) {
+        (
+            self.paused,
+            self.owner_id.clone(),
+            self.agent_active_queue.len(),
+            self.agent_pending_queue.len(),
+            self.agent_task_ratio,
+            self.agents_eject_threshold,
+            self.slots.len(),
+            self.tasks.len(),
+            self.available_balance,
+            self.staked_balance,
+            self.agent_fee,
+            self.gas_price,
+            self.proxy_callback_gas,
+            self.slot_granularity,
+            self.agent_storage_usage,
+        )
+    }
+
     /// Gets a set of tasks.
     /// Default: Returns the next executable set of tasks hashes.
     ///
