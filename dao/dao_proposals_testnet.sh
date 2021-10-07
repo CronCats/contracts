@@ -8,7 +8,7 @@ export NEAR_ENV=testnet
 
 ## NOTE: Examples setup as needed, adjust variables for use cases.
 # near view $DAO_ACCOUNT get_policy
-near call $DAO_ACCOUNT act_proposal '{"id": 5, "action" :"VoteApprove"}' --accountId $MASTER_ACC  --gas 300000000000000
+# near call $DAO_ACCOUNT act_proposal '{"id": 0, "action" :"VoteApprove"}' --accountId $MASTER_ACC  --gas 300000000000000
 # near call $DAO_ACCOUNT act_proposal '{"id": 0, "action" :"VoteReject"}' --accountId $MASTER_ACC  --gas 300000000000000
 # near call $DAO_ACCOUNT act_proposal '{"id": 0, "action" :"VoteRemove"}' --accountId $MASTER_ACC  --gas 300000000000000
 
