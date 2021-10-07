@@ -106,6 +106,9 @@ impl Contract {
         log!("Task next slot: {}", next_slot);
         self.slots.insert(&next_slot, &slot_slots);
 
+        // Add the attached balance into available_balance
+        self.available_balance += env::attached_deposit();
+
         Base64VecU8::from(hash)
     }
 
@@ -237,6 +240,7 @@ impl Contract {
         // Reward for agent MUST include the amount of gas used as a reimbursement
         agent.balance = U128::from(agent.balance.0 + call_total_fee);
         agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
+        self.available_balance = self.available_balance - call_total_fee;
 
         // Update their slot task count
         if agent.slot_execs[0] == current_slot {
@@ -292,7 +296,7 @@ impl Contract {
             .get(&task_hash.clone())
             .expect("No task found by hash");
 
-        // TODO: double check this can't get scheduled in current slot again
+        // double check this can't get scheduled in current slot again
         let next_slot = self.get_slot_from_cadence(task.cadence.clone());
         log!("Scheduling Next Task {:?}", &next_slot);
         assert!(

@@ -69,7 +69,7 @@ impl Contract {
 
         // TBD: Internal staking management
         log!(
-            "Balances: Available {}, Staked {}",
+            "Balances [Operations, Treasury]:  [{},{}]",
             self.available_balance,
             self.staked_balance
         );

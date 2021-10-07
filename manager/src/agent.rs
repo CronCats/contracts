@@ -140,10 +140,13 @@ impl Contract {
         // check that signer agent exists
         if let Some(mut agent) = self.agents.get(&account) {
             let agent_balance = agent.balance.0;
-            assert!(
-                agent_balance > storage_fee,
-                "No Agent balance beyond the storage balance"
-            );
+            // If remove is present, still allow exiting of only storage balance agent
+            if remove.is_none() {
+                assert!(
+                    agent_balance > storage_fee,
+                    "No Agent balance beyond the storage balance"
+                );
+            }
             let withdrawal_amount = agent_balance - storage_fee;
             agent.balance = U128::from(agent_balance - withdrawal_amount);
 

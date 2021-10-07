@@ -31,17 +31,17 @@ export FACTORY=testnet
 # export FACTORY=registrar
 
 if [ -z ${NEAR_ACCT+x} ]; then
-  export NEAR_ACCT=ion.$NEAR_ENV
+  export NEAR_ACCT=cron.$FACTORY
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi
 
-export CRON_ACCOUNT_ID=cron.$NEAR_ACCT
+export CRON_ACCOUNT_ID=manager_v1.$NEAR_ACCT
 export COUNTER_ACCOUNT_ID=counter.$NEAR_ACCT
 export AGENT_ACCOUNT_ID=agent.$NEAR_ACCT
 export USER_ACCOUNT_ID=user.$NEAR_ACCT
 export CRUD_ACCOUNT_ID=crud.$NEAR_ACCT
-export DAO_ACCOUNT_ID=dao.sputnikv2.$NEAR_ENV
+export DAO_ACCOUNT_ID=croncat.sputnikv2.$FACTORY
 
 # create all accounts
 near create-account $CRON_ACCOUNT_ID --masterAccount $NEAR_ACCT
