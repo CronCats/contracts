@@ -27,7 +27,6 @@ impl Contract {
         Contract {
             paused: false,
             owner_id: old_contract.owner_id,
-            bps_block: old_contract.bps_block,
             bps_timestamp: old_contract.bps_timestamp,
             tasks: old_contract.tasks,
             slots: old_contract.slots,
@@ -53,17 +52,14 @@ impl Contract {
     ///
     /// near call cron.testnet tick '{}'
     pub fn tick(&mut self) {
-        let prev_block = self.bps_block[0];
         let prev_timestamp = self.bps_timestamp[0];
 
-        // Check that we dont allow 0 BPS
+        // Check that we dont allow limited scopes for timestamp averages
         assert!(
-            prev_block + 10 < env::block_index(),
+            prev_timestamp + self.slot_granularity < env::block_timestamp(),
             "Tick triggered too soon"
         );
 
-        self.bps_block[0] = env::block_index();
-        self.bps_block[1] = prev_block;
         self.bps_timestamp[0] = env::block_timestamp();
         self.bps_timestamp[1] = prev_timestamp;
 
