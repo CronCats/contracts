@@ -33,7 +33,7 @@ else
 fi
 
 export CRON_ACCOUNT_ID=manager_v1.$NEAR_ACCT
-export DAO_ACCOUNT_ID=croncat.sputnikdao.near
+export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 
 ######
 # NOTE: All commands below WORK, just have them off for safety.

@@ -80,6 +80,7 @@ impl Contract {
     }
 
     /// Manage agents
+    // TODO: Check the state changes! getting: Smart contract panicked: The collection is an inconsistent state. Did previous smart contract execution terminate unexpectedly?
     fn manage_agents(&mut self) {
         let current_slot = self.get_slot_id(None);
         let total_agents = self.agent_active_queue.len();
@@ -97,6 +98,7 @@ impl Contract {
             if let Some(_agent) = _agent {
                 let last_slot = u128::from(_agent.slot_execs[0]);
 
+                // TODO: Change threshold to multiply by the slots
                 // Check if any agents need to be ejected, looking at previous task slot and current
                 if current_slot > last_slot + self.agents_eject_threshold {
                     true

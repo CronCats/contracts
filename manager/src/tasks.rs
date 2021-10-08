@@ -204,7 +204,7 @@ impl Contract {
         if slot_data.is_empty() {
             // Clean up slot if no more data
             self.slots.remove(&slot_ballpark);
-            log!("Slot {} cleaned");
+            log!("Slot {} cleaned", &slot_ballpark);
         } else {
             self.slots.insert(&slot_ballpark, &slot_data);
         }

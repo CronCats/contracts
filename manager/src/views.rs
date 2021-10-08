@@ -70,6 +70,7 @@ impl Contract {
         let current_slot = self.get_slot_id(offset);
         let empty = (vec![], U128::from(current_slot));
 
+        // TODO: IF paused, and agent, return empty (this will cause all agents to pause automatically, to save failed TXN fees)
         // Get tasks only for my agent
         // - Get agent IF account
         // - then check current slot against agent latest executions

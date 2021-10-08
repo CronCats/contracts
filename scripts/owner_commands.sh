@@ -23,6 +23,7 @@ export AGENT_ACCOUNT_ID=agent.$NEAR_ACCT
 export USER_ACCOUNT_ID=user.$NEAR_ACCT
 export CRUD_ACCOUNT_ID=crud.$NEAR_ACCT
 export DAO_ACCOUNT_ID=croncat.sputnikv2.$FACTORY
+# export DAO_ACCOUNT_ID=croncat.sputnik-dao.$FACTORY
 
 # # Change ownership to DAO
 # near call $CRON_ACCOUNT_ID update_settings '{"owner_id": "'$DAO_ACCOUNT_ID'"}' --accountId $CRON_ACCOUNT_ID
