@@ -175,10 +175,6 @@ impl Contract {
             // Add slot granularity to make sure the minimum next slot is a block within next slot granularity range
             current + u128::from(self.slot_granularity)
         } else {
-            log!(
-                "next_slot:  {}",
-                &next_slot,
-            );
             next_slot
         }
     }
