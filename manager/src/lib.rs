@@ -34,7 +34,7 @@ pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 // Boundary Definitions
 pub const MAX_BLOCK_TS_RANGE: u64 = 1_000_000_000_000_000_000;
-pub const SLOT_GRANULARITY: u64 = 60_000; // 60 seconds
+pub const SLOT_GRANULARITY: u64 = 60_000_000_000; // 60 seconds in nanos
 pub const AGENT_EJECT_THRESHOLD: u128 = 10;
 pub const NANO: u64 = 1_000_000_000;
 pub const BPS_DENOMINATOR: u64 = 1_000;
@@ -132,40 +132,25 @@ impl Contract {
         self.agents.remove(&tmp_account_id);
     }
 
-    /// Takes an optional `offset`: the number of blocks to offset from now (current block height)
-    /// If no offset, returns current slot based on current block height
-    /// If offset, returns next slot based on current block height & integer offset
-    /// rounded to nearest granularity (~every 1.6 block per sec)
+    /// Takes an optional `offset`: the number of seconds to offset from now (current block timestamp)
+    /// If no offset, returns current slot based on current block timestamp
+    /// If offset, returns next slot based on current block timestamp & seconds offset
     fn get_slot_id(&self, offset: Option<u64>) -> u128 {
         let current_block_ts = env::block_timestamp();
 
         let slot_id: u64 = if let Some(o) = offset {
-            // NOTE: Assumption here is that the offset will be in seconds. (blocks per second)
-            //       Slot granularity will be in minutes (60 blocks per slot)
-
-            let slot_remainder = core::cmp::max(o % self.slot_granularity, 1);
-            let slot_round =
-                core::cmp::max(o.saturating_sub(slot_remainder), self.slot_granularity);
-            let next = current_block_ts + slot_round;
+            // NOTE: Assumption here is that the offset will be in seconds. (60 seconds per slot)
+            let next = current_block_ts + (self.slot_granularity + o);
 
             // Protect against extreme future block schedules
-            if next - current_block_ts > current_block_ts + MAX_BLOCK_TS_RANGE {
-                u64::min(next, current_block_ts + MAX_BLOCK_TS_RANGE)
-            } else {
-                next
-            }
+            u64::min(next, current_block_ts + MAX_BLOCK_TS_RANGE)
         } else {
             current_block_ts
         };
 
+        // rounded to nearest granularity
         let slot_remainder = slot_id % self.slot_granularity;
         let slot_id_round = slot_id.saturating_sub(slot_remainder);
-        log!(
-            "slot_remainder, self.slot_granularity, diff:  {}, {}, {}",
-            &slot_remainder,
-            &self.slot_granularity,
-            &slot_id_round,
-        );
 
         u128::from(slot_id_round)
     }
@@ -181,12 +166,6 @@ impl Contract {
         let schedule = Schedule::from_str(&cadence).unwrap();
         let next_ts = schedule.next_after(&current_block_ts).unwrap();
         let next_diff = next_ts - current_block_ts;
-        log!(
-            "curr, next, diff:  {}, {}, {}",
-            &current_block_ts,
-            &next_ts,
-            &next_diff,
-        );
 
         // Get the next slot, based on the timestamp differences
         let current = self.get_slot_id(None);
@@ -196,6 +175,10 @@ impl Contract {
             // Add slot granularity to make sure the minimum next slot is a block within next slot granularity range
             current + u128::from(self.slot_granularity)
         } else {
+            log!(
+                "next_slot:  {}",
+                &next_slot,
+            );
             next_slot
         }
     }

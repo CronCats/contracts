@@ -117,6 +117,7 @@ impl Contract {
             // get the total tasks for the next few slots, and take the average
             let mut i = 0;
             let mut slots: Vec<u128> = Vec::new();
+            // TODO: offset None here, means averaging 5 same values LOL
             while i < 5 {
                 let tmp_slot = self.get_slot_id(None);
                 slots.push(tmp_slot);
