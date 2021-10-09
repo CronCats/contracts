@@ -560,7 +560,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot = contract
             .slots
-            .get(&52201080)
+            .get(&1624151520000000000)
             .expect("Should have something here");
         assert_eq!(
             slot[0],
@@ -753,7 +753,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
 
-        assert_eq!(slot, 52201020);
+        assert_eq!(slot, 1624151460000000000);
     }
 
     #[test]
@@ -764,7 +764,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(Some(1_000));
 
-        assert_eq!(slot, 52201980);
+        assert_eq!(slot, 1624151520000000000);
     }
 
     #[test]
@@ -776,7 +776,7 @@ mod tests {
         let slot = contract.get_slot_id(Some(1_000_000_000_000));
 
         // ensure even if we pass in a HUGE number, it can only be scheduled UP to the max pre-defined block settings
-        assert_eq!(slot, 1_000_052_200_980);
+        assert_eq!(slot, 1624152540000000000);
     }
 
     #[test]
@@ -786,19 +786,19 @@ mod tests {
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
-        assert_eq!(slot, 52201020);
+        assert_eq!(slot, 1624151460000000000);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, Some(10), None, None, None, None, None);
+        contract.update_settings(None, Some(30_000_000_000), None, None, None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
-        assert_eq!(slot, 52201040);
+        assert_eq!(slot, 1624151490000000000);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, Some(1), None, None, None, None, None);
+        contract.update_settings(None, Some(10_000_000_000), None, None, None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
-        assert_eq!(slot, 52201040);
+        assert_eq!(slot, 1624151500000000000);
     }
 
     #[test]
@@ -864,22 +864,22 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot1 = contract.get_slot_from_cadence("*/5 * * * * *".to_string()); // Immediately next slot (since every 5 seconds)
         println!("SLOT 1 {}", slot1);
-        assert_eq!(slot1, 52201080);
+        assert_eq!(slot1, 1624151520000000000);
         let slot2 = contract.get_slot_from_cadence("* */5 * * * *".to_string()); // Every 5 mins
         println!("SLOT 2 {}", slot2);
-        assert_eq!(slot2, 52201200);
+        assert_eq!(slot2, 1624151760000000000);
         let slot3 = contract.get_slot_from_cadence("* * */5 * * *".to_string()); // Every 5th hour
         println!("SLOT 3 {}", slot3);
-        assert_eq!(slot3, 52214700);
+        assert_eq!(slot3, 1624165260000000000);
         let slot4 = contract.get_slot_from_cadence("* * * 10 * *".to_string()); // The 10th day of Month
         println!("SLOT 4 {}", slot4);
-        assert_eq!(slot4, 53924700);
+        assert_eq!(slot4, 1625875260000000000);
         let slot5 = contract.get_slot_from_cadence("* * * * 10 *".to_string()); // The 10th Month of the Year
         println!("SLOT 5 {}", slot5);
-        assert_eq!(slot5, 61095900);
+        assert_eq!(slot5, 1633046460000000000);
         let slot6 = contract.get_slot_from_cadence("* * * * * * 2025".to_string());
         println!("SLOT 6 {}", slot6);
-        assert_eq!(slot6, 178431420);
+        assert_eq!(slot6, 1750381920000000000);
     }
 
     #[test]

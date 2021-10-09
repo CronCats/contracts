@@ -496,7 +496,7 @@ fn simulate_basic_agent_registration_update() {
             cron.account_id(),
             "get_agent",
             &json!({
-                "account": agent.account_id
+                "account_id": agent.account_id
             })
             .to_string()
             .into_bytes(),
@@ -554,7 +554,8 @@ fn simulate_task_creation_agent_usage() {
     // look different.
     let mut root_runtime = root_account.borrow_runtime_mut();
     // Move forward proper amount until slot 1740
-    let block_production_result = root_runtime.produce_blocks(1780);
+    // TODO: Change so time is working correctly
+    let block_production_result = root_runtime.produce_blocks(310);
     assert!(block_production_result.is_ok(), "Couldn't produce blocks");
 
     // Agent calls proxy_call using new transaction syntax with borrowed,
@@ -572,6 +573,7 @@ fn simulate_task_creation_agent_usage() {
     ));
     let (_, res_outcome) = res.unwrap();
     assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
+
 
     // Agent withdraws balance, claiming rewards
     // Here we don't resolve the transaction, but instead just send it so we can view
