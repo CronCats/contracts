@@ -16,7 +16,9 @@ impl Contract {
     /// ```bash
     /// near view cron.testnet get_info
     /// ```
-    pub fn get_info(&self) -> (
+    pub fn get_info(
+        &self,
+    ) -> (
         // Runtime
         bool,
         AccountId,

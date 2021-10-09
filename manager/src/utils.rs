@@ -94,9 +94,11 @@ impl Contract {
             if let Some(_agent) = _agent {
                 let last_slot = u128::from(_agent.slot_execs[0]);
 
-                // TODO: Change threshold to multiply by the slots
                 // Check if any agents need to be ejected, looking at previous task slot and current
-                if current_slot > last_slot + self.agents_eject_threshold {
+                // LOGIC: If agent misses X number of slots, eject!
+                if current_slot
+                    > last_slot + (self.agents_eject_threshold * u128::from(self.slot_granularity))
+                {
                     true
                 } else {
                     false
@@ -107,8 +109,11 @@ impl Contract {
         });
 
         // EJECT!
-        for id in bad_agents {
-            self.exit_agent(Some(id), Some(true));
+        // Dont eject if only 1 agent remaining... so sad. no lonely allowed.
+        if self.agent_active_queue.len() > 1 {
+            for id in bad_agents {
+                self.exit_agent(Some(id), Some(true));
+            }
         }
 
         // TODO: Check this insane logic. Def feels scary with the while statements. (check for rounding of div_euclid!)
@@ -117,10 +122,11 @@ impl Contract {
             // get the total tasks for the next few slots, and take the average
             let mut i = 0;
             let mut slots: Vec<u128> = Vec::new();
-            // TODO: offset None here, means averaging 5 same values LOL
             while i < 5 {
-                let tmp_slot = self.get_slot_id(None);
-                slots.push(tmp_slot);
+                let tmp_slot = self.get_slot_id(Some(i));
+                if let Some(tmp_slot_total) = self.slots.get(&tmp_slot) {
+                    slots.push(tmp_slot_total.len() as u128);
+                }
                 i += 1;
             }
 
@@ -175,11 +181,20 @@ mod tests {
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.bps_timestamp[0], 1633759320000000000);
-        testing_env!(context.is_view(false).block_timestamp(1633759440000000000).build());
+        testing_env!(context
+            .is_view(false)
+            .block_timestamp(1633759440000000000)
+            .build());
         contract.tick();
-        testing_env!(context.is_view(false).block_timestamp(1633760160000000000).build());
+        testing_env!(context
+            .is_view(false)
+            .block_timestamp(1633760160000000000)
+            .build());
         contract.tick();
-        testing_env!(context.is_view(false).block_timestamp(1633760460000000000).build());
+        testing_env!(context
+            .is_view(false)
+            .block_timestamp(1633760460000000000)
+            .build());
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.bps_timestamp[0], 1633760160000000000);
         assert_eq!(contract.bps_timestamp[1], 1633759440000000000);

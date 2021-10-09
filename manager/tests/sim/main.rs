@@ -574,7 +574,6 @@ fn simulate_task_creation_agent_usage() {
     let (_, res_outcome) = res.unwrap();
     assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
 
-
     // Agent withdraws balance, claiming rewards
     // Here we don't resolve the transaction, but instead just send it so we can view
     // the receipts generated
