@@ -12,7 +12,7 @@ export FACTORY=testnet
 export MAX_GAS=300000000000000
 
 if [ -z ${NEAR_ACCT+x} ]; then
-  export NEAR_ACCT=cron.$FACTORY
+  export NEAR_ACCT=ion.$FACTORY
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi
@@ -25,8 +25,8 @@ export CRUD_ACCOUNT_ID=crud.$NEAR_ACCT
 export DAO_ACCOUNT_ID=croncat.sputnikv2.$FACTORY
 
 # # Check all configs first
-# near view $CRON_ACCOUNT_ID version
-# near view $CRON_ACCOUNT_ID get_info
+near view $CRON_ACCOUNT_ID version
+near view $CRON_ACCOUNT_ID get_info
 
 # Register the "tick" task, as the base for regulating BPS
 near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$CRON_ACCOUNT_ID'","function_id": "tick","cadence": "0 0 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId $CRON_ACCOUNT_ID --amount 10
@@ -50,13 +50,13 @@ near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$CRUD_ACCOUNT_ID'","fu
 # Check the tasks were setup right:
 near view $CRON_ACCOUNT_ID get_all_tasks
 
-# # Register 1 agent
-# near call $CRON_ACCOUNT_ID register_agent '{"payable_account_id": "'$USER_ACCOUNT_ID'"}' --accountId $USER_ACCOUNT_ID --amount 0.00484
-# near view $CRON_ACCOUNT_ID get_agent '{"account_id": "'$USER_ACCOUNT_ID'"}'
+# Register 1 agent
+near call $CRON_ACCOUNT_ID register_agent '{"payable_account_id": "'$USER_ACCOUNT_ID'"}' --accountId $USER_ACCOUNT_ID --amount 0.00484
+near view $CRON_ACCOUNT_ID get_agent '{"account_id": "'$USER_ACCOUNT_ID'"}'
 
-# # Agent check for first task
-# near view $CRON_ACCOUNT_ID get_tasks '{"account_id": "'$USER_ACCOUNT_ID'"}'
-# near view $CRON_ACCOUNT_ID get_tasks
+# Agent check for first task
+near view $CRON_ACCOUNT_ID get_tasks '{"account_id": "'$USER_ACCOUNT_ID'"}'
+near view $CRON_ACCOUNT_ID get_tasks
 
 # # Call the first task
 # near call $CRON_ACCOUNT_ID proxy_call --accountId $USER_ACCOUNT_ID --gas $MAX_GAS

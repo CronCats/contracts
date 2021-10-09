@@ -33,10 +33,8 @@ pub const AGENT_BASE_FEE: Balance = 1_000_000_000_000_000_000_000; // 0.001 Ⓝ
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 // Boundary Definitions
-pub const MAX_BLOCK_RANGE: u64 = 1_000_000_000_000_000;
-pub const MAX_EPOCH_RANGE: u32 = 10_000;
-pub const MAX_SECOND_RANGE: u32 = 600_000_000;
-pub const SLOT_GRANULARITY: u64 = 60; // NOTE: Connection drain.. might be required if slot granularity changes
+pub const MAX_BLOCK_TS_RANGE: u64 = 1_000_000_000_000_000_000;
+pub const SLOT_GRANULARITY: u64 = 60_000_000_000; // 60 seconds in nanos
 pub const AGENT_EJECT_THRESHOLD: u128 = 10;
 pub const NANO: u64 = 1_000_000_000;
 pub const BPS_DENOMINATOR: u64 = 1_000;
@@ -56,7 +54,6 @@ pub struct Contract {
     // Runtime
     paused: bool,
     owner_id: AccountId,
-    bps_block: [u64; 2],
     bps_timestamp: [u64; 2],
 
     // Agent management
@@ -97,7 +94,6 @@ impl Contract {
         let mut this = Contract {
             paused: false,
             owner_id: env::signer_account_id(),
-            bps_block: [env::block_index(), env::block_index()],
             bps_timestamp: [env::block_timestamp(), env::block_timestamp()],
             tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),
@@ -136,31 +132,23 @@ impl Contract {
         self.agents.remove(&tmp_account_id);
     }
 
-    /// Takes an optional `offset`: the number of blocks to offset from now (current block height)
-    /// If no offset, returns current slot based on current block height
-    /// If offset, returns next slot based on current block height & integer offset
-    /// rounded to nearest granularity (~every 1.6 block per sec)
+    /// Takes an optional `offset`: the number of seconds to offset from now (current block timestamp)
+    /// If no offset, returns current slot based on current block timestamp
+    /// If offset, returns next slot based on current block timestamp & seconds offset
     fn get_slot_id(&self, offset: Option<u64>) -> u128 {
-        let current_block = env::block_index();
-        let slot_id: u64 = if let Some(o) = offset {
-            // NOTE: Assumption here is that the offset will be in seconds. (blocks per second)
-            //       Slot granularity will be in minutes (60 blocks per slot)
+        let current_block_ts = env::block_timestamp();
 
-            let slot_remainder = core::cmp::max(o % self.slot_granularity, 1);
-            let slot_round =
-                core::cmp::max(o.saturating_sub(slot_remainder), self.slot_granularity);
-            let next = current_block + slot_round;
+        let slot_id: u64 = if let Some(o) = offset {
+            // NOTE: Assumption here is that the offset will be in seconds. (60 seconds per slot)
+            let next = current_block_ts + (self.slot_granularity + o);
 
             // Protect against extreme future block schedules
-            if next - current_block > current_block + MAX_BLOCK_RANGE {
-                u64::min(next, current_block + MAX_BLOCK_RANGE)
-            } else {
-                next
-            }
+            u64::min(next, current_block_ts + MAX_BLOCK_TS_RANGE)
         } else {
-            current_block
+            current_block_ts
         };
 
+        // rounded to nearest granularity
         let slot_remainder = slot_id % self.slot_granularity;
         let slot_id_round = slot_id.saturating_sub(slot_remainder);
 
@@ -171,8 +159,7 @@ impl Contract {
     /// Get next approximate block from a schedule
     /// return slot from the difference of upcoming block and current block
     fn get_slot_from_cadence(&self, cadence: String) -> u128 {
-        let current_block = env::block_index();
-        let current_block_ts = env::block_timestamp();
+        let current_block_ts = env::block_timestamp(); // NANOS
 
         // Schedule params
         // NOTE: eventually use TryFrom
@@ -180,32 +167,18 @@ impl Contract {
         let next_ts = schedule.next_after(&current_block_ts).unwrap();
         let next_diff = next_ts - current_block_ts;
 
-        // calculate the average blocks, to get predicted future block
-        // Get the range of blocks for which we're taking the average
-        // Remember `bps_block` is updated after every call to `tick`
-        let blocks_total = core::cmp::max(current_block - self.bps_block[1], 1);
-        // Generally, avoiding floats can be useful, here we set a denominator
-        // Since the `bps` timestamp is in nanoseconds, we multiply the
-        // numerator to match the magnitude
-        // We use the `max` value to avoid division by 0
-        let bps = ((blocks_total * NANO * BPS_DENOMINATOR)
-            / std::cmp::max(current_block_ts - self.bps_timestamp[1], 1))
-        .max(1);
-
-        /*
-        seconds * nano      blocks           1
-         ---             *  ---         *   ---   = blocks offset (with extra 1000 magnitude)
-          1             seconds * 1000      1000
-        */
-        let offset =
-            ((next_diff as u128 * bps as u128) / BPS_DENOMINATOR as u128 / NANO as u128) as u64;
+        // Get the next slot, based on the timestamp differences
         let current = self.get_slot_id(None);
-        let next_slot = self.get_slot_id(Some(offset));
+        let next_slot = self.get_slot_id(Some(next_diff));
 
         if current == next_slot {
             // Add slot granularity to make sure the minimum next slot is a block within next slot granularity range
             current + u128::from(self.slot_granularity)
         } else {
+            log!(
+                "next_slot:  {}",
+                &next_slot,
+            );
             next_slot
         }
     }

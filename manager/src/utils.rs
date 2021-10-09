@@ -27,7 +27,6 @@ impl Contract {
         Contract {
             paused: false,
             owner_id: old_contract.owner_id,
-            bps_block: old_contract.bps_block,
             bps_timestamp: old_contract.bps_timestamp,
             tasks: old_contract.tasks,
             slots: old_contract.slots,
@@ -53,17 +52,14 @@ impl Contract {
     ///
     /// near call cron.testnet tick '{}'
     pub fn tick(&mut self) {
-        let prev_block = self.bps_block[0];
         let prev_timestamp = self.bps_timestamp[0];
 
-        // Check that we dont allow 0 BPS
+        // Check that we dont allow limited scopes for timestamp averages
         assert!(
-            prev_block + 10 < env::block_index(),
+            prev_timestamp + self.slot_granularity < env::block_timestamp(),
             "Tick triggered too soon"
         );
 
-        self.bps_block[0] = env::block_index();
-        self.bps_block[1] = prev_block;
         self.bps_timestamp[0] = env::block_timestamp();
         self.bps_timestamp[1] = prev_timestamp;
 
@@ -121,6 +117,7 @@ impl Contract {
             // get the total tasks for the next few slots, and take the average
             let mut i = 0;
             let mut slots: Vec<u128> = Vec::new();
+            // TODO: offset None here, means averaging 5 same values LOL
             while i < 5 {
                 let tmp_slot = self.get_slot_id(None);
                 slots.push(tmp_slot);
@@ -158,8 +155,7 @@ mod tests {
     use near_sdk::test_utils::{accounts, VMContextBuilder};
     use near_sdk::{testing_env, MockedBlockchain};
 
-    const BLOCK_START_BLOCK: u64 = 52_201_040;
-    const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
+    const BLOCK_START_TS: u64 = 1633759320000000000;
 
     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -168,7 +164,6 @@ mod tests {
             .signer_account_id(predecessor_account_id.clone())
             .signer_account_pk(b"ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM".to_vec())
             .predecessor_account_id(predecessor_account_id)
-            .block_index(BLOCK_START_BLOCK)
             .block_timestamp(BLOCK_START_TS);
         builder
     }
@@ -179,14 +174,14 @@ mod tests {
         testing_env!(context.is_view(false).build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.bps_block[0], 52201040);
-        testing_env!(context.is_view(false).block_index(52201240).build());
+        assert_eq!(contract.bps_timestamp[0], 1633759320000000000);
+        testing_env!(context.is_view(false).block_timestamp(1633759440000000000).build());
         contract.tick();
-        testing_env!(context.is_view(false).block_index(52207040).build());
+        testing_env!(context.is_view(false).block_timestamp(1633760160000000000).build());
         contract.tick();
-        testing_env!(context.is_view(false).block_index(52208540).build());
+        testing_env!(context.is_view(false).block_timestamp(1633760460000000000).build());
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.bps_block[0], 52207040);
-        assert_eq!(contract.bps_block[1], 52201240);
+        assert_eq!(contract.bps_timestamp[0], 1633760160000000000);
+        assert_eq!(contract.bps_timestamp[1], 1633759440000000000);
     }
 }
