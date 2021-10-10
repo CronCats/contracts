@@ -192,6 +192,7 @@ impl Contract {
 
         // Check if agent has exceeded their slot task allotment
         // TODO: An agent can check to execute IF slot is +1 and their index is within range, (this will also ding an agent for missed slots?)
+        // TODO: IF previous agent missed, then store their slot missed.
         assert!(
             self.check_agent_can_execute(env::predecessor_account_id(), slot_data.len() as u64),
             "Agent has exceeded execution for this slot"
@@ -248,12 +249,8 @@ impl Contract {
         agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
         self.available_balance = self.available_balance - call_total_fee;
 
-        // Update their slot task count
-        if agent.slot_execs[0] == current_slot {
-            agent.slot_execs = [current_slot, agent.slot_execs[1] + 1];
-        } else {
-            agent.slot_execs = [current_slot, 0];
-        }
+        // Reset missed slot, if any
+        if agent.last_missed_slot != 0 { agent.last_missed_slot = 0; }
         self.agents.insert(&env::signer_account_id(), &agent);
 
         // Decrease task balance, Update task storage

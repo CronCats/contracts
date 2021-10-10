@@ -77,53 +77,53 @@ impl Contract {
     }
 
     /// Manage agents
-    // TODO: Check the state changes! getting: Smart contract panicked: The collection is an inconsistent state. Did previous smart contract execution terminate unexpectedly?
     fn manage_agents(&mut self) {
         let current_slot = self.get_slot_id(None);
-        let total_tasks = self.tasks.len();
-        let total_agents = self.agent_active_queue.len();
-        let [agent_ratio, task_ratio] = self.agent_task_ratio;
-        // No agents found, but dont panic.
-        if total_agents == 0 {
-            return;
+
+        // Loop all agents to assess if really active
+        // Why the copy here? had to get a mutable reference from immutable self instance
+        let mut bad_agents: Vec<AccountId> = Vec::from(self.agent_active_queue.to_vec());
+        bad_agents.retain(|agent_id| {
+            let _agent = self.agents.get(&agent_id);
+
+            if let Some(_agent) = _agent {
+                let last_slot = u128::from(_agent.last_missed_slot);
+
+                // Check if any agents need to be ejected, looking at previous task slot and current
+                // LOGIC: If agent misses X number of slots, eject!
+                if current_slot
+                    > last_slot + (self.agents_eject_threshold * u128::from(self.slot_granularity))
+                {
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        });
+
+        // EJECT!
+        // Dont eject if only 1 agent remaining... so sad. no lonely allowed.
+        if self.agent_active_queue.len() > 1 {
+            for id in bad_agents {
+                self.exit_agent(Some(id), Some(true));
+            }
         }
 
-        // TODO: Redo for missed tasks for rotational agent list
-        // // Loop all agents to assess if really active
-        // // Why the copy here? had to get a mutable reference from immutable self instance
-        // let mut bad_agents: Vec<AccountId> = Vec::from(self.agent_active_queue.to_vec());
-        // bad_agents.retain(|agent_id| {
-        //     let _agent = self.agents.get(&agent_id);
+        // Get data needed to check for agent<>task ratio
+        let total_tasks = self.tasks.len();
+        let total_agents = self.agent_active_queue.len();
+        let [agent_amount, task_amount] = self.agent_task_ratio;
 
-        //     if let Some(_agent) = _agent {
-        //         let last_slot = u128::from(_agent.slot_execs[0]);
-
-        //         // Check if any agents need to be ejected, looking at previous task slot and current
-        //         // LOGIC: If agent misses X number of slots, eject!
-        //         if current_slot
-        //             > last_slot + (self.agents_eject_threshold * u128::from(self.slot_granularity))
-        //         {
-        //             true
-        //         } else {
-        //             false
-        //         }
-        //     } else {
-        //         false
-        //     }
-        // });
-
-        // // EJECT!
-        // // Dont eject if only 1 agent remaining... so sad. no lonely allowed.
-        // if self.agent_active_queue.len() > 1 {
-        //     for id in bad_agents {
-        //         self.exit_agent(Some(id), Some(true));
-        //     }
-        // }
+        // no panic returns. safe-guard from idiot ratios.
+        if total_tasks == 0 || total_agents == 0 { return; }
+        if agent_amount == 0 || task_amount == 0 { return; }
+        let ratio = task_amount.div_euclid(agent_amount);
+        let total_available_agents = total_tasks.div_euclid(ratio);
 
         // Check if there are more tasks to allow a new agent
-        // TODO: Refactor to not have divide by 0 anywhere
-        // TODO: Think about the maths being right or not
-        if total_tasks.div_euclid(total_agents) > task_ratio.div_euclid(agent_ratio) {
+        if total_available_agents > total_agents {
             // There's enough tasks to support another agent, check if we have any pending
             if self.agent_pending_queue.len() > 0 {
                 // FIFO grab pending agents

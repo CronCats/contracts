@@ -77,11 +77,12 @@ impl Contract {
         // - Get agent IF account
         // - then check current slot against agent latest executions
         // - if agent has done max slot executions, return empty
+        // TODO: Change this for task rotation! (same checks as proxy call)
         if !self.paused {
             if let Some(id) = account_id {
                 if let Some(a) = self.agents.get(&id.to_string()) {
                     // Look at previous slot ID
-                    let last_slot = u128::from(a.slot_execs[0]);
+                    let last_slot = a.last_missed_slot;
                     if current_slot > last_slot + self.agents_eject_threshold {
                         return empty;
                     }

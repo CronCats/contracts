@@ -126,7 +126,7 @@ impl Contract {
             payable_account_id: tmp_account_id.clone(),
             balance: U128::from(0),
             total_tasks_executed: U128::from(0),
-            slot_execs: [0, 0],
+            last_missed_slot: 0,
         };
         self.agents.insert(&tmp_account_id, &tmp_agent);
         self.agent_storage_usage = env::storage_usage() - initial_storage_usage;
