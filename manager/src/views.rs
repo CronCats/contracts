@@ -24,7 +24,7 @@ impl Contract {
         AccountId,
         U64,
         U64,
-        [u16; 2],
+        [u64; 2],
         U128,
         U64,
         U64,
@@ -74,18 +74,27 @@ impl Contract {
 
         // IF paused, and agent, return empty (this will cause all agents to pause automatically, to save failed TXN fees)
         // Get tasks only for my agent
-        // - Get agent IF account
-        // - then check current slot against agent latest executions
-        // - if agent has done max slot executions, return empty
-        // TODO: Change this for task rotation! (same checks as proxy call)
         if !self.paused {
             if let Some(id) = account_id {
                 if let Some(a) = self.agents.get(&id.to_string()) {
-                    // Look at previous slot ID
+                    // Return nothing if agent has missed total threshold
                     let last_slot = a.last_missed_slot;
-                    if current_slot > last_slot + self.agents_eject_threshold {
+                    if current_slot > last_slot + (self.agents_eject_threshold * u128::from(self.slot_granularity)) {
                         return empty;
                     }
+
+                    // Get slot total to test agent in slot
+                    // get task based on current slot, priority goes to tasks that have fallen behind (using floor key)
+                    let slot_opt = if let Some(k) = self.slots.floor_key(&current_slot) {
+                        self.slots.get(&k)
+                    } else {
+                        self.slots.get(&current_slot)
+                    };
+                    let slot_data = slot_opt.unwrap_or_default();
+
+                    // Otherwise, assess if they are in active set, or are able to cover an agent that missed previous slot
+                    let (can_execute, _) = self.check_agent_can_execute(id.to_string(), slot_data.len() as u64);
+                    if !can_execute { return empty; }
                 }
             }
         } else {
@@ -161,17 +170,18 @@ impl Contract {
         task
     }
 
-    /// Gets amount of tasks alotted for a single agent per slot
+    /// Check if agent is able to execute a task
+    /// Returns bool and the agents index
     ///
     /// ```bash
-    /// near view cron.testnet get_total_tasks_per_agent_per_slot
+    /// near view cron.testnet check_agent_can_execute
     /// ```
     pub fn check_agent_can_execute(
         &self,
         account_id: AccountId,
         slot_tasks_remaining: u64,
-    ) -> bool {
-        // get the index of agent
+    ) -> (bool, u64) {
+        // get the index this agent
         let index = self
             .agent_active_queue
             .iter()
@@ -180,8 +190,8 @@ impl Contract {
         let active_index = self.agent_active_index as u64;
 
         // check if agent index is within range of current index and slot tasks remaining
-        index == active_index
-            || (index > active_index && index <= active_index + slot_tasks_remaining)
+        (index == active_index
+            || (index > active_index && index <= active_index + slot_tasks_remaining), index)
     }
 }
 

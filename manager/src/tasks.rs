@@ -184,17 +184,16 @@ impl Contract {
         let (slot_opt, slot_ballpark) = if let Some(k) = self.slots.floor_key(&current_slot) {
             (self.slots.get(&k), k)
         } else {
-            env::log(b"aloha ow my brain");
             (self.slots.get(&current_slot), current_slot)
         };
 
         let mut slot_data = slot_opt.expect("No tasks found in slot");
 
         // Check if agent has exceeded their slot task allotment
-        // TODO: An agent can check to execute IF slot is +1 and their index is within range, (this will also ding an agent for missed slots?)
-        // TODO: IF previous agent missed, then store their slot missed.
+        // TODO: An agent can check to execute IF slot is +1 and their index is within range???
+        let (can_execute, current_agent_index) = self.check_agent_can_execute(env::predecessor_account_id(), slot_data.len() as u64);
         assert!(
-            self.check_agent_can_execute(env::predecessor_account_id(), slot_data.len() as u64),
+            can_execute,
             "Agent has exceeded execution for this slot"
         );
         // Rotate agent index
@@ -202,6 +201,28 @@ impl Contract {
             self.agent_active_index = 0;
         } else {
             self.agent_active_index += 1;
+        }
+        // IF previous agent missed, then store their slot missed. We know this is true IF this slot is using slot_ballpark
+        // NOTE: While this isnt perfect, the eventual outcome is fine.
+        //       If agent gets ticked as "missed" for maximum of 1 slot, then fixes the situation on next round.
+        //       If agent truly misses enough slots, they will skip their chance to reset missed slot count and be dropped.
+        if slot_ballpark < current_slot {
+            let missed_agent_index = u64::min(current_agent_index - 1, 0);
+            let missed_agent_id = self.agent_active_queue.get(missed_agent_index);
+
+            if let Some(missed_agent_id) = missed_agent_id {
+                let missed_agent = self.agents.get(&missed_agent_id);
+
+                // confirm we should update missed slot, ONLY if the slot id is 0, otherwise the agent has not reset the count and we shouldnt mess with it.
+                if let Some(missed_agent) = missed_agent {
+                    let mut m_agent = missed_agent;
+                    if m_agent.last_missed_slot == 0 {
+                        m_agent.last_missed_slot = slot_ballpark;
+                        // update storage
+                        self.agents.insert(&missed_agent_id, &m_agent);
+                    }
+                }
+            }
         }
 
         // Get a single task hash, then retrieve task details
@@ -403,7 +424,7 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
+        assert!(contract.get_all_tasks(None, None, None).is_empty());
     }
 
     #[test]
@@ -412,7 +433,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
+        assert!(contract.get_all_tasks(None, None, None).is_empty());
         testing_env!(context
             .is_view(false)
             .attached_deposit(1000000000020000000100)
@@ -428,7 +449,7 @@ mod tests {
         );
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None).len(), 1);
+        assert_eq!(contract.get_all_tasks(None, None, None).len(), 1);
 
         let daily_task = get_sample_task();
         assert_eq!(contract.get_task(task_id), daily_task);
@@ -668,7 +689,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
+        assert!(contract.get_all_tasks(None, None, None).is_empty());
         testing_env!(context
             .is_view(false)
             .attached_deposit(ONE_NEAR * 100)
@@ -684,13 +705,13 @@ mod tests {
         );
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None).len(), 1);
+        assert_eq!(contract.get_all_tasks(None, None, None).len(), 1);
 
         testing_env!(context.is_view(false).build());
         contract.remove_task(task_hash);
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None).len(), 0);
+        assert_eq!(contract.get_all_tasks(None, None, None).len(), 0);
     }
 
     #[test]
@@ -700,7 +721,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
+        assert!(contract.get_all_tasks(None, None, None).is_empty());
         testing_env!(context
             .is_view(false)
             .attached_deposit(1000000000020000000100)
@@ -716,7 +737,7 @@ mod tests {
         );
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None).len(), 1);
+        assert_eq!(contract.get_all_tasks(None, None, None).len(), 1);
 
         testing_env!(context
             .is_view(false)
