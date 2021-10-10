@@ -1,6 +1,10 @@
 mod test_utils;
 
-use crate::test_utils::{bootstrap_time_simulation, counter_create_task, find_log_from_outcomes, helper_create_task, sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter, sim_helper_init_sputnikv2};
+use crate::test_utils::{
+    bootstrap_time_simulation, counter_create_task, find_log_from_outcomes, helper_create_task,
+    sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter,
+    sim_helper_init_sputnikv2,
+};
 use manager::{Agent, Task};
 use near_sdk::json_types::{Base64VecU8, U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
@@ -8,8 +12,8 @@ use near_sdk::serde_json;
 use near_sdk::serde_json::{json, Value};
 use near_sdk_sim::hash::CryptoHash;
 use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
-use near_sdk_sim::{DEFAULT_GAS, to_yocto};
 use near_sdk_sim::types::AccountId;
+use near_sdk_sim::{to_yocto, DEFAULT_GAS};
 
 // Load in contract bytes at runtime
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
@@ -603,10 +607,10 @@ fn simulate_sputnikv2_interaction() {
         cron.account_id(),
         "update_settings",
         &json!({
-                "owner_id": sputnik.account_id
-            })
-            .to_string()
-            .into_bytes(),
+            "owner_id": sputnik.account_id
+        })
+        .to_string()
+        .into_bytes(),
         DEFAULT_GAS,
         0,
     )
@@ -639,41 +643,53 @@ fn simulate_sputnikv2_interaction() {
     let original_agent_fee = agent_info.10;
 
     // dao user creates a proposal to increase agent fee
-    let args = Base64VecU8(json!({"agent_fee": "1111111111111111111111",}).to_string().into_bytes());
-    dao_user.call(
-sputnik.account_id.clone(),
-        "add_proposal",
-        &json!({
-            "proposal": {
-                "description": "increase cron agent fee",
-                "kind": {
-                    "FunctionCall": {
-                        "receiver_id": cron.account_id,
-                        "actions": [{
-                            "method_name": "update_settings",
-                            "args": args,
-                            "deposit": "0",
-                            "gas": "100000000000000"
-                        }]
+    let args = Base64VecU8(
+        json!({"agent_fee": "1111111111111111111111",})
+            .to_string()
+            .into_bytes(),
+    );
+    dao_user
+        .call(
+            sputnik.account_id.clone(),
+            "add_proposal",
+            &json!({
+                "proposal": {
+                    "description": "increase cron agent fee",
+                    "kind": {
+                        "FunctionCall": {
+                            "receiver_id": cron.account_id,
+                            "actions": [{
+                                "method_name": "update_settings",
+                                "args": args,
+                                "deposit": "0",
+                                "gas": "100000000000000"
+                            }]
+                        }
                     }
                 }
-            }
-        }).to_string().into_bytes(),
-        DEFAULT_GAS,
-        10u128.pow(24)
-    ).assert_success();
+            })
+            .to_string()
+            .into_bytes(),
+            DEFAULT_GAS,
+            10u128.pow(24),
+        )
+        .assert_success();
 
     // The dao user approves the proposal
-    dao_user.call(
-        sputnik.account_id.clone(),
-        "act_proposal",
-        &json!({
-            "id": 0,
-            "action": "VoteApprove"
-        }).to_string().into_bytes(),
-        DEFAULT_GAS,
-        0
-    ).assert_success();
+    dao_user
+        .call(
+            sputnik.account_id.clone(),
+            "act_proposal",
+            &json!({
+                "id": 0,
+                "action": "VoteApprove"
+            })
+            .to_string()
+            .into_bytes(),
+            DEFAULT_GAS,
+            0,
+        )
+        .assert_success();
 
     agent_info_result = cron.view(
         cron.account_id(),
@@ -682,7 +698,10 @@ sputnik.account_id.clone(),
     );
     agent_info = agent_info_result.unwrap_json();
     let updated_agent_fee = agent_info.10;
-    assert_ne!(original_agent_fee, updated_agent_fee, "Agent fee should have updated");
+    assert_ne!(
+        original_agent_fee, updated_agent_fee,
+        "Agent fee should have updated"
+    );
     assert_eq!(original_agent_fee, U128(1000000000000000000000));
     assert_eq!(updated_agent_fee, U128(1111111111111111111111));
 
@@ -691,10 +710,10 @@ sputnik.account_id.clone(),
         cron.account_id(),
         "update_settings",
         &json!({
-                "owner_id": cron.account_id()
-            })
-            .to_string()
-            .into_bytes(),
+            "owner_id": cron.account_id()
+        })
+        .to_string()
+        .into_bytes(),
         DEFAULT_GAS,
         0,
     );

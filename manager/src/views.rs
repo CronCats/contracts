@@ -88,7 +88,7 @@ impl Contract {
                 }
             }
         } else {
-            return empty
+            return empty;
         }
 
         // Get tasks based on current slot.
@@ -116,7 +116,7 @@ impl Contract {
         &self,
         slot: Option<U128>,
         from_index: Option<U64>,
-        limit: Option<U64>
+        limit: Option<U64>,
     ) -> Vec<Task> {
         let mut ret: Vec<Task> = Vec::new();
         if let Some(U128(slot_number)) = slot {
@@ -165,14 +165,22 @@ impl Contract {
     /// ```bash
     /// near view cron.testnet get_total_tasks_per_agent_per_slot
     /// ```
-    pub fn get_total_tasks_per_agent_per_slot(&self) -> u16 {
-        // assess if the task ratio would support a new agent
-        let [agent_ratio, task_ratio] = self.agent_task_ratio;
+    pub fn check_agent_can_execute(
+        &self,
+        account_id: AccountId,
+        slot_tasks_remaining: u64,
+    ) -> bool {
+        // get the index of agent
+        let index = self
+            .agent_active_queue
+            .iter()
+            .position(|x| x == account_id)
+            .unwrap_or_else(|| 0) as u64;
+        let active_index = self.agent_active_index as u64;
 
-        // Math example:
-        // ratio [2 agents, 10 tasks]
-        // agent can execute 5 tasks per slot
-        task_ratio.div_euclid(agent_ratio)
+        // check if agent index is within range of current index and slot tasks remaining
+        index == active_index
+            || (index > active_index && index <= active_index + slot_tasks_remaining)
     }
 }
 

@@ -176,13 +176,6 @@ impl Contract {
         }
         let mut agent = agent_opt.unwrap();
 
-        // Check if agent has exceeded their slot task allotment
-        let task_per_agent = self.get_total_tasks_per_agent_per_slot();
-        assert!(
-            agent.slot_execs[1] < u128::from(task_per_agent),
-            "Agent has exceeded execution for this slot"
-        );
-
         // Get current slot based on block or timestamp
         let current_slot = self.get_slot_id(None);
 
@@ -196,6 +189,19 @@ impl Contract {
         };
 
         let mut slot_data = slot_opt.expect("No tasks found in slot");
+
+        // Check if agent has exceeded their slot task allotment
+        // TODO: An agent can check to execute IF slot is +1 and their index is within range, (this will also ding an agent for missed slots?)
+        assert!(
+            self.check_agent_can_execute(env::predecessor_account_id(), slot_data.len() as u64),
+            "Agent has exceeded execution for this slot"
+        );
+        // Rotate agent index
+        if self.agent_active_index as u64 == self.agent_active_queue.len() {
+            self.agent_active_index = 0;
+        } else {
+            self.agent_active_index += 1;
+        }
 
         // Get a single task hash, then retrieve task details
         let hash = slot_data.pop().expect("No tasks available");

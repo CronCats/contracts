@@ -41,6 +41,7 @@ impl Contract {
             agent_active_queue: Vector::new(StorageKeys::AgentsActive),
             agent_pending_queue: Vector::new(StorageKeys::AgentsPending),
             agent_task_ratio: [1, 2],
+            agent_active_index: 0,
             agents_eject_threshold: 10,
         }
     }
@@ -79,75 +80,58 @@ impl Contract {
     // TODO: Check the state changes! getting: Smart contract panicked: The collection is an inconsistent state. Did previous smart contract execution terminate unexpectedly?
     fn manage_agents(&mut self) {
         let current_slot = self.get_slot_id(None);
+        let total_tasks = self.tasks.len();
         let total_agents = self.agent_active_queue.len();
+        let [agent_ratio, task_ratio] = self.agent_task_ratio;
         // No agents found, but dont panic.
         if total_agents == 0 {
             return;
         }
 
-        // Loop all agents to assess if really active
-        // Why the copy here? had to get a mutable reference from immutable self instance
-        let mut bad_agents: Vec<AccountId> = Vec::from(self.agent_active_queue.to_vec());
-        bad_agents.retain(|agent_id| {
-            let _agent = self.agents.get(&agent_id);
+        // TODO: Redo for missed tasks for rotational agent list
+        // // Loop all agents to assess if really active
+        // // Why the copy here? had to get a mutable reference from immutable self instance
+        // let mut bad_agents: Vec<AccountId> = Vec::from(self.agent_active_queue.to_vec());
+        // bad_agents.retain(|agent_id| {
+        //     let _agent = self.agents.get(&agent_id);
 
-            if let Some(_agent) = _agent {
-                let last_slot = u128::from(_agent.slot_execs[0]);
+        //     if let Some(_agent) = _agent {
+        //         let last_slot = u128::from(_agent.slot_execs[0]);
 
-                // Check if any agents need to be ejected, looking at previous task slot and current
-                // LOGIC: If agent misses X number of slots, eject!
-                if current_slot
-                    > last_slot + (self.agents_eject_threshold * u128::from(self.slot_granularity))
-                {
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
-            }
-        });
+        //         // Check if any agents need to be ejected, looking at previous task slot and current
+        //         // LOGIC: If agent misses X number of slots, eject!
+        //         if current_slot
+        //             > last_slot + (self.agents_eject_threshold * u128::from(self.slot_granularity))
+        //         {
+        //             true
+        //         } else {
+        //             false
+        //         }
+        //     } else {
+        //         false
+        //     }
+        // });
 
-        // EJECT!
-        // Dont eject if only 1 agent remaining... so sad. no lonely allowed.
-        if self.agent_active_queue.len() > 1 {
-            for id in bad_agents {
-                self.exit_agent(Some(id), Some(true));
-            }
-        }
+        // // EJECT!
+        // // Dont eject if only 1 agent remaining... so sad. no lonely allowed.
+        // if self.agent_active_queue.len() > 1 {
+        //     for id in bad_agents {
+        //         self.exit_agent(Some(id), Some(true));
+        //     }
+        // }
 
-        // TODO: Check this insane logic. Def feels scary with the while statements. (check for rounding of div_euclid!)
-        // Check if agents are low, and accept an available pending agent
-        if self.agent_pending_queue.len() > 0 {
-            // get the total tasks for the next few slots, and take the average
-            let mut i = 0;
-            let mut slots: Vec<u128> = Vec::new();
-            while i < 5 {
-                let tmp_slot = self.get_slot_id(Some(i));
-                if let Some(tmp_slot_total) = self.slots.get(&tmp_slot) {
-                    slots.push(tmp_slot_total.len() as u128);
-                }
-                i += 1;
-            }
-
-            let sum: u128 = Iterator::sum(slots.iter());
-            let avg_tasks = sum.div_euclid(slots.len() as u128);
-            let task_per_agent = self.get_total_tasks_per_agent_per_slot();
-            let agent_queue_available = avg_tasks.div_euclid(task_per_agent as u128);
-
-            // if agent threshold is 1 below or more, iterate to add pending agents into active queue
-            if agent_queue_available > 0 {
-                let mut a = agent_queue_available;
-                while a > 0 {
-                    // FIFO grab pending agents
-                    let agent_id = self.agent_pending_queue.swap_remove(0);
-                    if let Some(mut agent) = self.agents.get(&agent_id) {
-                        agent.status = agent::AgentStatus::Active;
-                        self.agents.insert(&agent_id, &agent);
-                        self.agent_active_queue.push(&agent_id);
-                    }
-
-                    a -= 1;
+        // Check if there are more tasks to allow a new agent
+        // TODO: Refactor to not have divide by 0 anywhere
+        // TODO: Think about the maths being right or not
+        if total_tasks.div_euclid(total_agents) > task_ratio.div_euclid(agent_ratio) {
+            // There's enough tasks to support another agent, check if we have any pending
+            if self.agent_pending_queue.len() > 0 {
+                // FIFO grab pending agents
+                let agent_id = self.agent_pending_queue.swap_remove(0);
+                if let Some(mut agent) = self.agents.get(&agent_id) {
+                    agent.status = agent::AgentStatus::Active;
+                    self.agents.insert(&agent_id, &agent);
+                    self.agent_active_queue.push(&agent_id);
                 }
             }
         }

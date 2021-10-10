@@ -1,4 +1,7 @@
-use crate::{TaskBase64Hash, AGENT_ID, COUNTER_ID, COUNTER_WASM_BYTES, CRON_MANAGER_WASM_BYTES, SPUTNIKV2_WASM_BYTES, MANAGER_ID, USER_ID, SPUTNIKV2_ID};
+use crate::{
+    TaskBase64Hash, AGENT_ID, COUNTER_ID, COUNTER_WASM_BYTES, CRON_MANAGER_WASM_BYTES, MANAGER_ID,
+    SPUTNIKV2_ID, SPUTNIKV2_WASM_BYTES, USER_ID,
+};
 use near_primitives_core::account::Account as PrimitiveAccount;
 use near_sdk::json_types::Base64VecU8;
 use near_sdk::serde_json;
@@ -88,9 +91,11 @@ pub(crate) fn sim_helper_init_sputnikv2(root_account: &UserAccount) -> UserAccou
                 "metadata": ""
             },
             "policy": [USER_ID]
-        }).to_string().into_bytes(),
+        })
+        .to_string()
+        .into_bytes(),
         DEFAULT_GAS,
-        0
+        0,
     );
     sputnik
 }

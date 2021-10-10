@@ -65,7 +65,8 @@ pub struct Contract {
     // Explanation: For every 1 agent, 10 tasks per slot are available.
     // NOTE: Caveat, when there are odd number of tasks or agents, the overflow will be available to first-come first-serve. This doesnt negate the possibility of a failed txn from race case choosing winner inside a block.
     // NOTE: The overflow will be adjusted to be handled by sweeper in next implementation.
-    agent_task_ratio: [u16; 2],
+    agent_task_ratio: [u64; 2],
+    agent_active_index: u16,
     agents_eject_threshold: u128,
 
     // Basic management
@@ -100,6 +101,7 @@ impl Contract {
             agent_active_queue: Vector::new(StorageKeys::AgentsPending),
             agent_pending_queue: Vector::new(StorageKeys::AgentsPending),
             agent_task_ratio: [1, 2],
+            agent_active_index: 0,
             agents_eject_threshold: AGENT_EJECT_THRESHOLD,
             slots: TreeMap::new(StorageKeys::Slots),
             available_balance: 0,
