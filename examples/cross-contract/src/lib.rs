@@ -319,7 +319,7 @@ impl CrudContract {
     /// near call crosscontract.testnet status
     /// ```
     pub fn status(&self) -> Promise {
-        // TODO: fix this! serialization is not working
+        // NOTE: fix this! serialization is not working
         let hash = self.task_hash.clone().expect(ERR_NO_TASK_CONFIGURED);
         log!(
             "TASK HASH: {:?} {:?} {}",
@@ -346,7 +346,7 @@ impl CrudContract {
     /// NOTE: This could handle things about the task, or have logic about changing the task in some way.
     #[private]
     pub fn status_callback(&self, #[callback] task: Option<Task>) -> Option<Task> {
-        // TODO: Check remaining balance here
+        // NOTE: Check remaining balance here
         // NOTE: Could have logic to another callback IF the balance is running low
         task
     }

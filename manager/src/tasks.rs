@@ -191,23 +191,27 @@ impl Contract {
 
         // Check if agent has exceeded their slot task allotment
         // TODO: An agent can check to execute IF slot is +1 and their index is within range???
-        let (can_execute, current_agent_index) = self.check_agent_can_execute(env::predecessor_account_id(), slot_data.len() as u64);
-        assert!(
-            can_execute,
-            "Agent has exceeded execution for this slot"
-        );
+        let (can_execute, current_agent_index) =
+            self.check_agent_can_execute(env::predecessor_account_id(), slot_data.len() as u64);
+        assert!(can_execute, "Agent has exceeded execution for this slot");
         // Rotate agent index
         if self.agent_active_index as u64 == self.agent_active_queue.len() {
             self.agent_active_index = 0;
         } else {
-            self.agent_active_index += 1;
+            // Only change the index IF there are more than 1 agents ;)
+            if self.agent_active_queue.len() > 1 { self.agent_active_index += 1; }
         }
         // IF previous agent missed, then store their slot missed. We know this is true IF this slot is using slot_ballpark
         // NOTE: While this isnt perfect, the eventual outcome is fine.
         //       If agent gets ticked as "missed" for maximum of 1 slot, then fixes the situation on next round.
         //       If agent truly misses enough slots, they will skip their chance to reset missed slot count and be dropped.
         if slot_ballpark < current_slot {
-            let missed_agent_index = u64::min(current_agent_index - 1, 0);
+            // wrap around logic for non-overflow index
+            let missed_agent_index = if current_agent_index == 1 {
+                self.agent_active_queue.len()
+            } else {
+                current_agent_index - 1
+            };
             let missed_agent_id = self.agent_active_queue.get(missed_agent_index);
 
             if let Some(missed_agent_id) = missed_agent_id {
@@ -271,7 +275,9 @@ impl Contract {
         self.available_balance = self.available_balance - call_total_fee;
 
         // Reset missed slot, if any
-        if agent.last_missed_slot != 0 { agent.last_missed_slot = 0; }
+        if agent.last_missed_slot != 0 {
+            agent.last_missed_slot = 0;
+        }
         self.agents.insert(&env::signer_account_id(), &agent);
 
         // Decrease task balance, Update task storage

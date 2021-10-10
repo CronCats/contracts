@@ -29,7 +29,7 @@ const AGENT_ID: &str = "agent.sim";
 const USER_ID: &str = "user.sim";
 const NEW_NAME_ID: &str = "newname.sim";
 const TASK_BASE64: &str = "QgpuCtvr2ZRq87F8FG9qKaiKA400LXBOut5WohwCTxI=";
-const AGENT_REGISTRATION_COST: u128 = 2_420_000_000_000_000_000_000;
+const AGENT_REGISTRATION_COST: u128 = 2_260_000_000_000_000_000_000;
 const AGENT_FEE: u128 = 60_000_000_000_000_000_000_000u128;
 
 type TaskBase64Hash = String;

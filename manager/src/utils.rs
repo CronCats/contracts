@@ -117,8 +117,12 @@ impl Contract {
         let [agent_amount, task_amount] = self.agent_task_ratio;
 
         // no panic returns. safe-guard from idiot ratios.
-        if total_tasks == 0 || total_agents == 0 { return; }
-        if agent_amount == 0 || task_amount == 0 { return; }
+        if total_tasks == 0 || total_agents == 0 {
+            return;
+        }
+        if agent_amount == 0 || task_amount == 0 {
+            return;
+        }
         let ratio = task_amount.div_euclid(agent_amount);
         let total_available_agents = total_tasks.div_euclid(ratio);
 

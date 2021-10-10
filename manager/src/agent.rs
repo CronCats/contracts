@@ -216,7 +216,7 @@ mod tests {
 
     const BLOCK_START_BLOCK: u64 = 52_201_040;
     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
-    const AGENT_REGISTRATION_COST: u128 = 2_420_000_000_000_000_000_000;
+    const AGENT_REGISTRATION_COST: u128 = 2_260_000_000_000_000_000_000;
 
     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -328,7 +328,7 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         assert_eq!(
-            242, contract.agent_storage_usage,
+            226, contract.agent_storage_usage,
             "Expected different storage usage for the agent."
         );
     }

@@ -79,7 +79,10 @@ impl Contract {
                 if let Some(a) = self.agents.get(&id.to_string()) {
                     // Return nothing if agent has missed total threshold
                     let last_slot = a.last_missed_slot;
-                    if current_slot > last_slot + (self.agents_eject_threshold * u128::from(self.slot_granularity)) {
+                    if current_slot
+                        > last_slot
+                            + (self.agents_eject_threshold * u128::from(self.slot_granularity))
+                    {
                         return empty;
                     }
 
@@ -93,8 +96,11 @@ impl Contract {
                     let slot_data = slot_opt.unwrap_or_default();
 
                     // Otherwise, assess if they are in active set, or are able to cover an agent that missed previous slot
-                    let (can_execute, _) = self.check_agent_can_execute(id.to_string(), slot_data.len() as u64);
-                    if !can_execute { return empty; }
+                    let (can_execute, _) =
+                        self.check_agent_can_execute(id.to_string(), slot_data.len() as u64);
+                    if !can_execute {
+                        return empty;
+                    }
                 }
             }
         } else {
@@ -190,8 +196,11 @@ impl Contract {
         let active_index = self.agent_active_index as u64;
 
         // check if agent index is within range of current index and slot tasks remaining
-        (index == active_index
-            || (index > active_index && index <= active_index + slot_tasks_remaining), index)
+        (
+            index == active_index
+                || (index > active_index && index <= active_index + slot_tasks_remaining),
+            index,
+        )
     }
 }
 
