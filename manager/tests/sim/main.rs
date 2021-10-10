@@ -1,26 +1,26 @@
 mod test_utils;
 
-use crate::test_utils::{
-    bootstrap_time_simulation, counter_create_task, find_log_from_outcomes, helper_create_task,
-    sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter,
-};
+use crate::test_utils::{bootstrap_time_simulation, counter_create_task, find_log_from_outcomes, helper_create_task, sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter, sim_helper_init_sputnikv2};
 use manager::{Agent, Task};
-use near_sdk::json_types::{Base64VecU8, U128};
+use near_sdk::json_types::{Base64VecU8, U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json;
 use near_sdk::serde_json::{json, Value};
 use near_sdk_sim::hash::CryptoHash;
 use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
-use near_sdk_sim::DEFAULT_GAS;
+use near_sdk_sim::{DEFAULT_GAS, to_yocto};
+use near_sdk_sim::types::AccountId;
 
 // Load in contract bytes at runtime
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
     pub CRON_MANAGER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/manager.wasm",
     pub COUNTER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/rust_counter_tutorial.wasm",
+    pub SPUTNIKV2_WASM_BYTES => "./tests/sputnik/sputnikdao2.wasm",
 }
 
 const MANAGER_ID: &str = "manager.sim";
 const COUNTER_ID: &str = "counter.sim";
+const SPUTNIKV2_ID: &str = "sputnikv2.sim";
 const AGENT_ID: &str = "agent.sim";
 const USER_ID: &str = "user.sim";
 const NEW_NAME_ID: &str = "newname.sim";
@@ -225,7 +225,7 @@ fn simulate_many_tasks() {
     let mut agent_info_result = root_runtime.view_method_call(
         "cron.root",
         "get_agent",
-        "{\"account\": \"agent.root\"}".as_bytes(),
+        "{\"account_id\": \"agent.root\"}".as_bytes(),
     );
     let mut agent_info: Agent = agent_info_result.unwrap_json();
     // Confirm that the agent has executed 11 tasks
@@ -258,7 +258,7 @@ fn simulate_many_tasks() {
         &agent_signer,
         0,
         "get_agent".into(),
-        "{\"account\": \"agent.root\"}".as_bytes().to_vec(),
+        "{\"account_id\": \"agent.root\"}".as_bytes().to_vec(),
         DEFAULT_GAS,
         CryptoHash::default(),
     ));
@@ -281,7 +281,7 @@ fn simulate_many_tasks() {
     agent_info_result = root_runtime.view_method_call(
         "cron.root",
         "get_agent",
-        "{\"account\": \"agent.root\"}".as_bytes(),
+        "{\"account_id\": \"agent.root\"}".as_bytes(),
     );
     agent_info = agent_info_result.unwrap_json();
     assert_eq!(
@@ -317,7 +317,7 @@ fn simulate_many_tasks() {
     agent_info_result = root_runtime.view_method_call(
         "cron.root",
         "get_agent",
-        "{\"account\": \"agent.root\"}".as_bytes(),
+        "{\"account_id\": \"agent.root\"}".as_bytes(),
     );
     assert!(agent_info_result.is_ok(), "Expected get_agent to return Ok");
     let agent_info_val: Value = agent_info_result.unwrap_json_value();
@@ -553,9 +553,8 @@ fn simulate_task_creation_agent_usage() {
     // in order to move blocks forward. But once we do, future calls will
     // look different.
     let mut root_runtime = root_account.borrow_runtime_mut();
-    // Move forward proper amount until slot 1740
-    // TODO: Change so time is working correctly
-    let block_production_result = root_runtime.produce_blocks(310);
+    // Move forward proper amount until a slot where the timestamp becomes valid
+    let block_production_result = root_runtime.produce_blocks(1780);
     assert!(block_production_result.is_ok(), "Couldn't produce blocks");
 
     // Agent calls proxy_call using new transaction syntax with borrowed,
@@ -591,4 +590,123 @@ fn simulate_task_creation_agent_usage() {
         ))
         .expect("Error withdrawing task balance");
     find_log_from_outcomes(&root_runtime, &"Withdrawal of".to_string());
+}
+
+#[test]
+fn simulate_sputnikv2_interaction() {
+    let (root, cron) = sim_helper_init();
+    let dao_user = root.create_user(USER_ID.into(), to_yocto("100"));
+    let sputnik = sim_helper_init_sputnikv2(&root);
+
+    // tell cron that the DAO is the new owner
+    cron.call(
+        cron.account_id(),
+        "update_settings",
+        &json!({
+                "owner_id": sputnik.account_id
+            })
+            .to_string()
+            .into_bytes(),
+        DEFAULT_GAS,
+        0,
+    )
+    .assert_success();
+
+    // View the agent fee
+    let mut agent_info_result = cron.view(
+        cron.account_id(),
+        "get_info",
+        &json!({}).to_string().into_bytes(),
+    );
+
+    let mut agent_info: (
+        bool,
+        AccountId,
+        U64,
+        U64,
+        [u16; 2],
+        U128,
+        U64,
+        U64,
+        U128,
+        U128,
+        U128, // agent fee
+        U128,
+        U64,
+        U64,
+        U64,
+    ) = agent_info_result.unwrap_json();
+    let original_agent_fee = agent_info.10;
+
+    // dao user creates a proposal to increase agent fee
+    let args = Base64VecU8(json!({"agent_fee": "1111111111111111111111",}).to_string().into_bytes());
+    dao_user.call(
+sputnik.account_id.clone(),
+        "add_proposal",
+        &json!({
+            "proposal": {
+                "description": "increase cron agent fee",
+                "kind": {
+                    "FunctionCall": {
+                        "receiver_id": cron.account_id,
+                        "actions": [{
+                            "method_name": "update_settings",
+                            "args": args,
+                            "deposit": "0",
+                            "gas": "100000000000000"
+                        }]
+                    }
+                }
+            }
+        }).to_string().into_bytes(),
+        DEFAULT_GAS,
+        10u128.pow(24)
+    ).assert_success();
+
+    // The dao user approves the proposal
+    dao_user.call(
+        sputnik.account_id.clone(),
+        "act_proposal",
+        &json!({
+            "id": 0,
+            "action": "VoteApprove"
+        }).to_string().into_bytes(),
+        DEFAULT_GAS,
+        0
+    ).assert_success();
+
+    agent_info_result = cron.view(
+        cron.account_id(),
+        "get_info",
+        &json!({}).to_string().into_bytes(),
+    );
+    agent_info = agent_info_result.unwrap_json();
+    let updated_agent_fee = agent_info.10;
+    assert_ne!(original_agent_fee, updated_agent_fee, "Agent fee should have updated");
+    assert_eq!(original_agent_fee, U128(1000000000000000000000));
+    assert_eq!(updated_agent_fee, U128(1111111111111111111111));
+
+    // Ensure that original owner shouldn't be able to call since it's updated
+    let expected_failure = cron.call(
+        cron.account_id(),
+        "update_settings",
+        &json!({
+                "owner_id": cron.account_id()
+            })
+            .to_string()
+            .into_bytes(),
+        DEFAULT_GAS,
+        0,
+    );
+    let status = expected_failure.status();
+    match status {
+        ExecutionStatus::Failure(f) => {
+            // Not great to use `contains` but will have to do for now.
+            assert!(
+                f.to_string().contains("Must be owner"),
+                "Should not be able to call update_settings if not the updated owner"
+            );
+        }
+        _ => panic!("Expected failure after original owner is no longer in control"),
+    }
 }

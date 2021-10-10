@@ -1,7 +1,4 @@
-use crate::{
-    TaskBase64Hash, AGENT_ID, COUNTER_ID, COUNTER_WASM_BYTES, CRON_MANAGER_WASM_BYTES, MANAGER_ID,
-    USER_ID,
-};
+use crate::{TaskBase64Hash, AGENT_ID, COUNTER_ID, COUNTER_WASM_BYTES, CRON_MANAGER_WASM_BYTES, SPUTNIKV2_WASM_BYTES, MANAGER_ID, USER_ID, SPUTNIKV2_ID};
 use near_primitives_core::account::Account as PrimitiveAccount;
 use near_sdk::json_types::Base64VecU8;
 use near_sdk::serde_json;
@@ -69,9 +66,33 @@ pub(crate) fn sim_helper_create_agent_user(
 }
 
 pub(crate) fn sim_helper_init_counter(root_account: &UserAccount) -> UserAccount {
-    // Deploy counter and call "new" method
+    // Deploy counter
     let counter = root_account.deploy(&COUNTER_WASM_BYTES, COUNTER_ID.into(), STORAGE_AMOUNT);
     counter
+}
+
+pub(crate) fn sim_helper_init_sputnikv2(root_account: &UserAccount) -> UserAccount {
+    // Deploy SputnikDAOv2 and call "new" method
+    let sputnik = root_account.deploy(&SPUTNIKV2_WASM_BYTES, SPUTNIKV2_ID.into(), STORAGE_AMOUNT);
+    /*
+    export COUNCIL='["'$CONTRACT_ID'"]'
+    near call $CONTRACT_ID new '{"config": {"name": "genesis2", "purpose": "test", "metadata": ""}, "policy": '$COUNCIL'}' --accountId $CONTRACT_ID
+     */
+    root_account.call(
+        sputnik.account_id.clone(),
+        "new",
+        &json!({
+            "config": {
+                "name": "cron dao",
+                "purpose": "not chew bubble gum",
+                "metadata": ""
+            },
+            "policy": [USER_ID]
+        }).to_string().into_bytes(),
+        DEFAULT_GAS,
+        0
+    );
+    sputnik
 }
 
 pub(crate) fn counter_create_task(
