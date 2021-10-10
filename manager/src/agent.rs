@@ -167,6 +167,7 @@ impl Contract {
     }
 
     /// Removes the agent from the active & pending set of agents.
+    // NOTE: swap_remove takes last element in vector and replaces index removed, so potentially FIFO agent lists can get out of order for pending queue. Not exactly "fair".
     #[private]
     pub fn remove_agent(&mut self, account_id: AccountId) {
         self.agents.remove(&account_id);

@@ -659,19 +659,6 @@ mod tests {
         contract.proxy_call();
     }
 
-    // TODO: No longer relevant because agent can use this opp to clean slots... need to check and validate this
-    // #[test]
-    // #[should_panic(expected = "No tasks found in slot")]
-    // fn test_task_proxy_no_tasks() {
-    //     let mut context = get_context(accounts(1));
-    //     context.attached_deposit(2090000000000000000000);
-    //     testing_env!(context.build());
-    //     let mut contract = Contract::new();
-    //     contract.register_agent(None);
-    //     testing_env!(context.is_view(false).block_index(1260).build());
-    //     contract.proxy_call();
-    // }
-
     #[test]
     fn test_task_remove() {
         let mut context = get_context(accounts(1));

@@ -72,19 +72,23 @@ impl Contract {
         let current_slot = self.get_slot_id(offset);
         let empty = (vec![], U128::from(current_slot));
 
-        // TODO: IF paused, and agent, return empty (this will cause all agents to pause automatically, to save failed TXN fees)
+        // IF paused, and agent, return empty (this will cause all agents to pause automatically, to save failed TXN fees)
         // Get tasks only for my agent
         // - Get agent IF account
         // - then check current slot against agent latest executions
         // - if agent has done max slot executions, return empty
-        if let Some(id) = account_id {
-            if let Some(a) = self.agents.get(&id.to_string()) {
-                // Look at previous slot ID
-                let last_slot = u128::from(a.slot_execs[0]);
-                if current_slot > last_slot + self.agents_eject_threshold {
-                    return empty;
+        if !self.paused {
+            if let Some(id) = account_id {
+                if let Some(a) = self.agents.get(&id.to_string()) {
+                    // Look at previous slot ID
+                    let last_slot = u128::from(a.slot_execs[0]);
+                    if current_slot > last_slot + self.agents_eject_threshold {
+                        return empty;
+                    }
                 }
             }
+        } else {
+            return empty
         }
 
         // Get tasks based on current slot.
@@ -108,8 +112,12 @@ impl Contract {
     /// Returns task data
     /// Used by the frontend for viewing tasks
     /// REF: https://docs.near.org/docs/concepts/data-storage#gas-consumption-examples-1
-    // TODO: Add offset, limit for pagination
-    pub fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Task> {
+    pub fn get_all_tasks(
+        &self,
+        slot: Option<U128>,
+        from_index: Option<U64>,
+        limit: Option<U64>
+    ) -> Vec<Task> {
         let mut ret: Vec<Task> = Vec::new();
         if let Some(U128(slot_number)) = slot {
             // User specified a slot number, only return tasks in there.
@@ -119,9 +127,23 @@ impl Contract {
                 ret.push(task);
             }
         } else {
-            // Return all tasks
-            for (_, task) in self.tasks.iter() {
-                ret.push(task);
+            let mut start = 0;
+            let mut end = 10;
+            if let Some(from_index) = from_index {
+                start = from_index.0;
+            }
+            if let Some(limit) = limit {
+                end = u64::min(start + limit.0, self.tasks.len());
+            }
+
+            // Return all tasks within range
+            let keys = self.tasks.keys_as_vector();
+            for i in start..end {
+                if let Some(task_hash) = keys.get(i) {
+                    if let Some(task) = self.tasks.get(&task_hash) {
+                        ret.push(task);
+                    }
+                }
             }
         }
         ret
@@ -182,7 +204,7 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
+        assert!(contract.get_all_tasks(None, None, None).is_empty());
     }
 
     #[test]
