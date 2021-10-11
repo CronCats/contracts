@@ -98,7 +98,7 @@ impl Contract {
             bps_timestamp: [env::block_timestamp(), env::block_timestamp()],
             tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),
-            agent_active_queue: Vector::new(StorageKeys::AgentsPending),
+            agent_active_queue: Vector::new(StorageKeys::AgentsActive),
             agent_pending_queue: Vector::new(StorageKeys::AgentsPending),
             agent_task_ratio: [1, 2],
             agent_active_index: 0,
