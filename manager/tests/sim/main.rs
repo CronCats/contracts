@@ -78,7 +78,7 @@ fn simulate_many_tasks() {
     counter_create_task(&counter, cron.account_id(), "0 7 5 * * * *").assert_success();
     counter_create_task(&counter, cron.account_id(), "0 43 * * * * *").assert_success();
 
-    // Slots 120, 240, 360, 600, 720, 1080, 1800, 2520, 2760, 10740, 18360
+    // Slots ["240000000000","360000000000","480000000000","720000000000","840000000000","1200000000000","1920000000000","2640000000000","2880000000000","10860000000000","18480000000000"]
 
     // register agent
     agent
@@ -95,23 +95,24 @@ fn simulate_many_tasks() {
     // in order to move blocks forward. But once we do, future calls will
     // look different.
     let mut root_runtime = root_account.borrow_runtime_mut();
-    assert!(
-        root_runtime.produce_blocks(120).is_ok(),
-        "Couldn't produce blocks"
-    );
+    while root_runtime.produce_blocks(1).is_ok() {
+        if root_runtime.cur_block.block_timestamp >= 240000000000 {
+            break;
+        }
+    }
 
     // Should find a task
     let mut get_tasks_view_res =
         root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
     println!("get_tasks_view_res {:?}", get_tasks_view_res);
     let mut success_val = r#"
-        [["xdnWQtc0KAq2i+/vyFQSHGvr5K0DPgyVUYfE8886qMs="],"120"]
+        [["xdnWQtc0KAq2i+/vyFQSHGvr5K0DPgyVUYfE8886qMs="],"240000000000"]
     "#;
     let mut success_vec: Vec<u8> = success_val.trim().into(); // trim because of multiline assignment above
     assert_eq!(
         get_tasks_view_res.unwrap(),
         success_vec,
-        "Should find one particular task hash at slot 120"
+        "Should find one particular task hash at slot 240000000000"
     );
 
     // Check that the counter really did update
@@ -148,13 +149,13 @@ fn simulate_many_tasks() {
     // Ensure it doesn't find tasks now, except for the same one that's now completed
     get_tasks_view_res = root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
     success_val = r#"
-        [[],"120"]
+        [[],"240000000000"]
     "#;
     success_vec = success_val.trim().into();
     assert_eq!(
         get_tasks_view_res.unwrap(),
         success_vec,
-        "Should find no task hashes at slot 120 anymore"
+        "Should find no task hashes at slot 240000000000 anymore"
     );
 
     let mut tasks_info: GetTasksReturn = get_tasks_view_res.unwrap_json();
@@ -164,7 +165,7 @@ fn simulate_many_tasks() {
     assert_eq!(
         get_tasks_view_res.unwrap(),
         success_vec,
-        "There should not be any tasks at current slot of 120"
+        "There should not be any tasks at current slot of 240000000000"
     );
 
     // Proxy call should panic when no tasks to execute
@@ -194,13 +195,13 @@ fn simulate_many_tasks() {
 
     // Go through the remainder of the slots, executing tasks
     let mut nonce = 4;
-    for n in &[240, 360, 600, 720, 1080, 1800, 2520, 2760, 10740, 18360] {
+    for n in &[360000000000u64, 480000000000u64, 720000000000u64, 840000000000u64, 1200000000000u64, 1920000000000u64, 2640000000000u64, 2880000000000u64, 10860000000000u64, 18480000000000u64] {
         // produce blocks until next slot
-        let cur_block_height = root_runtime.cur_block.block_height;
-        assert!(
-            root_runtime.produce_blocks(n - cur_block_height).is_ok(),
-            "Couldn't produce blocks"
-        );
+        while root_runtime.produce_blocks(1).is_ok() {
+            if &root_runtime.cur_block.block_timestamp >= n {
+                break;
+            }
+        }
         get_tasks_view_res =
             root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
         tasks_info = get_tasks_view_res.unwrap_json();
@@ -541,6 +542,7 @@ fn simulate_task_creation_agent_usage() {
     // create a task
     let execution_result = counter_create_task(&counter, "cron.root".to_string(), "0 30 * * * * *");
     execution_result.assert_success();
+    // Slot is 1860000000000
 
     // register agent
     agent
@@ -558,8 +560,11 @@ fn simulate_task_creation_agent_usage() {
     // look different.
     let mut root_runtime = root_account.borrow_runtime_mut();
     // Move forward proper amount until a slot where the timestamp becomes valid
-    let block_production_result = root_runtime.produce_blocks(1780);
-    assert!(block_production_result.is_ok(), "Couldn't produce blocks");
+    while root_runtime.produce_blocks(1).is_ok() {
+        if root_runtime.cur_block.block_timestamp >= 1860000000000 {
+            break;
+        }
+    }
 
     // Agent calls proxy_call using new transaction syntax with borrowed,
     // mutable runtime object.
