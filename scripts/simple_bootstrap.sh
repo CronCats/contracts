@@ -28,7 +28,7 @@ export DAO_ACCOUNT_ID=croncat.sputnikv2.$FACTORY
 near view $CRON_ACCOUNT_ID version
 near view $CRON_ACCOUNT_ID get_info
 
-# Register the "tick" task, as the base for regulating BPS
+# # Register the "tick" task, as the base for regulating BPS
 near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$CRON_ACCOUNT_ID'","function_id": "tick","cadence": "0 0 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId $CRON_ACCOUNT_ID --amount 10
 # near call $CRON_ACCOUNT_ID tick --accountId $CRON_ACCOUNT_ID
 
@@ -58,11 +58,14 @@ near view $CRON_ACCOUNT_ID get_agent '{"account_id": "'$USER_ACCOUNT_ID'"}'
 # near call $CRON_ACCOUNT_ID tick --accountId $AGENT_ACCOUNT_ID
 # near view $CRON_ACCOUNT_ID get_info
 
-# Agent check for first task
+# # Agent check for first task
 near view $CRON_ACCOUNT_ID get_tasks '{"account_id": "'$USER_ACCOUNT_ID'"}'
-# near view $CRON_ACCOUNT_ID get_tasks
+# # near view $CRON_ACCOUNT_ID get_tasks
 
 # # Call the first task
 # near call $CRON_ACCOUNT_ID proxy_call --accountId $USER_ACCOUNT_ID --gas $MAX_GAS
+
+# # Pause the manager
+# near call $CRON_ACCOUNT_ID update_settings '{ "paused": true }' --accountId $CRON_ACCOUNT_ID --gas $MAX_GAS
 
 echo "Cron $NEAR_ENV Bootstrap Complete"

@@ -205,9 +205,10 @@ impl Contract {
         // NOTE: While this isnt perfect, the eventual outcome is fine.
         //       If agent gets ticked as "missed" for maximum of 1 slot, then fixes the situation on next round.
         //       If agent truly misses enough slots, they will skip their chance to reset missed slot count and be dropped.
-        if slot_ballpark < current_slot {
+        if slot_ballpark < current_slot && self.agent_active_queue.len() > 1 {
             // wrap around logic for non-overflow index
-            let missed_agent_index = if current_agent_index == 1 {
+            // if only 1 agent, dont do anything
+            let missed_agent_index = if current_agent_index == 0 {
                 self.agent_active_queue.len()
             } else {
                 current_agent_index - 1
