@@ -17,7 +17,7 @@ pub enum AgentStatus {
 pub struct Agent {
     pub status: AgentStatus,
 
-    // Where rewards get transfered
+    // Where rewards get transferred
     pub payable_account_id: AccountId,
 
     // accrued reward balance
