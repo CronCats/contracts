@@ -729,3 +729,86 @@ fn simulate_sputnikv2_interaction() {
         _ => panic!("Expected failure after original owner is no longer in control"),
     }
 }
+
+#[test]
+fn common_tick_workflow() {
+    /*
+    #- clear, create & bootstrap
+    #- register a new agent "agent.ion.testnet"
+    #- create more tasks (minimum 4 total)
+    #- tick method
+    #- some agent tries to call proxy_call and fails
+     */
+    let (agent_signer, root_account, agent, counter, cron) = bootstrap_time_simulation();
+
+    counter_create_task(&counter, cron.account_id(), "0 3 * * * * *").assert_success();
+
+    // register agent
+    agent.call(
+        "cron.root".to_string(),
+        "register_agent",
+        &json!({}).to_string().into_bytes(),
+        DEFAULT_GAS,
+        AGENT_REGISTRATION_COST,
+    ).assert_success();
+
+    let second_agent = root_account.create_user("second-agent.root".parse().unwrap(), to_yocto("100"));
+    second_agent.call(
+        "cron.root".to_string(),
+        "register_agent",
+        &json!({}).to_string().into_bytes(),
+        DEFAULT_GAS,
+        AGENT_REGISTRATION_COST,
+    ).assert_success();
+
+    // Add a few more tasks
+    counter_create_task(&counter, cron.account_id(), "0 13 * * * * *").assert_success();
+    counter_create_task(&counter, cron.account_id(), "6 19 * * * * *").assert_success();
+    counter_create_task(&counter, cron.account_id(), "6 31 * * * * *").assert_success();
+    counter_create_task(&counter, cron.account_id(), "0 47 * * * * *").assert_success();
+    counter_create_task(&counter, cron.account_id(), "0 7 5 * * * *").assert_success();
+    counter_create_task(&counter, cron.account_id(), "0 43 * * * * *").assert_success();
+
+    let mut root_runtime = root_account.borrow_runtime_mut();
+    assert!(
+        root_runtime.produce_blocks(1900).is_ok(),
+        "Couldn't produce blocks"
+    );
+
+    // Call tick
+    let mut res = root_runtime.resolve_tx(SignedTransaction::call(
+        2,
+        "agent.root".to_string(),
+        "cron.root".to_string(),
+        &agent_signer.clone(),
+        0,
+        "tick".into(),
+        "{}".as_bytes().to_vec(),
+        DEFAULT_GAS,
+        CryptoHash::default(),
+    ));
+    let (_, res_outcome) = res.unwrap();
+    assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
+
+    // Not sure if we need this
+    assert!(
+        root_runtime.produce_blocks(1900).is_ok(),
+        "Couldn't produce blocks"
+    );
+
+    // Agent calls proxy_call using new transaction syntax with borrowed,
+    // mutable runtime object.
+    res = root_runtime.resolve_tx(SignedTransaction::call(
+        3,
+        "agent.root".to_string(),
+        "cron.root".to_string(),
+        &agent_signer.clone(),
+        0,
+        "proxy_call".into(),
+        "{}".as_bytes().to_vec(),
+        DEFAULT_GAS,
+        CryptoHash::default(),
+    ));
+    let (_, res_outcome) = res.unwrap();
+    assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
+}
