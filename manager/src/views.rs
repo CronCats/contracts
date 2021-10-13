@@ -64,9 +64,9 @@ impl Contract {
     /// ```bash
     /// near view cron.testnet get_slot_tasks
     /// ```
-    pub fn get_slot_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, U128, Option<U64>) {
+    pub fn get_slot_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, U128) {
         let current_slot = self.get_slot_id(offset);
-        let empty = (vec![], U128::from(current_slot), None);
+        let empty = (vec![], U128::from(current_slot));
 
         // Get tasks based on current slot.
         // (Or closest past slot if there are leftovers.)
@@ -80,7 +80,7 @@ impl Contract {
                 .map(Base64VecU8::from)
                 .collect();
 
-            (ret, U128::from(current_slot), None)
+            (ret, U128::from(current_slot))
         } else {
             empty
         }
@@ -194,6 +194,7 @@ impl Contract {
             } else {
                 agent_tasks
             };
+            // TODO: Always returning 0
             return (U64::from(active_tasks), U128::from(current_slot));
         }
 
