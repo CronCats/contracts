@@ -191,15 +191,17 @@ impl Contract {
 
         // Check if agent has exceeded their slot task allotment
         // TODO: An agent can check to execute IF slot is +1 and their index is within range???
-        let (can_execute, current_agent_index) =
+        let (can_execute, current_agent_index, _) =
             self.check_agent_can_execute(env::predecessor_account_id(), slot_data.len() as u64);
         assert!(can_execute, "Agent has exceeded execution for this slot");
         // Rotate agent index
         if self.agent_active_index as u64 == self.agent_active_queue.len().saturating_sub(1) {
+            log!("--active index 0");
             self.agent_active_index = 0;
         } else if self.agent_active_queue.len() > 1 {
             // Only change the index IF there are more than 1 agents ;)
             self.agent_active_index += 1;
+            log!("--active index {:?}", self.agent_active_index);
         }
         // IF previous agent missed, then store their slot missed. We know this is true IF this slot is using slot_ballpark
         // NOTE: While this isnt perfect, the eventual outcome is fine.

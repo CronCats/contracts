@@ -68,9 +68,9 @@ impl Contract {
         &self,
         offset: Option<u64>,
         account_id: Option<ValidAccountId>,
-    ) -> (Vec<Base64VecU8>, U128) {
+    ) -> (Vec<Base64VecU8>, U128, Option<U64>) {
         let current_slot = self.get_slot_id(offset);
-        let empty = (vec![], U128::from(current_slot));
+        let empty = (vec![], U128::from(current_slot), None);
 
         // IF paused, and agent, return empty (this will cause all agents to pause automatically, to save failed TXN fees)
         // Get tasks only for my agent
@@ -86,6 +86,11 @@ impl Contract {
                         return empty;
                     }
 
+                    // Skip if agent is not active
+                    if a.status != agent::AgentStatus::Active {
+                        return empty;
+                    }
+
                     // Get slot total to test agent in slot
                     // get task based on current slot, priority goes to tasks that have fallen behind (using floor key)
                     let slot_opt = if let Some(k) = self.slots.floor_key(&current_slot) {
@@ -96,16 +101,24 @@ impl Contract {
                     let slot_data = slot_opt.unwrap_or_default();
 
                     // Otherwise, assess if they are in active set, or are able to cover an agent that missed previous slot
-                    let (can_execute, _) =
+                    let (can_execute, agent_index, agent_tasks) =
                         self.check_agent_can_execute(id.to_string(), slot_data.len() as u64);
+                    log!("get task can exec, index {:?} {:?} {:?}", can_execute, agent_index, !can_execute);
                     if !can_execute {
                         return empty;
                     }
+
+                    // Available tasks to only THIS agent!
+                    // NOTE: Don't need to know any hashes, just how many tasks.
+                    let tmp = vec![b"a".to_vec(); agent_tasks as usize];
+                    let ret = tmp.into_iter().map(Base64VecU8::from).collect();
+                    return (ret, U128::from(current_slot), Some(U64::from(agent_tasks as u64)))
                 }
             }
         } else {
             return empty;
         }
+
 
         // Get tasks based on current slot.
         // (Or closest past slot if there are leftovers.)
@@ -119,7 +132,7 @@ impl Contract {
                 .map(Base64VecU8::from)
                 .collect();
 
-            (ret, U128::from(current_slot))
+            (ret, U128::from(current_slot), None)
         } else {
             empty
         }
@@ -188,7 +201,7 @@ impl Contract {
         &self,
         account_id: AccountId,
         slot_tasks_remaining: u64,
-    ) -> (bool, u64) {
+    ) -> (bool, u64, u64) {
         // get the index this agent
         let index_raw = self
             .agent_active_queue
@@ -197,33 +210,30 @@ impl Contract {
         let active_index = self.agent_active_index as u64;
         let agents_total = self.agent_active_queue.len();
         let mut index: u64 = 0;
-        log!("agent_active_queue {:?} {:?}", self.agent_active_queue.get(0), self.agent_active_queue.get(1));
-        log!("agent_pending_queue {:?} {:?}", self.agent_pending_queue.get(0), self.agent_pending_queue.get(1));
         log!("index_raw active_index {:?} {:?}", index_raw, active_index);
 
         if let Some(index_raw) = index_raw {
             index = index_raw as u64;
-            log!("HERERE {:?}", index);
         } else {
-            log!("HERERfdjkfjdkfdjlE");
-            return (false, index)
+            return (false, index, 0)
         }
         log!("tally tasks, agents {:?} {:?}", slot_tasks_remaining, agents_total);
 
         // return immediately if no tasks LOL
-        if slot_tasks_remaining == 0 { return (false, index) }
+        if slot_tasks_remaining == 0 { return (false, index, 0) }
 
         // check if agent index is within range of current index and slot tasks remaining
         // Single Agent: Return Always
         if agents_total <= 1 {
             log!("single agent {:?}", account_id);
-            return (true, index)
+            return (true, index, slot_tasks_remaining)
         }
 
         // If 1 task remaining in this slot, only active_index agent
+        // NOTE: This is possibly affected by async misfire?
         if slot_tasks_remaining <= 1 {
-            log!("single task {:?} {:?}", slot_tasks_remaining, account_id);
-            return (index == active_index, index)
+            log!("single task {:?} {:?} {:?}", index, active_index, index == active_index);
+            return (index == active_index, index, slot_tasks_remaining)
         }
 
         // Plethora of tasks:
@@ -233,7 +243,8 @@ impl Contract {
         // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 0 :: Active Agents [0,1,2]
         if slot_tasks_remaining > agents_total {
             log!("Plethora of task {:?} {:?} {:?} {:?} {:?}", slot_tasks_remaining, index, active_index, index == active_index, account_id);
-            return (true, index)
+            // TODO: This number is wrong still... (change div_euclid)
+            return (true, index, slot_tasks_remaining.div_euclid(agents_total))
         }
 
         // Align the amount of agents and available tasks
@@ -242,20 +253,21 @@ impl Contract {
         // Example:
         // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 4 :: Active Agents [4,5,0]
         // TODO: Create test for this case
-        let right_upper_bound = u64::min(active_index + slot_tasks_remaining, agents_total - 1);
-        let left_upper_bound = (active_index + slot_tasks_remaining) - agents_total;
+        let total_agents = self.agent_active_queue.len().saturating_sub(1);
+        let right_upper_bound = u64::min(active_index + slot_tasks_remaining, total_agents);
+        let left_upper_bound = (active_index + slot_tasks_remaining) - total_agents;
 
         // Compare right boundary
         // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 4 :: Agent 5 :: Active Agents [4,5,0]
         if active_index <= index && index <= right_upper_bound {
-            log!("right boundary");
-            return (true, index)
+            log!("right boundary {:?}", right_upper_bound);
+            return (true, index, 1)
         }
 
         // Compare left boundary
         // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 4 :: Agent 0 :: Active Agents [4,5,0]
-        log!("left boundary");
-        (active_index <= index && index <= left_upper_bound, index)
+        log!("left boundary {:?}", left_upper_bound);
+        (active_index <= index && index <= left_upper_bound, index, 1)
     }
 }
 
@@ -359,7 +371,7 @@ mod tests {
         testing_env!(context.is_view(false).attached_deposit(AGENT_STORAGE_FEE).predecessor_account_id(accounts(4)).build());
         contract.register_agent(Some(accounts(4)));
         testing_env!(context.is_view(false).block_timestamp(BLOCK_START_TS + (120 * NANO)).predecessor_account_id(accounts(4)).build());
-        let (can_exec, index) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
         assert_eq!(
             can_exec,
             true,
@@ -371,7 +383,7 @@ mod tests {
             "Can execute: Single Agent: Index 0"
         );
         testing_env!(context.is_view(false).block_timestamp(BLOCK_START_TS + (240 * NANO)).predecessor_account_id(accounts(4)).build());
-        let (can_exec_2, index_2) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
         assert_eq!(
             can_exec_2,
             true,
@@ -411,10 +423,10 @@ mod tests {
         contract.register_agent(Some(accounts(5)));
         contract.tick();
         testing_env!(context.is_view(true).build());
-        let (can_exec, index) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
         assert_eq!(can_exec, true, "Can execute: Multi Agent: True");
         assert_eq!(index, 0, "Can execute: Multi Agent: Index 0");
-        let (can_exec_2, index_2) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
         assert_eq!(can_exec_2, false, "Can execute: Multi Agent: False");
         assert_eq!(index_2, 1, "Can execute: Multi Agent: Index 0");
 
@@ -422,10 +434,10 @@ mod tests {
         testing_env!(context.is_view(false).block_timestamp(BLOCK_START_TS + (240 * NANO)).build());
         contract.agent_active_index = 1;
         testing_env!(context.is_view(true).build());
-        let (can_exec, index) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
         assert_eq!(can_exec, false, "Can execute: Multi Agent: True");
         assert_eq!(index, 0, "Can execute: Multi Agent: Index 0");
-        let (can_exec_2, index_2) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
         assert_eq!(can_exec_2, true, "Can execute: Multi Agent: False");
         assert_eq!(index_2, 1, "Can execute: Multi Agent: Index 0");
     }
@@ -461,11 +473,11 @@ mod tests {
         contract.register_agent(Some(accounts(5)));
         contract.tick();
         // testing_env!(context.is_view(true).build());
-        let (can_exec, index) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
         assert_eq!(can_exec, true, "Can execute: Multi Agent: True");
         assert_eq!(index, 0, "Can execute: Multi Agent: Index 0");
         contract.agent_active_index = 1;
-        let (can_exec_2, index_2) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
         assert_eq!(can_exec_2, true, "Can execute: Multi Agent: True");
         assert_eq!(index_2, 1, "Can execute: Multi Agent: Index 0");
 
@@ -473,11 +485,11 @@ mod tests {
         testing_env!(context.is_view(false).block_timestamp(BLOCK_START_TS + (240 * NANO)).build());
         contract.agent_active_index = 0;
         // testing_env!(context.is_view(true).build());
-        let (can_exec, index) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
         assert_eq!(can_exec, true, "Can execute: Multi Agent: True");
         assert_eq!(index, 0, "Can execute: Multi Agent: Index 0");
         contract.agent_active_index = 1;
-        let (can_exec_2, index_2) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
         assert_eq!(can_exec_2, true, "Can execute: Multi Agent: True");
         assert_eq!(index_2, 1, "Can execute: Multi Agent: Index 0");
     }
@@ -513,25 +525,25 @@ mod tests {
         contract.register_agent(Some(accounts(5)));
         contract.tick();
         // testing_env!(context.is_view(true).build());
-        let (can_exec, index) = contract.check_agent_can_execute(accounts(4).to_string(), 3);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 3);
         assert_eq!(can_exec, true, "Can execute: Multi Agent: True");
         assert_eq!(index, 0, "Can execute: Multi Agent: Index 0");
         contract.agent_active_index = 1;
-        let (can_exec_2, index_2) = contract.check_agent_can_execute(accounts(5).to_string(), 2);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5).to_string(), 2);
         assert_eq!(can_exec_2, true, "Can execute: Multi Agent: True");
         assert_eq!(index_2, 1, "Can execute: Multi Agent: Index 1");
         contract.agent_active_index = 0;
-        let (can_exec_3, index_3) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec_3, index_3, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
         assert_eq!(can_exec_3, true, "Can execute: Multi Agent: True");
         assert_eq!(index_3, 0, "Can execute: Multi Agent: Index 0");
-        let (can_exec_4, index_4) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
+        let (can_exec_4, index_4, _) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
         assert_eq!(can_exec_4, false, "Can execute: Multi Agent: False");
         assert_eq!(index_4, 1, "Can execute: Multi Agent: Index 1");
         contract.agent_active_index = 1;
-        let (can_exec_5, index_5) = contract.check_agent_can_execute(accounts(4).to_string(), 0);
+        let (can_exec_5, index_5, _) = contract.check_agent_can_execute(accounts(4).to_string(), 0);
         assert_eq!(can_exec_5, false, "Can execute: Multi Agent: True");
         assert_eq!(index_5, 0, "Can execute: Multi Agent: Index 0");
-        let (can_exec_6, index_6) = contract.check_agent_can_execute(accounts(5).to_string(), 0);
+        let (can_exec_6, index_6, _) = contract.check_agent_can_execute(accounts(5).to_string(), 0);
         assert_eq!(can_exec_6, false, "Can execute: Multi Agent: False");
         assert_eq!(index_6, 1, "Can execute: Multi Agent: Index 1");
     }
