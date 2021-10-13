@@ -183,6 +183,7 @@ impl Contract {
     /// ```bash
     /// near view cron.testnet check_agent_can_execute '{"account_id": "YOU.testnet", "slot_tasks_remaining": 3}'
     /// ```
+    // NOTE: How does async affect this?
     pub fn check_agent_can_execute(
         &self,
         account_id: AccountId,
@@ -224,22 +225,37 @@ impl Contract {
             log!("single task {:?} {:?}", slot_tasks_remaining, account_id);
             return (index == active_index, index)
         }
-        log!("many task {:?} {:?} {:?} {:?} {:?}", slot_tasks_remaining, index, active_index, index == active_index, account_id);
 
         // Plethora of tasks:
+        // 
+        // Examples:
+        // agent ids: [0,1,2,3,4,5] :: Tasks 7 :: Active Index 0 :: Active Agents [0,1,2,3,4,5]
+        // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 0 :: Active Agents [0,1,2]
         if slot_tasks_remaining > agents_total {
+            log!("Plethora of task {:?} {:?} {:?} {:?} {:?}", slot_tasks_remaining, index, active_index, index == active_index, account_id);
             return (true, index)
         }
 
-        // // For multiple tasks, get the upper bound index to test against, since we already know active index.
-        // // NOTE: needs to accomodate the wrap around scenarios (2 agents, 5 tasks)
-        // let upper_bound = active_index + slot_tasks_remaining;
-        // let tasks_rem = slot_tasks_remaining % agents_total;
-        // let tasks_rounded = slot_tasks_remaining.saturating_sub(tasks_rem);
+        // Align the amount of agents and available tasks
+        // Easiest method is to split the range in two and compare
+        // 
+        // Example:
+        // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 4 :: Active Agents [4,5,0]
+        // TODO: Create test for this case
+        let right_upper_bound = u64::min(active_index + slot_tasks_remaining, agents_total - 1);
+        let left_upper_bound = (active_index + slot_tasks_remaining) - agents_total;
 
-        // align the amount of agents and available tasks
-        // TODO: Handle the wrap around case!
-        (index >= active_index && index <= active_index + slot_tasks_remaining, index)
+        // Compare right boundary
+        // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 4 :: Agent 5 :: Active Agents [4,5,0]
+        if active_index <= index && index <= right_upper_bound {
+            log!("right boundary");
+            return (true, index)
+        }
+
+        // Compare left boundary
+        // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 4 :: Agent 0 :: Active Agents [4,5,0]
+        log!("left boundary");
+        (active_index <= index && index <= left_upper_bound, index)
     }
 }
 

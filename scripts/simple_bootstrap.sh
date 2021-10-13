@@ -68,7 +68,9 @@ near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$COUNTER_ACCOUNT_ID'",
 # near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$COUNTER_ACCOUNT_ID'","function_id": "increment","cadence": "0 */8 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId $COUNTER_ACCOUNT_ID --amount 0.5
 # near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$COUNTER_ACCOUNT_ID'","function_id": "increment","cadence": "0 */9 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId $COUNTER_ACCOUNT_ID --amount 0.5
 
-echo "\n  Start your agents, waiting 1m to onboard another agent...\n"
+echo ""
+echo "Start your agents, waiting 1m to onboard another agent..."
+echo ""
 
 sleep 1m
 near call $CRON_ACCOUNT_ID tick --accountId $CRON_ACCOUNT_ID
