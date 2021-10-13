@@ -27,7 +27,6 @@ impl Contract {
         Contract {
             paused: false,
             owner_id: old_contract.owner_id,
-            bps_timestamp: old_contract.bps_timestamp,
             tasks: old_contract.tasks,
             slots: old_contract.slots,
             slot_granularity: old_contract.slot_granularity,
@@ -47,23 +46,10 @@ impl Contract {
     }
 
     /// Tick: Cron Manager Heartbeat
-    /// Used to aid computation of blocks per second, manage internal use of funds
-    /// NOTE: This is a small array, allowing the adjustment of the previous block in the past
-    /// so the block tps average is always using more block distance than "now", ideally ~1000 blocks
+    /// Used to manage agents, manage internal use of funds
     ///
     /// near call cron.testnet tick '{}'
     pub fn tick(&mut self) {
-        let prev_timestamp = self.bps_timestamp[0];
-
-        // Check that we dont allow limited scopes for timestamp averages
-        assert!(
-            prev_timestamp + self.slot_granularity < env::block_timestamp(),
-            "Tick triggered too soon"
-        );
-
-        self.bps_timestamp[0] = env::block_timestamp();
-        self.bps_timestamp[1] = prev_timestamp;
-
         // TBD: Internal staking management
         log!(
             "Balances [Operations, Treasury]:  [{},{}]",
@@ -162,13 +148,13 @@ mod tests {
         builder
     }
 
+    // TODO: Add test for checking pending agent here.
     #[test]
     fn test_tick() {
         let mut context = get_context(accounts(1));
         testing_env!(context.is_view(false).build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.bps_timestamp[0], 1633759320000000000);
         testing_env!(context
             .is_view(false)
             .block_timestamp(1633759440000000000)
@@ -184,7 +170,5 @@ mod tests {
             .block_timestamp(1633760460000000000)
             .build());
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.bps_timestamp[0], 1633760160000000000);
-        assert_eq!(contract.bps_timestamp[1], 1633759440000000000);
     }
 }

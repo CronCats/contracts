@@ -195,7 +195,18 @@ fn simulate_many_tasks() {
 
     // Go through the remainder of the slots, executing tasks
     let mut nonce = 4;
-    for n in &[360000000000u64, 480000000000u64, 720000000000u64, 840000000000u64, 1200000000000u64, 1920000000000u64, 2640000000000u64, 2880000000000u64, 10860000000000u64, 18480000000000u64] {
+    for n in &[
+        360000000000u64,
+        480000000000u64,
+        720000000000u64,
+        840000000000u64,
+        1200000000000u64,
+        1920000000000u64,
+        2640000000000u64,
+        2880000000000u64,
+        10860000000000u64,
+        18480000000000u64,
+    ] {
         // produce blocks until next slot
         while root_runtime.produce_blocks(1).is_ok() {
             if &root_runtime.cur_block.block_timestamp >= n {
@@ -749,22 +760,27 @@ fn common_tick_workflow() {
     counter_create_task(&counter, cron.account_id(), "0 3 * * * * *").assert_success();
 
     // register agent
-    agent.call(
-        "cron.root".to_string(),
-        "register_agent",
-        &json!({}).to_string().into_bytes(),
-        DEFAULT_GAS,
-        AGENT_REGISTRATION_COST,
-    ).assert_success();
+    agent
+        .call(
+            "cron.root".to_string(),
+            "register_agent",
+            &json!({}).to_string().into_bytes(),
+            DEFAULT_GAS,
+            AGENT_REGISTRATION_COST,
+        )
+        .assert_success();
 
-    let second_agent = root_account.create_user("second-agent.root".parse().unwrap(), to_yocto("100"));
-    second_agent.call(
-        "cron.root".to_string(),
-        "register_agent",
-        &json!({}).to_string().into_bytes(),
-        DEFAULT_GAS,
-        AGENT_REGISTRATION_COST,
-    ).assert_success();
+    let second_agent =
+        root_account.create_user("second-agent.root".parse().unwrap(), to_yocto("100"));
+    second_agent
+        .call(
+            "cron.root".to_string(),
+            "register_agent",
+            &json!({}).to_string().into_bytes(),
+            DEFAULT_GAS,
+            AGENT_REGISTRATION_COST,
+        )
+        .assert_success();
 
     // Add a few more tasks
     counter_create_task(&counter, cron.account_id(), "0 13 * * * * *").assert_success();

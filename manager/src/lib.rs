@@ -37,7 +37,6 @@ pub const MAX_BLOCK_TS_RANGE: u64 = 1_000_000_000_000_000_000;
 pub const SLOT_GRANULARITY: u64 = 60_000_000_000; // 60 seconds in nanos
 pub const AGENT_EJECT_THRESHOLD: u128 = 10; // how many slots an agent can miss before being ejected. 10 * 60 = 1hr
 pub const NANO: u64 = 1_000_000_000;
-pub const BPS_DENOMINATOR: u64 = 1_000;
 
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
@@ -54,7 +53,6 @@ pub struct Contract {
     // Runtime
     paused: bool,
     owner_id: AccountId,
-    bps_timestamp: [u64; 2],
 
     // Agent management
     agents: LookupMap<AccountId, Agent>,
@@ -95,7 +93,6 @@ impl Contract {
         let mut this = Contract {
             paused: false,
             owner_id: env::signer_account_id(),
-            bps_timestamp: [env::block_timestamp(), env::block_timestamp()],
             tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),
             agent_active_queue: Vector::new(StorageKeys::AgentsActive),
