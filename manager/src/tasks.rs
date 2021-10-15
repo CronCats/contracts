@@ -89,7 +89,6 @@ impl Contract {
         );
 
         let hash = self.hash(&item);
-        // log!("Task Hash (as bytes) {:?}", &hash);
 
         // Parse cadence into a future timestamp, then convert to a slot
         let next_slot = self.get_slot_from_cadence(item.cadence.clone());
@@ -109,6 +108,7 @@ impl Contract {
         // Add the attached balance into available_balance
         self.available_balance += env::attached_deposit();
 
+        log!("Task Hash {:?}", Base64VecU8::from(hash.clone()));
         Base64VecU8::from(hash)
     }
 
@@ -196,12 +196,10 @@ impl Contract {
         assert!(can_execute, "Agent has exceeded execution for this slot");
         // Rotate agent index
         if self.agent_active_index as u64 == self.agent_active_queue.len().saturating_sub(1) {
-            log!("--active index 0");
             self.agent_active_index = 0;
         } else if self.agent_active_queue.len() > 1 {
             // Only change the index IF there are more than 1 agents ;)
             self.agent_active_index += 1;
-            log!("--active index {:?}", self.agent_active_index);
         }
         // IF previous agent missed, then store their slot missed. We know this is true IF this slot is using slot_ballpark
         // NOTE: While this isnt perfect, the eventual outcome is fine.
@@ -239,7 +237,7 @@ impl Contract {
         if slot_data.is_empty() {
             // Clean up slot if no more data
             self.slots.remove(&slot_ballpark);
-            log!("Slot {} cleaned", &slot_ballpark);
+            // log!("Slot {} cleaned", &slot_ballpark);
         } else {
             self.slots.insert(&slot_ballpark, &slot_data);
         }
@@ -433,7 +431,7 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None, None, None).is_empty());
+        assert!(contract.get_tasks(None, None, None).is_empty());
     }
 
     #[test]
@@ -442,7 +440,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None, None, None).is_empty());
+        assert!(contract.get_tasks(None, None, None).is_empty());
         testing_env!(context
             .is_view(false)
             .attached_deposit(1000000000020000000100)
@@ -458,7 +456,7 @@ mod tests {
         );
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None, None, None).len(), 1);
+        assert_eq!(contract.get_tasks(None, None, None).len(), 1);
 
         let daily_task = get_sample_task();
         assert_eq!(contract.get_task(task_id), daily_task);
@@ -510,7 +508,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "Not enough task balance to execute job, need at least 1000000000020000100000"
+        expected = "Not enough task balance to execute job, need at least 500000000020000100000"
     )]
     fn test_task_create_deposit_not_enuf() {
         let mut context = get_context(accounts(1));
@@ -530,7 +528,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "Not enough task balance to execute job, need at least 2000000000040000200000"
+        expected = "Not enough task balance to execute job, need at least 1000000000040000200000"
     )]
     fn test_task_create_deposit_not_enuf_recurring() {
         let mut context = get_context(accounts(1));
@@ -698,7 +696,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None, None, None).is_empty());
+        assert!(contract.get_tasks(None, None, None).is_empty());
         testing_env!(context
             .is_view(false)
             .attached_deposit(ONE_NEAR * 100)
@@ -714,13 +712,13 @@ mod tests {
         );
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None, None, None).len(), 1);
+        assert_eq!(contract.get_tasks(None, None, None).len(), 1);
 
         testing_env!(context.is_view(false).build());
         contract.remove_task(task_hash);
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None, None, None).len(), 0);
+        assert_eq!(contract.get_tasks(None, None, None).len(), 0);
     }
 
     #[test]
@@ -730,7 +728,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None, None, None).is_empty());
+        assert!(contract.get_tasks(None, None, None).is_empty());
         testing_env!(context
             .is_view(false)
             .attached_deposit(1000000000020000000100)
@@ -746,7 +744,7 @@ mod tests {
         );
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None, None, None).len(), 1);
+        assert_eq!(contract.get_tasks(None, None, None).len(), 1);
 
         testing_env!(context
             .is_view(false)

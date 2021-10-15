@@ -29,7 +29,7 @@ pub const GAS_BASE_PRICE: Balance = 100_000_000;
 pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
 // actual is: 13534954161128, higher in case treemap rebalance
 pub const GAS_FOR_CALLBACK: Gas = 30_000_000_000_000;
-pub const AGENT_BASE_FEE: Balance = 1_000_000_000_000_000_000_000; // 0.001 Ⓝ
+pub const AGENT_BASE_FEE: Balance =   500_000_000_000_000_000_000; // 0.0005 Ⓝ (2000 tasks = 1 Ⓝ)
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 // Boundary Definitions
@@ -207,6 +207,6 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None, None, None).is_empty());
+        assert!(contract.get_tasks(None, None, None).is_empty());
     }
 }

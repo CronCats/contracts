@@ -150,7 +150,7 @@ impl Contract {
         let current_slot = self.get_slot_id(None);
         let empty = (U64::from(0), U128::from(current_slot));
 
-        // IF paused, and agent, return empty (this will cause all agents to pause automatically, to save failed TXN fees)
+        // IF paused, return empty (this will cause all agents to pause automatically, to save failed TXN fees)
         // Paused will show as timestamp 0 to agent
         if self.paused {
             return (U64::from(0), U128::from(0));
@@ -160,8 +160,9 @@ impl Contract {
         if let Some(a) = self.agents.get(&account_id.to_string()) {
             // Return nothing if agent has missed total threshold
             let last_slot = a.last_missed_slot;
-            if current_slot
-                > last_slot + (self.agents_eject_threshold * u128::from(self.slot_granularity))
+            if a.last_missed_slot != 0
+                && (current_slot
+                    > last_slot + (self.agents_eject_threshold * u128::from(self.slot_granularity)))
             {
                 return empty;
             }
@@ -189,13 +190,7 @@ impl Contract {
 
             // Available tasks to only THIS agent!
             // NOTE: Don't need to know any hashes, just how many tasks.
-            let active_tasks = if a.status != agent::AgentStatus::Active {
-                0
-            } else {
-                agent_tasks
-            };
-            // TODO: Always returning 0
-            return (U64::from(active_tasks), U128::from(current_slot));
+            return (U64::from(agent_tasks), U128::from(current_slot));
         }
 
         empty
@@ -204,6 +199,8 @@ impl Contract {
     /// Check if agent is able to execute a task
     /// Returns bool and the agents index
     /// requires other logic to satisfy that there is a task to do, outside this function
+    ///
+    /// Response: (canExecute: bool, agentIndex: u64, tasksAvailable: u64)
     ///
     /// ```bash
     /// near view cron.testnet check_agent_can_execute '{"account_id": "YOU.testnet", "slot_tasks_remaining": 3}'
@@ -219,18 +216,12 @@ impl Contract {
         let active_index = self.agent_active_index as u64;
         let agents_total = self.agent_active_queue.len();
         let mut index: u64 = 0;
-        log!("index_raw active_index {:?} {:?}", index_raw, active_index);
 
         if let Some(index_raw) = index_raw {
             index = index_raw as u64;
         } else {
             return (false, index, 0);
         }
-        log!(
-            "tally tasks, agents {:?} {:?}",
-            slot_tasks_remaining,
-            agents_total
-        );
 
         // return immediately if no tasks LOL
         if slot_tasks_remaining == 0 {
@@ -240,20 +231,17 @@ impl Contract {
         // check if agent index is within range of current index and slot tasks remaining
         // Single Agent: Return Always
         if agents_total <= 1 {
-            log!("single agent {:?}", account_id);
             return (true, index, slot_tasks_remaining);
         }
 
         // If 1 task remaining in this slot, only active_index agent
         // NOTE: This is possibly affected by async misfire?
         if slot_tasks_remaining <= 1 {
-            log!(
-                "single task {:?} {:?} {:?}",
+            return (
+                index == active_index,
                 index,
-                active_index,
-                index == active_index
+                u64::max(slot_tasks_remaining, 1),
             );
-            return (index == active_index, index, slot_tasks_remaining);
         }
 
         // Plethora of tasks:
@@ -262,16 +250,11 @@ impl Contract {
         // agent ids: [0,1,2,3,4,5] :: Tasks 7 :: Active Index 0 :: Active Agents [0,1,2,3,4,5]
         // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 0 :: Active Agents [0,1,2]
         if slot_tasks_remaining > agents_total {
-            log!(
-                "Plethora of task {:?} {:?} {:?} {:?} {:?}",
-                slot_tasks_remaining,
+            return (
+                true,
                 index,
-                active_index,
-                index == active_index,
-                account_id
+                u64::max(slot_tasks_remaining.div_euclid(agents_total), 1),
             );
-            // TODO: This number is wrong still... (change div_euclid)
-            return (true, index, slot_tasks_remaining.div_euclid(agents_total));
         }
 
         // Align the amount of agents and available tasks
@@ -287,14 +270,12 @@ impl Contract {
         // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 4 :: Agent 5 :: Active Agents [4,5,0]
         // TODO: Create test for this case
         if active_index <= index && index <= right_upper_bound {
-            log!("right boundary {:?}", right_upper_bound);
             return (true, index, 1);
         }
 
         // Compare left boundary
         // agent ids: [0,1,2,3,4,5] :: Tasks 3 :: Active Index 4 :: Agent 0 :: Active Agents [4,5,0]
         // TODO: Create test for this case
-        log!("left boundary {:?}", left_upper_bound);
         (active_index <= index && index <= left_upper_bound, index, 1)
     }
 }
