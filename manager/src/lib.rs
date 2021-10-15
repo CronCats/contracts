@@ -29,7 +29,7 @@ pub const GAS_BASE_PRICE: Balance = 100_000_000;
 pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
 // actual is: 13534954161128, higher in case treemap rebalance
 pub const GAS_FOR_CALLBACK: Gas = 30_000_000_000_000;
-pub const AGENT_BASE_FEE: Balance = 1_000_000_000_000_000_000_000; // 0.001 Ⓝ
+pub const AGENT_BASE_FEE: Balance =   500_000_000_000_000_000_000; // 0.0005 Ⓝ (2000 tasks = 1 Ⓝ)
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 // Boundary Definitions
@@ -37,7 +37,6 @@ pub const MAX_BLOCK_TS_RANGE: u64 = 1_000_000_000_000_000_000;
 pub const SLOT_GRANULARITY: u64 = 60_000_000_000; // 60 seconds in nanos
 pub const AGENT_EJECT_THRESHOLD: u128 = 10; // how many slots an agent can miss before being ejected. 10 * 60 = 1hr
 pub const NANO: u64 = 1_000_000_000;
-pub const BPS_DENOMINATOR: u64 = 1_000;
 
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
@@ -54,7 +53,6 @@ pub struct Contract {
     // Runtime
     paused: bool,
     owner_id: AccountId,
-    bps_timestamp: [u64; 2],
 
     // Agent management
     agents: LookupMap<AccountId, Agent>,
@@ -95,7 +93,6 @@ impl Contract {
         let mut this = Contract {
             paused: false,
             owner_id: env::signer_account_id(),
-            bps_timestamp: [env::block_timestamp(), env::block_timestamp()],
             tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),
             agent_active_queue: Vector::new(StorageKeys::AgentsActive),
@@ -210,6 +207,6 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None, None, None).is_empty());
+        assert!(contract.get_tasks(None, None, None).is_empty());
     }
 }
