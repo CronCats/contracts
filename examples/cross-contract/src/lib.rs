@@ -2,7 +2,7 @@ use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::Vector,
     env, ext_contract,
-    json_types::{Base64VecU8, U128},
+    json_types::{Base64VecU8, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json, AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise,
@@ -47,8 +47,8 @@ pub struct Task {
 
 #[ext_contract(ext_croncat)]
 pub trait ExtCroncat {
-    fn get_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, U128);
-    fn get_all_tasks(&self, slot: Option<U128>) -> Vec<Task>;
+    fn get_slot_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, U128);
+    fn get_tasks(&self, slot: Option<U128>, from_index: Option<U64>, limit: Option<U64>) -> Vec<Task>;
     // fn get_task(&self, task_hash: Base64VecU8) -> Task;
     fn get_task(&self, task_hash: String) -> Task;
     fn create_task(
@@ -63,6 +63,7 @@ pub trait ExtCroncat {
     ) -> Base64VecU8;
     fn remove_task(&mut self, task_hash: Base64VecU8);
     fn proxy_call(&mut self);
+    fn tick(&mut self);
 }
 
 #[ext_contract(ext)]

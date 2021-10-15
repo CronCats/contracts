@@ -253,6 +253,7 @@ impl Contract {
             return (
                 true,
                 index,
+                // TODO: Change to make sure theres not an accidental 1
                 u64::max(slot_tasks_remaining.div_euclid(agents_total), 1),
             );
         }
