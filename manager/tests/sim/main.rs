@@ -12,7 +12,7 @@ use near_sdk::serde_json;
 use near_sdk::serde_json::{json, Value};
 use near_sdk_sim::hash::CryptoHash;
 use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
-use near_sdk_sim::types::AccountId;
+use near_sdk_sim::types::{AccountId,Balance};
 use near_sdk_sim::{to_yocto, DEFAULT_GAS};
 
 // Load in contract bytes at runtime
@@ -105,10 +105,9 @@ fn simulate_many_tasks() {
     let mut get_tasks_view_res =
         root_runtime.view_method_call("cron.root", "get_slot_tasks", "{\"offset\": 1}".as_bytes());
     println!("get_tasks_view_res {:?}", get_tasks_view_res);
-    let mut success_val = r#"
-        [["xdnWQtc0KAq2i+/vyFQSHGvr5K0DPgyVUYfE8886qMs="],"240000000000"]
-    "#;
-    let mut success_vec: Vec<u8> = success_val.trim().into(); // trim because of multiline assignment above
+    // let mut success_val = r#"
+    //     [["xdnWQtc0KAq2i+/vyFQSHGvr5K0DPgyVUYfE8886qMs="],"240000000000"]
+    // "#;
     let success_vecs: Vec<u8> = vec![91, 91, 34, 120, 100, 110, 87, 81, 116, 99, 48, 75, 65, 113, 50, 105, 43, 47, 118, 121, 70, 81, 83, 72, 71, 118, 114, 53, 75, 48, 68, 80, 103, 121, 86, 85, 89, 102, 69, 56, 56, 56, 54, 113, 77, 115, 61, 34, 93, 44, 34, 51, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 34, 93];
     assert_eq!(
         get_tasks_view_res.unwrap(),
@@ -149,10 +148,10 @@ fn simulate_many_tasks() {
 
     // Ensure it doesn't find tasks now, except for the same one that's now completed
     get_tasks_view_res = root_runtime.view_method_call("cron.root", "get_slot_tasks", "{}".as_bytes());
-    success_val = r#"
+    let success_val = r#"
         [[],"240000000000"]
     "#;
-    success_vec = success_val.trim().into();
+    let mut success_vec: Vec<u8> = success_val.trim().into(); // trim because of multiline assignment above
     assert_eq!(
         get_tasks_view_res.unwrap(),
         success_vec,
@@ -656,6 +655,7 @@ fn simulate_sputnikv2_interaction() {
         U64,
         U64,
         U64,
+        U128,
     ) = agent_info_result.unwrap_json();
     let original_agent_fee = agent_info.10;
 

@@ -91,7 +91,7 @@ impl Contract {
     #[init]
     pub fn new() -> Self {
         let mut this = Contract {
-            paused: true,
+            paused: false,
             owner_id: env::signer_account_id(),
             tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),

@@ -35,7 +35,7 @@ impl Contract {
         U64,
         U64,
         U64,
-        Balance,
+        U128,
     ) {
         (
             self.paused,
@@ -53,7 +53,7 @@ impl Contract {
             U64::from(self.proxy_callback_gas),
             U64::from(self.slot_granularity),
             U64::from(self.agent_storage_usage),
-            env::account_balance(),
+            U128::from(env::account_balance()),
         )
     }
 
