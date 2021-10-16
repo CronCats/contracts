@@ -76,12 +76,6 @@ impl Contract {
         } else {
             call_balance_used
         };
-        // Agent fee is now too high for this check to matter
-        // assert!(
-        //     min_balance_needed > u128::from(GAS_BASE_FEE),
-        //     "Gas minimum has not been met, need at least {}",
-        //     min_balance_needed
-        // );
         assert!(
             min_balance_needed <= item.total_deposit.0,
             "Not enough task balance to execute job, need at least {}",
@@ -89,7 +83,6 @@ impl Contract {
         );
 
         let hash = self.hash(&item);
-        // log!("Task Hash (as bytes) {:?}", &hash);
 
         // Parse cadence into a future timestamp, then convert to a slot
         let next_slot = self.get_slot_from_cadence(item.cadence.clone());
@@ -105,6 +98,9 @@ impl Contract {
         slot_slots.push(hash.clone());
         log!("Task next slot: {}", next_slot);
         self.slots.insert(&next_slot, &slot_slots);
+
+        // Add the attached balance into available_balance
+        self.available_balance += env::attached_deposit();
 
         Base64VecU8::from(hash)
     }
@@ -173,13 +169,6 @@ impl Contract {
         }
         let mut agent = agent_opt.unwrap();
 
-        // Check if agent has exceeded their slot task allotment
-        let task_per_agent = self.get_total_tasks_per_agent_per_slot();
-        assert!(
-            agent.slot_execs[1] < u128::from(task_per_agent),
-            "Agent has exceeded execution for this slot"
-        );
-
         // Get current slot based on block or timestamp
         let current_slot = self.get_slot_id(None);
 
@@ -188,11 +177,51 @@ impl Contract {
         let (slot_opt, slot_ballpark) = if let Some(k) = self.slots.floor_key(&current_slot) {
             (self.slots.get(&k), k)
         } else {
-            env::log(b"aloha ow my brain");
             (self.slots.get(&current_slot), current_slot)
         };
 
         let mut slot_data = slot_opt.expect("No tasks found in slot");
+
+        // Check if agent has exceeded their slot task allotment
+        // TODO: An agent can check to execute IF slot is +1 and their index is within range???
+        let (can_execute, current_agent_index, _) =
+            self.check_agent_can_execute(env::predecessor_account_id(), slot_data.len() as u64);
+        assert!(can_execute, "Agent has exceeded execution for this slot");
+        // Rotate agent index
+        if self.agent_active_index as u64 == self.agent_active_queue.len().saturating_sub(1) {
+            self.agent_active_index = 0;
+        } else if self.agent_active_queue.len() > 1 {
+            // Only change the index IF there are more than 1 agents ;)
+            self.agent_active_index += 1;
+        }
+        // IF previous agent missed, then store their slot missed. We know this is true IF this slot is using slot_ballpark
+        // NOTE: While this isnt perfect, the eventual outcome is fine.
+        //       If agent gets ticked as "missed" for maximum of 1 slot, then fixes the situation on next round.
+        //       If agent truly misses enough slots, they will skip their chance to reset missed slot count and be dropped.
+        if slot_ballpark < current_slot && self.agent_active_queue.len() > 1 {
+            // wrap around logic for non-overflow index
+            // if only 1 agent, dont do anything
+            let missed_agent_index = if current_agent_index == 0 {
+                self.agent_active_queue.len()
+            } else {
+                current_agent_index - 1
+            };
+            let missed_agent_id = self.agent_active_queue.get(missed_agent_index);
+
+            if let Some(missed_agent_id) = missed_agent_id {
+                let missed_agent = self.agents.get(&missed_agent_id);
+
+                // confirm we should update missed slot, ONLY if the slot id is 0, otherwise the agent has not reset the count and we shouldnt mess with it.
+                if let Some(missed_agent) = missed_agent {
+                    let mut m_agent = missed_agent;
+                    if m_agent.last_missed_slot == 0 {
+                        m_agent.last_missed_slot = slot_ballpark;
+                        // update storage
+                        self.agents.insert(&missed_agent_id, &m_agent);
+                    }
+                }
+            }
+        }
 
         // Get a single task hash, then retrieve task details
         let hash = slot_data.pop().expect("No tasks available");
@@ -201,7 +230,7 @@ impl Contract {
         if slot_data.is_empty() {
             // Clean up slot if no more data
             self.slots.remove(&slot_ballpark);
-            log!("Slot {} cleaned");
+            // log!("Slot {} cleaned", &slot_ballpark);
         } else {
             self.slots.insert(&slot_ballpark, &slot_data);
         }
@@ -237,12 +266,11 @@ impl Contract {
         // Reward for agent MUST include the amount of gas used as a reimbursement
         agent.balance = U128::from(agent.balance.0 + call_total_fee);
         agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
+        self.available_balance = self.available_balance - call_total_fee;
 
-        // Update their slot task count
-        if agent.slot_execs[0] == current_slot {
-            agent.slot_execs = [current_slot, agent.slot_execs[1] + 1];
-        } else {
-            agent.slot_execs = [current_slot, 0];
+        // Reset missed slot, if any
+        if agent.last_missed_slot != 0 {
+            agent.last_missed_slot = 0;
         }
         self.agents.insert(&env::signer_account_id(), &agent);
 
@@ -292,7 +320,7 @@ impl Contract {
             .get(&task_hash.clone())
             .expect("No task found by hash");
 
-        // TODO: double check this can't get scheduled in current slot again
+        // double check this can't get scheduled in current slot again
         let next_slot = self.get_slot_from_cadence(task.cadence.clone());
         log!("Scheduling Next Task {:?}", &next_slot);
         assert!(
@@ -396,7 +424,7 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
+        assert!(contract.get_tasks(None, None, None).is_empty());
     }
 
     #[test]
@@ -405,7 +433,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
+        assert!(contract.get_tasks(None, None, None).is_empty());
         testing_env!(context
             .is_view(false)
             .attached_deposit(1000000000020000000100)
@@ -421,7 +449,7 @@ mod tests {
         );
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None).len(), 1);
+        assert_eq!(contract.get_tasks(None, None, None).len(), 1);
 
         let daily_task = get_sample_task();
         assert_eq!(contract.get_task(task_id), daily_task);
@@ -473,7 +501,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "Not enough task balance to execute job, need at least 1000000000020000100000"
+        expected = "Not enough task balance to execute job, need at least 500000000020000100000"
     )]
     fn test_task_create_deposit_not_enuf() {
         let mut context = get_context(accounts(1));
@@ -493,7 +521,7 @@ mod tests {
 
     #[test]
     #[should_panic(
-        expected = "Not enough task balance to execute job, need at least 2000000000040000200000"
+        expected = "Not enough task balance to execute job, need at least 1000000000040000200000"
     )]
     fn test_task_create_deposit_not_enuf_recurring() {
         let mut context = get_context(accounts(1));
@@ -556,7 +584,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot = contract
             .slots
-            .get(&52201080)
+            .get(&1624151520000000000)
             .expect("Should have something here");
         assert_eq!(
             slot[0],
@@ -655,26 +683,13 @@ mod tests {
         contract.proxy_call();
     }
 
-    // TODO: No longer relevant because agent can use this opp to clean slots... need to check and validate this
-    // #[test]
-    // #[should_panic(expected = "No tasks found in slot")]
-    // fn test_task_proxy_no_tasks() {
-    //     let mut context = get_context(accounts(1));
-    //     context.attached_deposit(2090000000000000000000);
-    //     testing_env!(context.build());
-    //     let mut contract = Contract::new();
-    //     contract.register_agent(None);
-    //     testing_env!(context.is_view(false).block_index(1260).build());
-    //     contract.proxy_call();
-    // }
-
     #[test]
     fn test_task_remove() {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
+        assert!(contract.get_tasks(None, None, None).is_empty());
         testing_env!(context
             .is_view(false)
             .attached_deposit(ONE_NEAR * 100)
@@ -690,13 +705,13 @@ mod tests {
         );
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None).len(), 1);
+        assert_eq!(contract.get_tasks(None, None, None).len(), 1);
 
         testing_env!(context.is_view(false).build());
         contract.remove_task(task_hash);
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None).len(), 0);
+        assert_eq!(contract.get_tasks(None, None, None).len(), 0);
     }
 
     #[test]
@@ -706,7 +721,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_all_tasks(None).is_empty());
+        assert!(contract.get_tasks(None, None, None).is_empty());
         testing_env!(context
             .is_view(false)
             .attached_deposit(1000000000020000000100)
@@ -722,7 +737,7 @@ mod tests {
         );
 
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.get_all_tasks(None).len(), 1);
+        assert_eq!(contract.get_tasks(None, None, None).len(), 1);
 
         testing_env!(context
             .is_view(false)
@@ -749,7 +764,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
 
-        assert_eq!(slot, 52201020);
+        assert_eq!(slot, 1624151460000000000);
     }
 
     #[test]
@@ -760,7 +775,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(Some(1_000));
 
-        assert_eq!(slot, 52201980);
+        assert_eq!(slot, 1624151520000000000);
     }
 
     #[test]
@@ -772,7 +787,7 @@ mod tests {
         let slot = contract.get_slot_id(Some(1_000_000_000_000));
 
         // ensure even if we pass in a HUGE number, it can only be scheduled UP to the max pre-defined block settings
-        assert_eq!(slot, 1_000_052_200_980);
+        assert_eq!(slot, 1624152540000000000);
     }
 
     #[test]
@@ -782,19 +797,19 @@ mod tests {
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
-        assert_eq!(slot, 52201020);
+        assert_eq!(slot, 1624151460000000000);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, Some(10), None, None, None, None, None);
+        contract.update_settings(None, Some(30_000_000_000), None, None, None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
-        assert_eq!(slot, 52201040);
+        assert_eq!(slot, 1624151490000000000);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, Some(1), None, None, None, None, None);
+        contract.update_settings(None, Some(10_000_000_000), None, None, None, None, None);
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
-        assert_eq!(slot, 52201040);
+        assert_eq!(slot, 1624151500000000000);
     }
 
     #[test]
@@ -860,22 +875,22 @@ mod tests {
         testing_env!(context.is_view(true).build());
         let slot1 = contract.get_slot_from_cadence("*/5 * * * * *".to_string()); // Immediately next slot (since every 5 seconds)
         println!("SLOT 1 {}", slot1);
-        assert_eq!(slot1, 52201080);
+        assert_eq!(slot1, 1624151520000000000);
         let slot2 = contract.get_slot_from_cadence("* */5 * * * *".to_string()); // Every 5 mins
         println!("SLOT 2 {}", slot2);
-        assert_eq!(slot2, 52201200);
+        assert_eq!(slot2, 1624151760000000000);
         let slot3 = contract.get_slot_from_cadence("* * */5 * * *".to_string()); // Every 5th hour
         println!("SLOT 3 {}", slot3);
-        assert_eq!(slot3, 52214700);
+        assert_eq!(slot3, 1624165260000000000);
         let slot4 = contract.get_slot_from_cadence("* * * 10 * *".to_string()); // The 10th day of Month
         println!("SLOT 4 {}", slot4);
-        assert_eq!(slot4, 53924700);
+        assert_eq!(slot4, 1625875260000000000);
         let slot5 = contract.get_slot_from_cadence("* * * * 10 *".to_string()); // The 10th Month of the Year
         println!("SLOT 5 {}", slot5);
-        assert_eq!(slot5, 61095900);
+        assert_eq!(slot5, 1633046460000000000);
         let slot6 = contract.get_slot_from_cadence("* * * * * * 2025".to_string());
         println!("SLOT 6 {}", slot6);
-        assert_eq!(slot6, 178431420);
+        assert_eq!(slot6, 1750381920000000000);
     }
 
     #[test]

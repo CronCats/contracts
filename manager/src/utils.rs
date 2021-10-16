@@ -27,8 +27,6 @@ impl Contract {
         Contract {
             paused: false,
             owner_id: old_contract.owner_id,
-            bps_block: old_contract.bps_block,
-            bps_timestamp: old_contract.bps_timestamp,
             tasks: old_contract.tasks,
             slots: old_contract.slots,
             slot_granularity: old_contract.slot_granularity,
@@ -42,34 +40,21 @@ impl Contract {
             agent_active_queue: Vector::new(StorageKeys::AgentsActive),
             agent_pending_queue: Vector::new(StorageKeys::AgentsPending),
             agent_task_ratio: [1, 2],
+            agent_active_index: 0,
             agents_eject_threshold: 10,
         }
     }
 
     /// Tick: Cron Manager Heartbeat
-    /// Used to aid computation of blocks per second, manage internal use of funds
-    /// NOTE: This is a small array, allowing the adjustment of the previous block in the past
-    /// so the block tps average is always using more block distance than "now", ideally ~1000 blocks
+    /// Used to manage agents, manage internal use of funds
+    ///
+    /// Return operations balances, for external on-chain contract monitoring
     ///
     /// near call cron.testnet tick '{}'
-    pub fn tick(&mut self) {
-        let prev_block = self.bps_block[0];
-        let prev_timestamp = self.bps_timestamp[0];
-
-        // Check that we dont allow 0 BPS
-        assert!(
-            prev_block + 10 < env::block_index(),
-            "Tick triggered too soon"
-        );
-
-        self.bps_block[0] = env::block_index();
-        self.bps_block[1] = prev_block;
-        self.bps_timestamp[0] = env::block_timestamp();
-        self.bps_timestamp[1] = prev_timestamp;
-
+    pub fn tick(&mut self) -> (Balance, Balance, Balance) {
         // TBD: Internal staking management
         log!(
-            "Balances: Available {}, Staked {}",
+            "Balances [Operations, Treasury]:  [{},{}]",
             self.available_balance,
             self.staked_balance
         );
@@ -77,16 +62,17 @@ impl Contract {
         // execute agent management every tick so we can allow coming/going of agents without each agent paying to manage themselves
         // NOTE: the agent CAN pay to execute "tick" method if they are anxious to become an active agent. The most they can query is every 10s.
         self.manage_agents();
+
+        (
+            env::account_balance(),
+            self.available_balance,
+            self.staked_balance,
+        )
     }
 
     /// Manage agents
     fn manage_agents(&mut self) {
         let current_slot = self.get_slot_id(None);
-        let total_agents = self.agent_active_queue.len();
-        // No agents found, but dont panic.
-        if total_agents == 0 {
-            return;
-        }
 
         // Loop all agents to assess if really active
         // Why the copy here? had to get a mutable reference from immutable self instance
@@ -95,10 +81,13 @@ impl Contract {
             let _agent = self.agents.get(&agent_id);
 
             if let Some(_agent) = _agent {
-                let last_slot = u128::from(_agent.slot_execs[0]);
+                let last_slot = u128::from(_agent.last_missed_slot);
 
                 // Check if any agents need to be ejected, looking at previous task slot and current
-                if current_slot > last_slot + self.agents_eject_threshold {
+                // LOGIC: If agent misses X number of slots, eject!
+                if current_slot
+                    > last_slot + (self.agents_eject_threshold * u128::from(self.slot_granularity))
+                {
                     true
                 } else {
                     false
@@ -109,40 +98,38 @@ impl Contract {
         });
 
         // EJECT!
-        for id in bad_agents {
-            self.exit_agent(Some(id), Some(true));
+        // Dont eject if only 1 agent remaining... so sad. no lonely allowed.
+        if self.agent_active_queue.len() > 1 {
+            for id in bad_agents {
+                self.exit_agent(Some(id), Some(true));
+            }
         }
 
-        // TODO: Check this insane logic. Def feels scary with the while statements. (check for rounding of div_euclid!)
-        // Check if agents are low, and accept an available pending agent
-        if self.agent_pending_queue.len() > 0 {
-            // get the total tasks for the next few slots, and take the average
-            let mut i = 0;
-            let mut slots: Vec<u128> = Vec::new();
-            while i < 5 {
-                let tmp_slot = self.get_slot_id(None);
-                slots.push(tmp_slot);
-                i += 1;
-            }
+        // Get data needed to check for agent<>task ratio
+        let total_tasks = self.tasks.len();
+        let total_agents = self.agent_active_queue.len();
+        let [agent_amount, task_amount] = self.agent_task_ratio;
 
-            let sum: u128 = Iterator::sum(slots.iter());
-            let avg_tasks = sum.div_euclid(slots.len() as u128);
-            let task_per_agent = self.get_total_tasks_per_agent_per_slot();
-            let agent_queue_available = avg_tasks.div_euclid(task_per_agent as u128);
+        // no panic returns. safe-guard from idiot ratios.
+        if total_tasks == 0 || total_agents == 0 {
+            return;
+        }
+        if agent_amount == 0 || task_amount == 0 {
+            return;
+        }
+        let ratio = task_amount.div_euclid(agent_amount);
+        let total_available_agents = total_tasks.div_euclid(ratio);
 
-            // if agent threshold is 1 below or more, iterate to add pending agents into active queue
-            if agent_queue_available > 0 {
-                let mut a = agent_queue_available;
-                while a > 0 {
-                    // FIFO grab pending agents
-                    let agent_id = self.agent_pending_queue.swap_remove(0);
-                    if let Some(mut agent) = self.agents.get(&agent_id) {
-                        agent.status = agent::AgentStatus::Active;
-                        self.agents.insert(&agent_id, &agent);
-                        self.agent_active_queue.push(&agent_id);
-                    }
-
-                    a -= 1;
+        // Check if there are more tasks to allow a new agent
+        if total_available_agents > total_agents {
+            // There's enough tasks to support another agent, check if we have any pending
+            if self.agent_pending_queue.len() > 0 {
+                // FIFO grab pending agents
+                let agent_id = self.agent_pending_queue.swap_remove(0);
+                if let Some(mut agent) = self.agents.get(&agent_id) {
+                    agent.status = agent::AgentStatus::Active;
+                    self.agents.insert(&agent_id, &agent);
+                    self.agent_active_queue.push(&agent_id);
                 }
             }
         }
@@ -156,8 +143,7 @@ mod tests {
     use near_sdk::test_utils::{accounts, VMContextBuilder};
     use near_sdk::{testing_env, MockedBlockchain};
 
-    const BLOCK_START_BLOCK: u64 = 52_201_040;
-    const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
+    const BLOCK_START_TS: u64 = 1633759320000000000;
 
     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -166,25 +152,31 @@ mod tests {
             .signer_account_id(predecessor_account_id.clone())
             .signer_account_pk(b"ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM".to_vec())
             .predecessor_account_id(predecessor_account_id)
-            .block_index(BLOCK_START_BLOCK)
             .block_timestamp(BLOCK_START_TS);
         builder
     }
 
+    // TODO: Add test for checking pending agent here.
     #[test]
     fn test_tick() {
         let mut context = get_context(accounts(1));
         testing_env!(context.is_view(false).build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.bps_block[0], 52201040);
-        testing_env!(context.is_view(false).block_index(52201240).build());
+        testing_env!(context
+            .is_view(false)
+            .block_timestamp(1633759440000000000)
+            .build());
         contract.tick();
-        testing_env!(context.is_view(false).block_index(52207040).build());
+        testing_env!(context
+            .is_view(false)
+            .block_timestamp(1633760160000000000)
+            .build());
         contract.tick();
-        testing_env!(context.is_view(false).block_index(52208540).build());
+        testing_env!(context
+            .is_view(false)
+            .block_timestamp(1633760460000000000)
+            .build());
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.bps_block[0], 52207040);
-        assert_eq!(contract.bps_block[1], 52201240);
     }
 }

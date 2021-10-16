@@ -3,29 +3,33 @@ mod test_utils;
 use crate::test_utils::{
     bootstrap_time_simulation, counter_create_task, find_log_from_outcomes, helper_create_task,
     sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter,
+    sim_helper_init_sputnikv2,
 };
 use manager::{Agent, Task};
-use near_sdk::json_types::{Base64VecU8, U128};
+use near_sdk::json_types::{Base64VecU8, U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json;
 use near_sdk::serde_json::{json, Value};
 use near_sdk_sim::hash::CryptoHash;
 use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
-use near_sdk_sim::DEFAULT_GAS;
+use near_sdk_sim::types::AccountId;
+use near_sdk_sim::{to_yocto, DEFAULT_GAS};
 
 // Load in contract bytes at runtime
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
     pub CRON_MANAGER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/manager.wasm",
     pub COUNTER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/rust_counter_tutorial.wasm",
+    pub SPUTNIKV2_WASM_BYTES => "./tests/sputnik/sputnikdao2.wasm",
 }
 
 const MANAGER_ID: &str = "manager.sim";
 const COUNTER_ID: &str = "counter.sim";
+const SPUTNIKV2_ID: &str = "sputnikv2.sim";
 const AGENT_ID: &str = "agent.sim";
 const USER_ID: &str = "user.sim";
 const NEW_NAME_ID: &str = "newname.sim";
 const TASK_BASE64: &str = "QgpuCtvr2ZRq87F8FG9qKaiKA400LXBOut5WohwCTxI=";
-const AGENT_REGISTRATION_COST: u128 = 2_420_000_000_000_000_000_000;
+const AGENT_REGISTRATION_COST: u128 = 2_260_000_000_000_000_000_000;
 const AGENT_FEE: u128 = 60_000_000_000_000_000_000_000u128;
 
 type TaskBase64Hash = String;
@@ -74,7 +78,7 @@ fn simulate_many_tasks() {
     counter_create_task(&counter, cron.account_id(), "0 7 5 * * * *").assert_success();
     counter_create_task(&counter, cron.account_id(), "0 43 * * * * *").assert_success();
 
-    // Slots 120, 240, 360, 600, 720, 1080, 1800, 2520, 2760, 10740, 18360
+    // Slots ["240000000000","360000000000","480000000000","720000000000","840000000000","1200000000000","1920000000000","2640000000000","2880000000000","10860000000000","18480000000000"]
 
     // register agent
     agent
@@ -91,23 +95,24 @@ fn simulate_many_tasks() {
     // in order to move blocks forward. But once we do, future calls will
     // look different.
     let mut root_runtime = root_account.borrow_runtime_mut();
-    assert!(
-        root_runtime.produce_blocks(120).is_ok(),
-        "Couldn't produce blocks"
-    );
+    while root_runtime.produce_blocks(1).is_ok() {
+        if root_runtime.cur_block.block_timestamp >= 240000000000 {
+            break;
+        }
+    }
 
     // Should find a task
     let mut get_tasks_view_res =
-        root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
+        root_runtime.view_method_call("cron.root", "get_slot_tasks", "{\"offset\": 1}".as_bytes());
     println!("get_tasks_view_res {:?}", get_tasks_view_res);
-    let mut success_val = r#"
-        [["xdnWQtc0KAq2i+/vyFQSHGvr5K0DPgyVUYfE8886qMs="],"120"]
-    "#;
-    let mut success_vec: Vec<u8> = success_val.trim().into(); // trim because of multiline assignment above
+    // let mut success_val = r#"
+    //     [["xdnWQtc0KAq2i+/vyFQSHGvr5K0DPgyVUYfE8886qMs="],"240000000000"]
+    // "#;
+    let success_vecs: Vec<u8> = vec![91, 91, 34, 120, 100, 110, 87, 81, 116, 99, 48, 75, 65, 113, 50, 105, 43, 47, 118, 121, 70, 81, 83, 72, 71, 118, 114, 53, 75, 48, 68, 80, 103, 121, 86, 85, 89, 102, 69, 56, 56, 56, 54, 113, 77, 115, 61, 34, 93, 44, 34, 51, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 34, 93];
     assert_eq!(
         get_tasks_view_res.unwrap(),
-        success_vec,
-        "Should find one particular task hash at slot 120"
+        success_vecs,
+        "Should find one particular task hash at slot 240000000000"
     );
 
     // Check that the counter really did update
@@ -142,15 +147,15 @@ fn simulate_many_tasks() {
     );
 
     // Ensure it doesn't find tasks now, except for the same one that's now completed
-    get_tasks_view_res = root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
-    success_val = r#"
-        [[],"120"]
+    get_tasks_view_res = root_runtime.view_method_call("cron.root", "get_slot_tasks", "{}".as_bytes());
+    let success_val = r#"
+        [[],"240000000000"]
     "#;
-    success_vec = success_val.trim().into();
+    let mut success_vec: Vec<u8> = success_val.trim().into(); // trim because of multiline assignment above
     assert_eq!(
         get_tasks_view_res.unwrap(),
         success_vec,
-        "Should find no task hashes at slot 120 anymore"
+        "Should find no task hashes at slot 240000000000 anymore"
     );
 
     let mut tasks_info: GetTasksReturn = get_tasks_view_res.unwrap_json();
@@ -160,7 +165,7 @@ fn simulate_many_tasks() {
     assert_eq!(
         get_tasks_view_res.unwrap(),
         success_vec,
-        "There should not be any tasks at current slot of 120"
+        "There should not be any tasks at current slot of 240000000000"
     );
 
     // Proxy call should panic when no tasks to execute
@@ -190,15 +195,26 @@ fn simulate_many_tasks() {
 
     // Go through the remainder of the slots, executing tasks
     let mut nonce = 4;
-    for n in &[240, 360, 600, 720, 1080, 1800, 2520, 2760, 10740, 18360] {
+    for n in &[
+        360000000000u64,
+        480000000000u64,
+        720000000000u64,
+        840000000000u64,
+        1200000000000u64,
+        1920000000000u64,
+        2640000000000u64,
+        2880000000000u64,
+        10860000000000u64,
+        18480000000000u64,
+    ] {
         // produce blocks until next slot
-        let cur_block_height = root_runtime.cur_block.block_height;
-        assert!(
-            root_runtime.produce_blocks(n - cur_block_height).is_ok(),
-            "Couldn't produce blocks"
-        );
+        while root_runtime.produce_blocks(1).is_ok() {
+            if &root_runtime.cur_block.block_timestamp >= n {
+                break;
+            }
+        }
         get_tasks_view_res =
-            root_runtime.view_method_call("cron.root", "get_tasks", "{}".as_bytes());
+            root_runtime.view_method_call("cron.root", "get_slot_tasks", "{}".as_bytes());
         tasks_info = get_tasks_view_res.unwrap_json();
         assert_eq!(tasks_info.hashes.len(), 1, "Expecting 1 task for this slot");
         // Proxy call
@@ -225,7 +241,7 @@ fn simulate_many_tasks() {
     let mut agent_info_result = root_runtime.view_method_call(
         "cron.root",
         "get_agent",
-        "{\"account\": \"agent.root\"}".as_bytes(),
+        "{\"account_id\": \"agent.root\"}".as_bytes(),
     );
     let mut agent_info: Agent = agent_info_result.unwrap_json();
     // Confirm that the agent has executed 11 tasks
@@ -258,7 +274,7 @@ fn simulate_many_tasks() {
         &agent_signer,
         0,
         "get_agent".into(),
-        "{\"account\": \"agent.root\"}".as_bytes().to_vec(),
+        "{\"account_id\": \"agent.root\"}".as_bytes().to_vec(),
         DEFAULT_GAS,
         CryptoHash::default(),
     ));
@@ -281,7 +297,7 @@ fn simulate_many_tasks() {
     agent_info_result = root_runtime.view_method_call(
         "cron.root",
         "get_agent",
-        "{\"account\": \"agent.root\"}".as_bytes(),
+        "{\"account_id\": \"agent.root\"}".as_bytes(),
     );
     agent_info = agent_info_result.unwrap_json();
     assert_eq!(
@@ -317,7 +333,7 @@ fn simulate_many_tasks() {
     agent_info_result = root_runtime.view_method_call(
         "cron.root",
         "get_agent",
-        "{\"account\": \"agent.root\"}".as_bytes(),
+        "{\"account_id\": \"agent.root\"}".as_bytes(),
     );
     assert!(agent_info_result.is_ok(), "Expected get_agent to return Ok");
     let agent_info_val: Value = agent_info_result.unwrap_json_value();
@@ -496,7 +512,7 @@ fn simulate_basic_agent_registration_update() {
             cron.account_id(),
             "get_agent",
             &json!({
-                "account": agent.account_id
+                "account_id": agent.account_id
             })
             .to_string()
             .into_bytes(),
@@ -537,6 +553,7 @@ fn simulate_task_creation_agent_usage() {
     // create a task
     let execution_result = counter_create_task(&counter, "cron.root".to_string(), "0 30 * * * * *");
     execution_result.assert_success();
+    // Slot is 1860000000000
 
     // register agent
     agent
@@ -553,9 +570,12 @@ fn simulate_task_creation_agent_usage() {
     // in order to move blocks forward. But once we do, future calls will
     // look different.
     let mut root_runtime = root_account.borrow_runtime_mut();
-    // Move forward proper amount until slot 1740
-    let block_production_result = root_runtime.produce_blocks(1780);
-    assert!(block_production_result.is_ok(), "Couldn't produce blocks");
+    // Move forward proper amount until a slot where the timestamp becomes valid
+    while root_runtime.produce_blocks(1).is_ok() {
+        if root_runtime.cur_block.block_timestamp >= 1860000000000 {
+            break;
+        }
+    }
 
     // Agent calls proxy_call using new transaction syntax with borrowed,
     // mutable runtime object.
@@ -590,4 +610,230 @@ fn simulate_task_creation_agent_usage() {
         ))
         .expect("Error withdrawing task balance");
     find_log_from_outcomes(&root_runtime, &"Withdrawal of".to_string());
+}
+
+#[test]
+fn simulate_sputnikv2_interaction() {
+    let (root, cron) = sim_helper_init();
+    let dao_user = root.create_user(USER_ID.into(), to_yocto("100"));
+    let sputnik = sim_helper_init_sputnikv2(&root);
+
+    // tell cron that the DAO is the new owner
+    cron.call(
+        cron.account_id(),
+        "update_settings",
+        &json!({
+            "owner_id": sputnik.account_id
+        })
+        .to_string()
+        .into_bytes(),
+        DEFAULT_GAS,
+        0,
+    )
+    .assert_success();
+
+    // View the agent fee
+    let mut agent_info_result = cron.view(
+        cron.account_id(),
+        "get_info",
+        &json!({}).to_string().into_bytes(),
+    );
+
+    let mut agent_info: (
+        bool,
+        AccountId,
+        U64,
+        U64,
+        [u16; 2],
+        U128,
+        U64,
+        U64,
+        U128,
+        U128,
+        U128, // agent fee
+        U128,
+        U64,
+        U64,
+        U64,
+        U128,
+    ) = agent_info_result.unwrap_json();
+    let original_agent_fee = agent_info.10;
+
+    // dao user creates a proposal to increase agent fee
+    let args = Base64VecU8(
+        json!({"agent_fee": "1111111111111111111111",})
+            .to_string()
+            .into_bytes(),
+    );
+    dao_user
+        .call(
+            sputnik.account_id.clone(),
+            "add_proposal",
+            &json!({
+                "proposal": {
+                    "description": "increase cron agent fee",
+                    "kind": {
+                        "FunctionCall": {
+                            "receiver_id": cron.account_id,
+                            "actions": [{
+                                "method_name": "update_settings",
+                                "args": args,
+                                "deposit": "0",
+                                "gas": "100000000000000"
+                            }]
+                        }
+                    }
+                }
+            })
+            .to_string()
+            .into_bytes(),
+            DEFAULT_GAS,
+            10u128.pow(24),
+        )
+        .assert_success();
+
+    // The dao user approves the proposal
+    dao_user
+        .call(
+            sputnik.account_id.clone(),
+            "act_proposal",
+            &json!({
+                "id": 0,
+                "action": "VoteApprove"
+            })
+            .to_string()
+            .into_bytes(),
+            DEFAULT_GAS,
+            0,
+        )
+        .assert_success();
+
+    agent_info_result = cron.view(
+        cron.account_id(),
+        "get_info",
+        &json!({}).to_string().into_bytes(),
+    );
+    agent_info = agent_info_result.unwrap_json();
+    let updated_agent_fee = agent_info.10;
+    assert_ne!(
+        original_agent_fee, updated_agent_fee,
+        "Agent fee should have updated"
+    );
+    assert_eq!(original_agent_fee, U128(500000000000000000000));
+    assert_eq!(updated_agent_fee, U128(1111111111111111111111));
+
+    // Ensure that original owner shouldn't be able to call since it's updated
+    let expected_failure = cron.call(
+        cron.account_id(),
+        "update_settings",
+        &json!({
+            "owner_id": cron.account_id()
+        })
+        .to_string()
+        .into_bytes(),
+        DEFAULT_GAS,
+        0,
+    );
+    let status = expected_failure.status();
+    match status {
+        ExecutionStatus::Failure(f) => {
+            // Not great to use `contains` but will have to do for now.
+            assert!(
+                f.to_string().contains("Must be owner"),
+                "Should not be able to call update_settings if not the updated owner"
+            );
+        }
+        _ => panic!("Expected failure after original owner is no longer in control"),
+    }
+}
+
+#[test]
+fn common_tick_workflow() {
+    /*
+    #- clear, create & bootstrap
+    #- register a new agent "agent.ion.testnet"
+    #- create more tasks (minimum 4 total)
+    #- tick method
+    #- some agent tries to call proxy_call and fails
+     */
+    let (agent_signer, root_account, agent, counter, cron) = bootstrap_time_simulation();
+
+    counter_create_task(&counter, cron.account_id(), "0 3 * * * * *").assert_success();
+
+    // register agent
+    agent
+        .call(
+            "cron.root".to_string(),
+            "register_agent",
+            &json!({}).to_string().into_bytes(),
+            DEFAULT_GAS,
+            AGENT_REGISTRATION_COST,
+        )
+        .assert_success();
+
+    let second_agent =
+        root_account.create_user("second-agent.root".parse().unwrap(), to_yocto("100"));
+    second_agent
+        .call(
+            "cron.root".to_string(),
+            "register_agent",
+            &json!({}).to_string().into_bytes(),
+            DEFAULT_GAS,
+            AGENT_REGISTRATION_COST,
+        )
+        .assert_success();
+
+    // Add a few more tasks
+    counter_create_task(&counter, cron.account_id(), "0 13 * * * * *").assert_success();
+    counter_create_task(&counter, cron.account_id(), "6 19 * * * * *").assert_success();
+    counter_create_task(&counter, cron.account_id(), "6 31 * * * * *").assert_success();
+    counter_create_task(&counter, cron.account_id(), "0 47 * * * * *").assert_success();
+    counter_create_task(&counter, cron.account_id(), "0 7 5 * * * *").assert_success();
+    counter_create_task(&counter, cron.account_id(), "0 43 * * * * *").assert_success();
+
+    let mut root_runtime = root_account.borrow_runtime_mut();
+    assert!(
+        root_runtime.produce_blocks(1900).is_ok(),
+        "Couldn't produce blocks"
+    );
+
+    // Call tick
+    let mut res = root_runtime.resolve_tx(SignedTransaction::call(
+        2,
+        "agent.root".to_string(),
+        "cron.root".to_string(),
+        &agent_signer.clone(),
+        0,
+        "tick".into(),
+        "{}".as_bytes().to_vec(),
+        DEFAULT_GAS,
+        CryptoHash::default(),
+    ));
+    let (_, res_outcome) = res.unwrap();
+    // TODO: figure out why the balance here is changing (first arg)
+    // TICK responds with balance, task total balance, staked balance
+    // let res_computed = b"[50848814243575983200000000,843360000000000000000000,0]".to_vec();
+    assert_ne!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
+
+    // Not sure if we need this
+    assert!(
+        root_runtime.produce_blocks(1900).is_ok(),
+        "Couldn't produce blocks"
+    );
+
+    // Agent calls proxy_call using new transaction syntax with borrowed,
+    // mutable runtime object.
+    res = root_runtime.resolve_tx(SignedTransaction::call(
+        3,
+        "agent.root".to_string(),
+        "cron.root".to_string(),
+        &agent_signer.clone(),
+        0,
+        "proxy_call".into(),
+        "{}".as_bytes().to_vec(),
+        DEFAULT_GAS,
+        CryptoHash::default(),
+    ));
+    let (_, res_outcome) = res.unwrap();
+    assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
 }

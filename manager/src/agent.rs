@@ -17,7 +17,7 @@ pub enum AgentStatus {
 pub struct Agent {
     pub status: AgentStatus,
 
-    // Where rewards get transfered
+    // Where rewards get transferred
     pub payable_account_id: AccountId,
 
     // accrued reward balance
@@ -26,10 +26,11 @@ pub struct Agent {
     // stats
     pub total_tasks_executed: U128,
 
-    // Holds last known execution of task, so we know how many tasks this agent can execute within this slot
-    // Model: [block_height, exec_count]
-    // Example data: [23456789, 7]
-    pub slot_execs: [u128; 2],
+    // Holds slot number of a missed slot.
+    // If other agents see an agent miss a slot, they store the missed slot number.
+    // If agent does a task later, this number is reset to zero.
+    // Example data: 1633890060000000000 or 0
+    pub last_missed_slot: u128,
 }
 
 #[near_bindgen]
@@ -82,7 +83,7 @@ impl Contract {
             payable_account_id: payable_id,
             balance: U128::from(required_deposit),
             total_tasks_executed: U128::from(0),
-            slot_execs: [0, 0],
+            last_missed_slot: 0,
         };
 
         self.agents.insert(&account, &agent);
@@ -140,10 +141,13 @@ impl Contract {
         // check that signer agent exists
         if let Some(mut agent) = self.agents.get(&account) {
             let agent_balance = agent.balance.0;
-            assert!(
-                agent_balance > storage_fee,
-                "No Agent balance beyond the storage balance"
-            );
+            // If remove is present, still allow exiting of only storage balance agent
+            if remove.is_none() {
+                assert!(
+                    agent_balance > storage_fee,
+                    "No Agent balance beyond the storage balance"
+                );
+            }
             let withdrawal_amount = agent_balance - storage_fee;
             agent.balance = U128::from(agent_balance - withdrawal_amount);
 
@@ -164,6 +168,8 @@ impl Contract {
     }
 
     /// Removes the agent from the active & pending set of agents.
+    // NOTE: swap_remove takes last element in vector and replaces index removed, so potentially FIFO agent lists can get out of order for pending queue. Not exactly "fair". Could change to use "replace", if storage write is not too expensive with large lists.
+    // TODO: Check the state changes! getting: Smart contract panicked: The collection is an inconsistent state. Did previous smart contract execution terminate unexpectedly?
     #[private]
     pub fn remove_agent(&mut self, account_id: AccountId) {
         self.agents.remove(&account_id);
@@ -194,10 +200,10 @@ impl Contract {
     /// Gets the agent data stats
     ///
     /// ```bash
-    /// near view cron.testnet get_agent '{"account": "YOUR_AGENT.testnet"}'
+    /// near view cron.testnet get_agent '{"account_id": "YOUR_AGENT.testnet"}'
     /// ```
-    pub fn get_agent(&self, account: AccountId) -> Option<Agent> {
-        self.agents.get(&account)
+    pub fn get_agent(&self, account_id: AccountId) -> Option<Agent> {
+        self.agents.get(&account_id)
     }
 }
 
@@ -210,7 +216,7 @@ mod tests {
 
     const BLOCK_START_BLOCK: u64 = 52_201_040;
     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
-    const AGENT_REGISTRATION_COST: u128 = 2_420_000_000_000_000_000_000;
+    const AGENT_REGISTRATION_COST: u128 = 2_260_000_000_000_000_000_000;
 
     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
@@ -250,7 +256,7 @@ mod tests {
                 payable_account_id: accounts(1).to_string(),
                 balance: U128::from(AGENT_REGISTRATION_COST),
                 total_tasks_executed: U128::from(0),
-                slot_execs: [0, 0],
+                last_missed_slot: 0,
             })
         );
     }
@@ -286,7 +292,7 @@ mod tests {
                 payable_account_id: accounts(2).to_string(),
                 balance: U128::from(AGENT_REGISTRATION_COST),
                 total_tasks_executed: U128::from(0),
-                slot_execs: [0, 0],
+                last_missed_slot: 0,
             })
         );
     }
@@ -322,7 +328,7 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         assert_eq!(
-            242, contract.agent_storage_usage,
+            226, contract.agent_storage_usage,
             "Expected different storage usage for the agent."
         );
     }

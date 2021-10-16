@@ -31,6 +31,12 @@ Run:
 ./scripts/simple_bootstrap.sh
 ```
 
+Power user:
+```bash
+export NEAR_ACCT=YOU.testnet
+./scripts/clear_all.sh && ./scripts/create_and_deploy.sh && ./scripts/simple_bootstrap.sh
+```
+
 ## Create testnet subaccounts
 Next, create a NEAR testnet account with [Wallet](https://wallet.testnet.near.org).
 
@@ -116,6 +122,10 @@ near call crud.$NEAR_ACCT status --accountId crud.$NEAR_ACCT
 ```
 
 ## Changelog
+
+### `0.4.0`
+
+Mainnet preparation, convenience methods, multi-agent support
 
 ### `0.2.0`
 
