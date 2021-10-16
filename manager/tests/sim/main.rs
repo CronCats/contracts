@@ -12,7 +12,7 @@ use near_sdk::serde_json;
 use near_sdk::serde_json::{json, Value};
 use near_sdk_sim::hash::CryptoHash;
 use near_sdk_sim::transaction::{ExecutionStatus, SignedTransaction};
-use near_sdk_sim::types::{AccountId,Balance};
+use near_sdk_sim::types::AccountId;
 use near_sdk_sim::{to_yocto, DEFAULT_GAS};
 
 // Load in contract bytes at runtime
