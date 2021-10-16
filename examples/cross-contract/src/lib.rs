@@ -19,7 +19,8 @@ pub const MILLISECONDS_IN_DAY: u64 = 86_400_000;
 
 /// Gas & Balance Configs
 pub const NO_DEPOSIT: u128 = 0;
-pub const GAS_FOR_TICK_CALL: Gas = 7_000_000_000_000;
+pub const GAS_FOR_COMPUTE_CALL: Gas = 7_000_000_000_000;
+pub const GAS_FOR_COMPUTE_CALLBACK: Gas = 25_000_000_000_000;
 pub const GAS_FOR_SCHEDULE_CALL: Gas = 25_000_000_000_000;
 pub const GAS_FOR_SCHEDULE_CALLBACK: Gas = 5_000_000_000_000;
 pub const GAS_FOR_UPDATE_CALL: Gas = 15_000_000_000_000;
@@ -63,7 +64,7 @@ pub trait ExtCroncat {
     ) -> Base64VecU8;
     fn remove_task(&mut self, task_hash: Base64VecU8);
     fn proxy_call(&mut self);
-    fn tick(&mut self);
+    fn get_info(&mut self) -> (bool, AccountId, U64, U64, [u64; 2], U128, U64, U64, U128, U128, U128, U128, U64, U64, U64, U128);
 }
 
 #[ext_contract(ext)]
@@ -80,41 +81,53 @@ pub trait ExtCrossContract {
         #[serializer(borsh)]
         task: Option<Task>,
     );
+    fn compute_callback(
+        &self,
+        #[callback]
+        #[serializer(borsh)]
+        info: (bool, AccountId, U64, U64, [u64; 2], U128, U64, U64, U128, U128, U128, U128, U64, U64, U64, U128),
+    );
 }
 
 // GOALs:
 // create a contract the has full cron CRUD operations managed within this contract
-// contract utility is sample idea of an indexer: keep track of SOME number in a "timeseries"
-// methods: tick, schedule, update, remove, status, series
+// contract utility is sample idea of an indexer: keep track of info numbers in a "timeseries"
 
 // NOTE: The series could be updated to support OHLCV, Sums, MACD, etc...
 
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
-    MinutelySeries,
-    HourlySeries,
-    DailySeries,
+    HourlyBalanceSeries,
+    HourlyQueueSeries,
+    HourlySlotsSeries,
+    DailyBalanceSeries,
+    DailyQueueSeries,
+    DailySlotsSeries,
 }
 
 #[derive(Default, BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct TickItem {
     t: u64,  // point in time
-    v: u128, // value at time
+    x: Option<u128>, // value at time
+    y: Option<u128>, // value at time
+    z: Option<u128>, // value at time
 }
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct CrudContract {
-    // tick: raw, holding 24 hours of minutely items
-    minutely: Vector<TickItem>,
-    // tick: avg over 1hr of data, holding 30 days of hourly items
-    hourly: Vector<TickItem>,
-    // tick: avg over 1 day of data, holding 1 year of daily items
-    daily: Vector<TickItem>,
-    // Cron task hash, default will be running at the minutely scale
+    // tick: sums over 1hr of data, holding 30 days of hourly items
+    hourly_balances: Vector<TickItem>,
+    hourly_queues: Vector<TickItem>,
+    hourly_slots: Vector<TickItem>,
+    // tick: sums over 1 day of data, holding 1 year of daily items
+    daily_balances: Vector<TickItem>,
+    daily_queues: Vector<TickItem>,
+    daily_slots: Vector<TickItem>,
+    // Cron task hash, default will be running at the hourly scale
     task_hash: Option<Base64VecU8>,
-    // Cron account
+    // Cron manager account (manager_v1.croncat.near)
     cron: Option<AccountId>,
 }
 
@@ -134,125 +147,194 @@ impl CrudContract {
         );
 
         CrudContract {
-            minutely: Vector::new(StorageKeys::MinutelySeries),
-            hourly: Vector::new(StorageKeys::HourlySeries),
-            daily: Vector::new(StorageKeys::DailySeries),
+            hourly_balances: Vector::new(StorageKeys::HourlyBalanceSeries),
+            hourly_queues: Vector::new(StorageKeys::HourlyQueueSeries),
+            hourly_slots: Vector::new(StorageKeys::HourlySlotsSeries),
+            daily_balances: Vector::new(StorageKeys::HourlyBalanceSeries),
+            daily_queues: Vector::new(StorageKeys::HourlyQueueSeries),
+            daily_slots: Vector::new(StorageKeys::HourlySlotsSeries),
             task_hash: None,
             cron,
         }
     }
 
-    /// Returns the time series of data, for minutely, hourly, daily
+    /// Returns the time series of data for hourly, daily
     ///
     /// ```bash
     /// near view crosscontract.testnet get_series
     /// ```
-    pub fn get_series(&self) -> (Vec<TickItem>, Vec<TickItem>, Vec<TickItem>) {
+    pub fn get_series(&self) -> (Vec<TickItem>, Vec<TickItem>, Vec<TickItem>, Vec<TickItem>, Vec<TickItem>, Vec<TickItem>) {
         (
-            self.minutely.to_vec(),
-            self.hourly.to_vec(),
-            self.daily.to_vec(),
+            self.hourly_balances.to_vec(),
+            self.hourly_queues.to_vec(),
+            self.hourly_slots.to_vec(),
+            self.daily_balances.to_vec(),
+            self.daily_queues.to_vec(),
+            self.daily_slots.to_vec(),
         )
     }
 
-    /// Tick: CrudContract Heartbeat
-    /// Used to compute this time periods minutely/hourly/daily
+    /// Compute: CrudContract Heartbeat
+    /// Used to compute this time periods hourly/daily
     /// This fn can be called a varying intervals to compute rolling window time series data.
     ///
     /// ```bash
-    /// near call crosscontract.testnet tick '{}' --accountId YOUR_ACCOUNT.testnet
+    /// near call crosscontract.testnet compute '{}' --accountId YOUR_ACCOUNT.testnet
     /// ```
-    pub fn tick(&mut self) {
+    pub fn compute(&mut self) -> Promise {
+        ext_croncat::get_info(
+            &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
+            env::attached_deposit(),
+            GAS_FOR_SCHEDULE_CALL,
+        )
+        .then(ext::compute_callback(
+            &env::current_account_id(),
+            NO_DEPOSIT,
+            GAS_FOR_COMPUTE_CALLBACK,
+        ))
+    }
+
+    /// Get the task hash, and store in state
+    /// NOTE: This method helps contract understand remaining task balance, in case more is needed to continue running.
+    /// NOTE: This could handle things about the task, or have logic about changing the task in some way.
+    #[private]
+    pub fn compute_callback(&mut self, #[callback] info: (bool, AccountId, U64, U64, [u64; 2], U128, U64, U64, U128, U128, U128, U128, U64, U64, U64, U128)) {
         // compute the current intervals
         let block_ts = env::block_timestamp();
-        let validator_num = env::validator_total_stake();
         let rem_threshold = 60_000;
         let rem_hour = core::cmp::max(block_ts % MILLISECONDS_IN_HOUR, 1);
         let rem_day = core::cmp::max(block_ts % MILLISECONDS_IN_DAY, 1);
         log!("REMS: {:?} {:?}", rem_hour, rem_day);
         log!(
-            "LENS: {:?} {:?} {:?}",
-            self.minutely.len(),
-            self.hourly.len(),
-            self.daily.len()
+            "LENS: {:?} {:?} {:?} {:?} {:?} {:?}",
+            self.hourly_balances.len(),
+            self.hourly_queues.len(),
+            self.hourly_slots.len(),
+            self.daily_balances.len(),
+            self.daily_queues.len(),
+            self.daily_slots.len(),
         );
+
+        // Le stuff frem le responsi
+        let (
+            _,
+            _,
+            agent_active_queue,
+            agent_pending_queue,
+            _,
+            _,
+            slots,
+            tasks,
+            available_balance,
+            staked_balance,
+            _,
+            _,
+            _,
+            slot_granularity,
+            _,
+            balance,
+        ) = info;
 
         // get some data value, at a point in time
         // I chose a stupid value, but one that changes over time. This can be changed to account balances, token prices, anything that changes over time.
-        let minute_tick = TickItem {
+        let hour_balance = TickItem {
             t: block_ts / NANOS,
-            v: validator_num,
+            x: Some(balance.0),
+            y: Some(available_balance.0),
+            z: Some(staked_balance.0),
         };
-        log!("New Tick: {:?}", minute_tick);
+        log!("New HR Balance: {:?}", hour_balance);
+        
+        // More ticks
+        let hour_queue = TickItem {
+            t: block_ts / NANOS,
+            x: Some(agent_active_queue.0 as u128),
+            y: Some(agent_pending_queue.0 as u128),
+            z: None,
+        };
+        let hour_slots = TickItem {
+            t: block_ts / NANOS,
+            x: Some(slots.0 as u128),
+            y: Some(tasks.0 as u128),
+            z: Some(slot_granularity.0 as u128),
+        };
 
         // compute for each interval match, made a small buffer window to make sure the computed value doesnt get computed too far out of range
-        self.minutely.push(&minute_tick);
+        self.hourly_balances.push(&hour_balance);
+        self.hourly_queues.push(&hour_queue);
+        self.hourly_slots.push(&hour_slots);
 
         // trim to max
-        if self.minutely.len() > 1440 {
-            // 24 hours of minutes (24*60)
-            self.minutely.pop();
-        }
-
-        // hourly average across last 1hr of data including NEW
-        if rem_hour <= rem_threshold {
-            // 3_600_000
-            let total_hour_ticks: u64 = 60;
-            let end_index = self.hourly.len();
-            let start_index = core::cmp::max(end_index - total_hour_ticks, 1);
-            let mut hour_avg_num = validator_num;
-
-            // minus 1 for current number above
-            for i in start_index..end_index {
-                if let Some(tick) = self.hourly.get(i) {
-                    hour_avg_num += tick.v;
-                };
-            }
-
-            self.hourly.push(&TickItem {
-                t: block_ts / NANOS,
-                v: hour_avg_num / u128::from(total_hour_ticks),
-            });
-
-            // trim to max
-            if end_index > 744 {
-                // 31 days of hours (24*31)
-                self.hourly.pop();
-            }
+        if self.hourly_balances.len() > 744 {
+            // 31 days of hours (24*31)
+            // TODO: Change this to unshift lol
+            self.hourly_balances.pop();
+            self.hourly_queues.pop();
+            self.hourly_slots.pop();
         }
 
         // daily average across last 1hr of data including NEW
         if rem_day <= rem_threshold {
             // 86_400_000
             let total_day_ticks: u64 = 24;
-            let end_index = self.daily.len();
+            let end_index = self.daily_balances.len();
             let start_index = end_index - total_day_ticks;
-            let mut hour_avg_num = validator_num;
+            let mut hour_balance_tick = TickItem {
+                t: block_ts / NANOS,
+                x: Some(0),
+                y: Some(0),
+                z: Some(0),
+            };
+            let mut hour_queue_tick = TickItem {
+                t: block_ts / NANOS,
+                x: Some(0),
+                y: Some(0),
+                z: None,
+            };
+            let mut hour_slots_tick = TickItem {
+                t: block_ts / NANOS,
+                x: Some(0),
+                y: Some(0),
+                z: Some(0),
+            };
 
             // minus 1 for current number above
             for i in start_index..end_index {
-                if let Some(tick) = self.daily.get(i) {
-                    hour_avg_num += tick.v;
+                if let Some(tick) = self.daily_balances.get(i) {
+                    // Aggregate tick numbers
+                    hour_balance_tick.x = if tick.x.is_some() { Some(hour_balance_tick.x.unwrap_or(0) + tick.x.unwrap_or(0)) } else { hour_balance_tick.x };
+                    hour_balance_tick.y = if tick.y.is_some() { Some(hour_balance_tick.y.unwrap_or(0) + tick.y.unwrap_or(0)) } else { hour_balance_tick.y };
+                    hour_balance_tick.z = if tick.z.is_some() { Some(hour_balance_tick.z.unwrap_or(0) + tick.z.unwrap_or(0)) } else { hour_balance_tick.z };
+                };
+                if let Some(tick) = self.hourly_queues.get(i) {
+                    // Aggregate tick numbers
+                    hour_queue_tick.x = if tick.x.is_some() { Some(hour_queue_tick.x.unwrap_or(0) + tick.x.unwrap_or(0)) } else { hour_queue_tick.x };
+                    hour_queue_tick.y = if tick.y.is_some() { Some(hour_queue_tick.y.unwrap_or(0) + tick.y.unwrap_or(0)) } else { hour_queue_tick.y };
+                };
+                if let Some(tick) = self.hourly_slots.get(i) {
+                    // Aggregate tick numbers
+                    hour_slots_tick.x = if tick.x.is_some() { Some(hour_slots_tick.x.unwrap_or(0) + tick.x.unwrap_or(0)) } else { hour_slots_tick.x };
+                    hour_slots_tick.y = if tick.y.is_some() { Some(hour_slots_tick.y.unwrap_or(0) + tick.y.unwrap_or(0)) } else { hour_slots_tick.y };
+                    hour_slots_tick.z = if tick.z.is_some() { Some(hour_slots_tick.z.unwrap_or(0) + tick.z.unwrap_or(0)) } else { hour_slots_tick.z };
                 };
             }
 
-            self.daily.push(&TickItem {
-                t: block_ts / NANOS,
-                v: hour_avg_num / u128::from(total_day_ticks),
-            });
+            self.daily_balances.push(&hour_balance_tick);
+            self.daily_balances.push(&hour_queue_tick);
+            self.daily_balances.push(&hour_slots_tick);
 
             // trim to max
             if end_index > 1825 {
                 // 5 years of days (365*5)
-                self.daily.pop();
+                self.daily_balances.pop();
             }
         }
     }
 
-    /// Create a new scheduled task, registering the "tick" method with croncat
+    /// Create a new scheduled task, registering the "compute" method with croncat
     ///
     /// ```bash
-    /// near call crosscontract.testnet schedule '{ "function_id": "tick", "period": "0 */1 * * * *" }' --accountId YOUR_ACCOUNT.testnet
+    /// near call crosscontract.testnet schedule '{ "function_id": "compute", "period": "0 0 * * * *" }' --accountId YOUR_ACCOUNT.testnet
     /// ```
     #[payable]
     pub fn schedule(&mut self, function_id: String, period: String) -> Promise {
@@ -270,7 +352,7 @@ impl CrudContract {
             period,
             Some(true),
             Some(U128::from(NO_DEPOSIT)),
-            Some(GAS_FOR_TICK_CALL), // 30 Tgas
+            Some(GAS_FOR_COMPUTE_CALL), // 30 Tgas
             None,
             &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
             env::attached_deposit(),
@@ -357,11 +439,10 @@ impl CrudContract {
     /// ```bash
     /// near call crosscontract.testnet status
     /// ```
-    pub fn stats(&self) -> (u64, u64, u64, Option<Base64VecU8>, Option<AccountId>) {
+    pub fn stats(&self) -> (u64, u64, Option<Base64VecU8>, Option<AccountId>) {
         (
-            self.minutely.len(),
-            self.hourly.len(),
-            self.daily.len(),
+            self.hourly_balances.len(),
+            self.daily_balances.len(),
             self.task_hash.clone(),
             self.cron.clone(),
         )
