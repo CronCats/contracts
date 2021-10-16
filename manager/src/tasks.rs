@@ -76,12 +76,6 @@ impl Contract {
         } else {
             call_balance_used
         };
-        // Agent fee is now too high for this check to matter
-        // assert!(
-        //     min_balance_needed > u128::from(GAS_BASE_FEE),
-        //     "Gas minimum has not been met, need at least {}",
-        //     min_balance_needed
-        // );
         assert!(
             min_balance_needed <= item.total_deposit.0,
             "Not enough task balance to execute job, need at least {}",
@@ -108,7 +102,6 @@ impl Contract {
         // Add the attached balance into available_balance
         self.available_balance += env::attached_deposit();
 
-        log!("Task Hash {:?}", Base64VecU8::from(hash.clone()));
         Base64VecU8::from(hash)
     }
 

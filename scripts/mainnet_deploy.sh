@@ -32,6 +32,8 @@ else
   export NEAR_ACCT=$NEAR_ACCT
 fi
 
+export MAX_GAS=300000000000000
+
 export CRON_ACCOUNT_ID=manager_v1.$NEAR_ACCT
 export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 
@@ -51,8 +53,16 @@ export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 # near deploy --wasmFile ./res/manager.wasm --accountId $CRON_ACCOUNT_ID --initFunction new --initArgs '{}'
 
 
+# # Assign ownership to the DAO
+# near call $CRON_ACCOUNT_ID update_settings '{ "owner_id": "'$DAO_ACCOUNT_ID'", "paused": true }' --accountId $CRON_ACCOUNT_ID --gas $MAX_GAS
+
+
 # RE:Deploy all the contracts to their rightful places
 # near deploy --wasmFile ./res/manager.wasm --accountId $CRON_ACCOUNT_ID
-# near view $CRON_ACCOUNT_ID version
+
+
+# Check all configs first
+near view $CRON_ACCOUNT_ID version
+near view $CRON_ACCOUNT_ID get_info
 
 echo "Testnet Deploy Complete"

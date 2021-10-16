@@ -28,6 +28,12 @@ export DAO_ACCOUNT_ID=croncat.sputnikv2.$FACTORY
 near view $CRON_ACCOUNT_ID version
 near view $CRON_ACCOUNT_ID get_info
 
+# # UnPause the manager (only turn on for rapid testing, otherwise the main flow will go through DAO)
+# near call $CRON_ACCOUNT_ID update_settings '{ "paused": false }' --accountId $CRON_ACCOUNT_ID --gas $MAX_GAS
+
+# # Assign ownership to the DAO
+near call $CRON_ACCOUNT_ID update_settings '{ "owner_id": "'$DAO_ACCOUNT_ID'", "paused": false }' --accountId $CRON_ACCOUNT_ID --gas $MAX_GAS
+
 # Register the "tick" task, as the base for regulating BPS
 near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$CRON_ACCOUNT_ID'","function_id": "tick","cadence": "0 0 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId $CRON_ACCOUNT_ID --amount 10
 
