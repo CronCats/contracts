@@ -18,7 +18,7 @@ fi
 
 # build the things
 cargo build --all --target wasm32-unknown-unknown --release
-cp target/wasm32-unknown-unknown/release/*.wasm ./res/
+cp ../target/wasm32-unknown-unknown/release/*.wasm ./res/
 
 # Uncomment the desired network
 export NEAR_ENV=mainnet
@@ -27,7 +27,7 @@ export FACTORY=near
 
 if [ -z ${NEAR_ACCT+x} ]; then
   # you will need to change this to something you own
-  export NEAR_ACCT=cron.near
+  export NEAR_ACCT=croncat.$FACTORY
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi
@@ -46,7 +46,7 @@ export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 
 
 ## create all accounts
-# near create-account $CRON_ACCOUNT_ID --masterAccount $NEAR_ACCT
+# near create-account $CRON_ACCOUNT_ID --masterAccount $NEAR_ACCT --initialBalance 10
 
 
 # Deploy all the contracts to their rightful places
