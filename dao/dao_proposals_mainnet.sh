@@ -12,6 +12,11 @@ export NEAR_ENV=mainnet
 # FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
 # near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Unpause the croncat manager contract to enable cron tasks", "kind": {"FunctionCall": {"receiver_id": "'$CRON_ACCOUNT'", "actions": [{"method_name": "update_settings", "args": "'$FIXED_ARGS'", "deposit": "0", "gas": "50000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
 
+## CRONCAT config change proposal
+# ARGS=`echo "{ \"agents_eject_threshold\": \"600\" }" | base64`
+# FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
+# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Change agent kick length to 10 hours", "kind": {"FunctionCall": {"receiver_id": "'$CRON_ACCOUNT'", "actions": [{"method_name": "update_settings", "args": "'$FIXED_ARGS'", "deposit": "0", "gas": "50000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
+
 ## CRONCAT Launch proposal: TICK Task
 # ARGS=`echo "{\"contract_id\": \"$CRON_ACCOUNT\",\"function_id\": \"tick\",\"cadence\": \"0 0 * * * *\",\"recurring\": true,\"deposit\": \"0\",\"gas\": 2400000000000}" | base64`
 # FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
