@@ -13,6 +13,7 @@ impl Contract {
         gas_price: Option<U128>,
         proxy_callback_gas: Option<U64>,
         agent_task_ratio: Option<Vec<U64>>,
+        agents_eject_threshold: Option<U128>,
     ) {
         assert_eq!(
             self.owner_id,
@@ -42,6 +43,9 @@ impl Contract {
         }
         if let Some(agent_task_ratio) = agent_task_ratio {
             self.agent_task_ratio = [agent_task_ratio[0].0, agent_task_ratio[1].0];
+        }
+        if let Some(agents_eject_threshold) = agents_eject_threshold {
+            self.agents_eject_threshold = agents_eject_threshold.0;
         }
     }
 }
@@ -82,7 +86,7 @@ mod tests {
             .signer_account_id(accounts(3))
             .predecessor_account_id(accounts(3))
             .build());
-        contract.update_settings(None, Some(10), None, None, None, None, None);
+        contract.update_settings(None, Some(10), None, None, None, None, None, None);
     }
 
     #[test]
@@ -94,7 +98,7 @@ mod tests {
         assert_eq!(contract.slot_granularity, SLOT_GRANULARITY);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, Some(10), Some(true), None, None, None, None);
+        contract.update_settings(None, Some(10), Some(true), None, None, None, None, None);
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.slot_granularity, 10);
         assert_eq!(contract.paused, true);
@@ -117,6 +121,7 @@ mod tests {
             None,
             None,
             Some(vec![U64(2), U64(5)]),
+            None,
         );
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.agent_task_ratio[0], 2);

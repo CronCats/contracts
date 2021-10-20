@@ -35,7 +35,7 @@ pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 // Boundary Definitions
 pub const MAX_BLOCK_TS_RANGE: u64 = 1_000_000_000_000_000_000;
 pub const SLOT_GRANULARITY: u64 = 60_000_000_000; // 60 seconds in nanos
-pub const AGENT_EJECT_THRESHOLD: u128 = 10; // how many slots an agent can miss before being ejected. 10 * 60 = 1hr
+pub const AGENT_EJECT_THRESHOLD: u128 = 600; // how many slots an agent can miss before being ejected. 10 * 60 = 1hr
 pub const NANO: u64 = 1_000_000_000;
 
 #[derive(BorshStorageKey, BorshSerialize)]
