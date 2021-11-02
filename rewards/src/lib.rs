@@ -5,7 +5,8 @@ use near_sdk::{
     json_types::{Base64VecU8, ValidAccountId, U128, U64},
     near_bindgen,
     serde::{Deserialize, Serialize},
-    AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise,
+    serde_json,
+    AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseResult,
     log,
 };
 
@@ -69,10 +70,10 @@ pub trait ExtCroncat {
 pub trait ExtRewards {
     fn pet_distribute_croncat(
         &mut self,
-        // owner_id: AccountId,
-        #[callback]
-        #[serializer(borsh)]
-        task: Option<Task>,
+        owner_id: AccountId,
+        // #[callback]
+        // #[serializer(borsh)]
+        // task: Option<Task>,
     );
 }
 
@@ -177,7 +178,7 @@ impl Contract {
             GAS_FOR_CHECK_TASK_CALL,
         )
         .then(ext_rewards::pet_distribute_croncat(
-            // owner_id,
+            owner_id,
             &env::current_account_id(),
             NO_DEPOSIT,
             GAS_FOR_CHECK_TASK_CALLBACK,
@@ -188,15 +189,15 @@ impl Contract {
     #[private]
     pub fn pet_distribute_croncat(
         &mut self,
-        // owner_id: AccountId,
-        #[callback]
-        task: Option<Task>,
+        owner_id: AccountId,
+        // #[callback]
+        // task: Option<Task>,
     ) { // -> Promise
         log!("HERE HERE");
-        // log!("owner {:?}", &owner_id);
-        if task.is_some() {
-            log!("task {:?}", &task.unwrap().owner_id);
-        }
+        log!("owner {:?}", &owner_id);
+        // if task.is_some() {
+        //     log!("task {:?}", &task.unwrap().owner_id);
+        // }
         // Check that task owner matches this owner
         // assert_eq!(owner_id, task.owner_id, "Task is not owned by you");
 
@@ -210,6 +211,41 @@ impl Contract {
         //     NO_DEPOSIT,
         //     GAS_FOR_PXPET_DISTRO_CALL,
         // )
+        log!("promises {:?}", env::promise_results_count());
+
+        assert_eq!(
+            env::promise_results_count(),
+            1,
+            "Expected 1 promise result."
+        );
+        match env::promise_result(0) {
+            PromiseResult::NotReady => {
+                unreachable!()
+            }
+            PromiseResult::Successful(task_result) => {
+                log!("TASK PAYLOAD: {:?}", &task_result);
+                // let task: Task = serde_json::from_slice(&task_result)
+                // let task: Task = serde_json::from_slice(&task_result)
+                //     .expect("Could not get result from task hash");
+                let task: serde_json::Value = serde_json::de::from_slice(&task_result)
+                    .expect("Could not get result from task hash");
+                // let u: Task = serde_json::from_slice(&task_result).unwrap();
+                // log!("{:#?}", u);
+                log!("task owner {:?} {:?}", &task["owner_id"], &task["owner_id"] == &owner_id);
+                // if creation_succeeded {
+                //     // New account created and reward transferred successfully.
+                //     self.finalize_puzzle(crossword_pk, account_id, memo, signer_pk);
+                //     true
+                // } else {
+                //     // Something went wrong trying to create the new account.
+                //     false
+                // }
+            }
+            PromiseResult::Failed => {
+                // Problem with the creation transaction, reward money has been returned to this contract.
+                // false
+            }
+        }
     }
 
     /// Watch for new cron task that grants a pet
