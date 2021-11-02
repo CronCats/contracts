@@ -29,7 +29,7 @@ pub const GAS_BASE_PRICE: Balance = 100_000_000;
 pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
 // actual is: 13534954161128, higher in case treemap rebalance
 pub const GAS_FOR_CALLBACK: Gas = 30_000_000_000_000;
-pub const AGENT_BASE_FEE: Balance =   500_000_000_000_000_000_000; // 0.0005 Ⓝ (2000 tasks = 1 Ⓝ)
+pub const AGENT_BASE_FEE: Balance = 500_000_000_000_000_000_000; // 0.0005 Ⓝ (2000 tasks = 1 Ⓝ)
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
 // Boundary Definitions

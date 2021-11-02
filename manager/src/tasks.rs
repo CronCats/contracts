@@ -801,13 +801,31 @@ mod tests {
         assert_eq!(slot, 1624151460000000000);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, Some(30_000_000_000), None, None, None, None, None, None);
+        contract.update_settings(
+            None,
+            Some(30_000_000_000),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
         assert_eq!(slot, 1624151490000000000);
 
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, Some(10_000_000_000), None, None, None, None, None, None);
+        contract.update_settings(
+            None,
+            Some(10_000_000_000),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
         assert_eq!(slot, 1624151500000000000);
