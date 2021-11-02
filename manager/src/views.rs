@@ -88,6 +88,19 @@ impl Contract {
         }
     }
 
+    /// Gets list of active slot ids
+    ///
+    /// ```bash
+    /// near view cron.testnet get_slot_ids
+    /// ```
+    pub fn get_slot_ids(&self) -> Vec<U128> {
+        self.slots
+            .to_vec()
+            .iter()
+            .map(|i| U128::from(i.0))
+            .collect()
+    }
+
     /// Returns task data
     /// Used by the frontend for viewing tasks
     /// REF: https://docs.near.org/docs/concepts/data-storage#gas-consumption-examples-1
@@ -141,6 +154,40 @@ impl Contract {
         let task_hash = task_hash.0;
         let task = self.tasks.get(&task_hash).expect("No task found by hash");
         task
+    }
+
+    /// Get the hash of a task based on parameters
+    ///
+    /// ```bash
+    /// near view cron.testnet get_hash '{"contract_id": "YOUR_CONTRACT.near","function_id": "METHOD_NAME","cadence": "0 0 */1 * * *","owner_id": "YOUR_ACCOUNT.near"}'
+    /// ```
+    pub fn get_hash(
+        &self,
+        contract_id: String,
+        function_id: String,
+        cadence: String,
+        owner_id: AccountId,
+    ) -> Base64VecU8 {
+        // Generate hash, needs to be from known values so we can reproduce the hash without storing
+        let input = format!(
+            "{:?}{:?}{:?}{:?}",
+            contract_id, function_id, cadence, owner_id
+        );
+        Base64VecU8::from(env::sha256(input.as_bytes()))
+    }
+
+    /// Gets list of agent ids
+    ///
+    /// ```bash
+    /// near view cron.testnet get_agent_ids
+    /// ```
+    pub fn get_agent_ids(&self) -> (String, String) {
+        let comma: &str = ",";
+        (
+            self.agent_active_queue.iter().map(|a| a + comma).collect(),
+            // self.agent_active_queue.iter().collect(),
+            self.agent_pending_queue.iter().map(|a| a + comma).collect(),
+        )
     }
 
     /// Check how many tasks an agent can execute

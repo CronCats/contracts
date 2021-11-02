@@ -18,7 +18,7 @@ fi
 
 # build the things
 cargo build --all --target wasm32-unknown-unknown --release
-cp target/wasm32-unknown-unknown/release/*.wasm ./res/
+cp ../target/wasm32-unknown-unknown/release/*.wasm ./res/
 
 # Uncomment the desired network
 export NEAR_ENV=testnet
@@ -68,6 +68,7 @@ export DAO_ACCOUNT_ID=dao.sputnikv2.$FACTORY
 # RE:Deploy all the contracts to their rightful places
 # near deploy --wasmFile ./res/manager.wasm --accountId $CRON_ACCOUNT_ID
 # near view $CRON_ACCOUNT_ID version
+near view $CRON_ACCOUNT_ID get_info
 # near deploy --wasmFile ./res/rust_counter_tutorial.wasm --accountId $COUNTER_ACCOUNT_ID
 # near deploy --wasmFile ./res/cross_contract.wasm --accountId $CRUD_ACCOUNT_ID
 

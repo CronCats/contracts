@@ -21,9 +21,9 @@ cargo build --all --target wasm32-unknown-unknown --release
 cp ../target/wasm32-unknown-unknown/release/*.wasm ./res/
 
 # Uncomment the desired network
-export NEAR_ENV=mainnet
+export NEAR_ENV=guildnet
 
-export FACTORY=near
+export FACTORY=guildnet
 
 if [ -z ${NEAR_ACCT+x} ]; then
   # you will need to change this to something you own
@@ -34,7 +34,7 @@ fi
 
 export MAX_GAS=300000000000000
 
-export CRON_ACCOUNT_ID=manager_v1.$NEAR_ACCT
+export CRON_ACCOUNT_ID=agent1.$NEAR_ACCT
 export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 
 ######
@@ -46,7 +46,7 @@ export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 
 
 ## create all accounts
-# near create-account $CRON_ACCOUNT_ID --masterAccount $NEAR_ACCT --initialBalance 10
+near create-account $CRON_ACCOUNT_ID --masterAccount $NEAR_ACCT --initialBalance 1000
 
 
 # Deploy all the contracts to their rightful places
@@ -55,6 +55,7 @@ export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 
 # # Assign ownership to the DAO
 # near call $CRON_ACCOUNT_ID update_settings '{ "owner_id": "'$DAO_ACCOUNT_ID'", "paused": true }' --accountId $CRON_ACCOUNT_ID --gas $MAX_GAS
+# near call $CRON_ACCOUNT_ID update_settings '{ "paused": false }' --accountId $CRON_ACCOUNT_ID --gas $MAX_GAS
 
 
 # RE:Deploy all the contracts to their rightful places
@@ -65,4 +66,4 @@ export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 near view $CRON_ACCOUNT_ID version
 near view $CRON_ACCOUNT_ID get_info
 
-echo "Mainnet Deploy Complete"
+echo "Testnet Deploy Complete"
