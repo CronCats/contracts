@@ -1,11 +1,12 @@
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{UnorderedSet},
+    collections::UnorderedSet,
     env, ext_contract,
     json_types::{Base64VecU8, ValidAccountId, U128, U64},
     near_bindgen,
     serde::{Deserialize, Serialize},
     AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise,
+    log,
 };
 
 near_sdk::setup_alloc!();
@@ -31,13 +32,24 @@ pub struct Task {
 
 #[ext_contract(ext_pixelpet)]
 pub trait ExtPixelpet {
-    fn distribute_croncat(&self, account_id: AccountId);
+    fn distribute_croncat(
+        &self,
+        account_id: AccountId,
+        #[callback]
+        #[serializer(borsh)]
+        task: Option<Task>,
+    );
 }
 
 #[ext_contract(ext_croncat)]
 pub trait ExtCroncat {
     fn get_slot_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, U128);
-    fn get_tasks(&self, slot: Option<U128>, from_index: Option<U64>, limit: Option<U64>) -> Vec<Task>;
+    fn get_tasks(
+        &self,
+        slot: Option<U128>,
+        from_index: Option<U64>,
+        limit: Option<U64>,
+    ) -> Vec<Task>;
     // fn get_task(&self, task_hash: Base64VecU8) -> Task;
     fn get_task(&self, task_hash: String) -> Task;
     fn create_task(
@@ -57,10 +69,10 @@ pub trait ExtCroncat {
 pub trait ExtRewards {
     fn pet_distribute_croncat(
         &mut self,
-        owner_id: AccountId,
+        // owner_id: AccountId,
         #[callback]
         #[serializer(borsh)]
-        task: Task,
+        task: Option<Task>,
     );
 }
 
@@ -81,7 +93,6 @@ pub struct Contract {
     pixelpet_account_id: AccountId,
     pixelpet_accounts_claimed: UnorderedSet<AccountId>,
     pixelpet_max_issued: u8,
-
     // TBD: NFT & DAO Management
 }
 
@@ -91,10 +102,7 @@ impl Contract {
     /// near call rewards.cron.testnet --initFunction new --initArgs '{"cron_account_id": "manager.cron.testnet", "dao_account_id": "dao.sputnikv2.testnet"}' --accountId cron.testnet
     /// ```
     #[init]
-    pub fn new(
-        cron_account_id: ValidAccountId,
-        dao_account_id: ValidAccountId,
-    ) -> Self {
+    pub fn new(cron_account_id: ValidAccountId, dao_account_id: ValidAccountId) -> Self {
         Contract {
             paused: false,
             cron_account_id: cron_account_id.into(),
@@ -124,7 +132,10 @@ impl Contract {
     pub fn stats(&self) -> (u64, String) {
         (
             self.pixelpet_accounts_claimed.len(),
-            self.pixelpet_accounts_claimed.iter().map(|s| s.to_string()).collect(),
+            self.pixelpet_accounts_claimed
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         )
     }
 
@@ -133,10 +144,7 @@ impl Contract {
     /// near call rewards.cron.testnet update_settings '{"pixelpet_account_id": "pixeltoken.near"}' --accountId cron.testnet
     /// ```
     #[private]
-    pub fn update_settings(
-        &mut self,
-        pixelpet_account_id: Option<AccountId>,
-    ) {
+    pub fn update_settings(&mut self, pixelpet_account_id: Option<AccountId>) {
         if let Some(pixelpet_account_id) = pixelpet_account_id {
             self.pixelpet_account_id = pixelpet_account_id;
         }
@@ -150,10 +158,16 @@ impl Contract {
         let owner_id = env::predecessor_account_id();
 
         // Check owner doesnt already ahve pet
-        assert!(!self.pixelpet_accounts_claimed.contains(&owner_id), "Owner already has pet");
+        assert!(
+            !self.pixelpet_accounts_claimed.contains(&owner_id),
+            "Owner already has pet"
+        );
 
         // Check there are pets left
-        assert!(self.pixelpet_accounts_claimed.len() <= u64::from(self.pixelpet_max_issued), "All pets claimed");
+        assert!(
+            self.pixelpet_accounts_claimed.len() <= u64::from(self.pixelpet_max_issued),
+            "All pets claimed"
+        );
 
         // Get the task data
         ext_croncat::get_task(
@@ -163,7 +177,7 @@ impl Contract {
             GAS_FOR_CHECK_TASK_CALL,
         )
         .then(ext_rewards::pet_distribute_croncat(
-            owner_id,
+            // owner_id,
             &env::current_account_id(),
             NO_DEPOSIT,
             GAS_FOR_CHECK_TASK_CALLBACK,
@@ -174,12 +188,33 @@ impl Contract {
     #[private]
     pub fn pet_distribute_croncat(
         &mut self,
-        owner_id: AccountId,
-        #[callback] task: Task
-    ) -> Promise {
+        // owner_id: AccountId,
+        #[callback]
+        task: Option<Task>,
+    ) { // -> Promise
+        log!("HERE HERE");
+        // log!("owner {:?}", &owner_id);
+        if task.is_some() {
+            log!("task {:?}", &task.unwrap().owner_id);
+        }
         // Check that task owner matches this owner
-        assert_eq!(owner_id, task.owner_id, "Task is not owned by you");
+        // assert_eq!(owner_id, task.owner_id, "Task is not owned by you");
 
+        // // NOTE: Possible for promise to fail and this blocks another attempt to claim pet
+        // self.pixelpet_accounts_claimed.insert(&owner_id);
+
+        // // Trigger call to pixel pets
+        // ext_pixelpet::distribute_croncat(
+        //     owner_id,
+        //     &self.pixelpet_account_id,
+        //     NO_DEPOSIT,
+        //     GAS_FOR_PXPET_DISTRO_CALL,
+        // )
+    }
+
+    /// Watch for new cron task that grants a pet
+    #[private]
+    pub fn test_pet_distribute_croncat(&mut self, owner_id: AccountId) -> Promise {
         // NOTE: Possible for promise to fail and this blocks another attempt to claim pet
         self.pixelpet_accounts_claimed.insert(&owner_id);
 
@@ -194,20 +229,8 @@ impl Contract {
 
     /// Watch for new cron task that grants a pet
     #[private]
-    pub fn test_pet_distribute_croncat(
-        &mut self,
-        owner_id: AccountId
-    ) -> Promise {
-        // NOTE: Possible for promise to fail and this blocks another attempt to claim pet
-        self.pixelpet_accounts_claimed.insert(&owner_id);
-
-        // Trigger call to pixel pets
-        ext_pixelpet::distribute_croncat(
-            owner_id,
-            &self.pixelpet_account_id,
-            NO_DEPOSIT,
-            GAS_FOR_PXPET_DISTRO_CALL,
-        )
+    pub fn test_pet_remove_croncat(&mut self, owner_id: AccountId) {
+        self.pixelpet_accounts_claimed.remove(&owner_id);
     }
 }
 

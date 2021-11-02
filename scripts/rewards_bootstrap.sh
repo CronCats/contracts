@@ -29,9 +29,9 @@ export DAO_ACCOUNT_ID=croncat.sputnikv2.$FACTORY
 near view $REWARDS_ACCOUNT_ID version
 
 # Config things
-# near call $REWARDS_ACCOUNT_ID update_settings '{"pixelpet_account_id": "pixeltoken.near"}' --accountId $REWARDS_ACCOUNT_ID --gas $MAX_GAS
+near call $REWARDS_ACCOUNT_ID update_settings '{"pixelpet_account_id": "pixeltoken.near"}' --accountId $REWARDS_ACCOUNT_ID --gas $MAX_GAS
 
 # Do quick test of pet distro
-near call $REWARDS_ACCOUNT_ID pet_check_task_ownership '{"task_hash": "TBD"}' --accountId $USER_ACCOUNT_ID --gas $MAX_GAS
+# near call $REWARDS_ACCOUNT_ID pet_check_task_ownership '{"task_hash": "TBD"}' --accountId $USER_ACCOUNT_ID --gas $MAX_GAS
 
 echo "Cron $NEAR_ENV Bootstrap Complete"
