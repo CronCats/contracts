@@ -14,9 +14,9 @@ near_sdk::setup_alloc!();
 
 // Fee Definitions
 pub const NO_DEPOSIT: u128 = 0;
-pub const GAS_FOR_CHECK_TASK_CALL: Gas = 30_000_000_000_000;
-pub const GAS_FOR_CHECK_TASK_CALLBACK: Gas = 30_000_000_000_000;
-pub const GAS_FOR_PXPET_DISTRO_CALL: Gas = 30_000_000_000_000;
+pub const GAS_FOR_CHECK_TASK_CALL: Gas = 10_000_000_000_000;
+pub const GAS_FOR_CHECK_TASK_CALLBACK: Gas = 10_000_000_000_000;
+pub const GAS_FOR_PXPET_DISTRO_CALL: Gas = 10_000_000_000_000;
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
@@ -71,9 +71,6 @@ pub trait ExtRewards {
     fn pet_distribute_croncat(
         &mut self,
         owner_id: AccountId,
-        // #[callback]
-        // #[serializer(borsh)]
-        // task: Option<Task>,
     );
 }
 
@@ -190,29 +187,7 @@ impl Contract {
     pub fn pet_distribute_croncat(
         &mut self,
         owner_id: AccountId,
-        // #[callback]
-        // task: Option<Task>,
-    ) { // -> Promise
-        log!("HERE HERE");
-        log!("owner {:?}", &owner_id);
-        // if task.is_some() {
-        //     log!("task {:?}", &task.unwrap().owner_id);
-        // }
-        // Check that task owner matches this owner
-        // assert_eq!(owner_id, task.owner_id, "Task is not owned by you");
-
-        // // NOTE: Possible for promise to fail and this blocks another attempt to claim pet
-        // self.pixelpet_accounts_claimed.insert(&owner_id);
-
-        // // Trigger call to pixel pets
-        // ext_pixelpet::distribute_croncat(
-        //     owner_id,
-        //     &self.pixelpet_account_id,
-        //     NO_DEPOSIT,
-        //     GAS_FOR_PXPET_DISTRO_CALL,
-        // )
-        log!("promises {:?}", env::promise_results_count());
-
+    ) {
         assert_eq!(
             env::promise_results_count(),
             1,
@@ -223,27 +198,31 @@ impl Contract {
                 unreachable!()
             }
             PromiseResult::Successful(task_result) => {
-                log!("TASK PAYLOAD: {:?}", &task_result);
-                // let task: Task = serde_json::from_slice(&task_result)
-                // let task: Task = serde_json::from_slice(&task_result)
-                //     .expect("Could not get result from task hash");
                 let task: serde_json::Value = serde_json::de::from_slice(&task_result)
                     .expect("Could not get result from task hash");
-                // let u: Task = serde_json::from_slice(&task_result).unwrap();
-                // log!("{:#?}", u);
-                log!("task owner {:?} {:?}", &task["owner_id"], &task["owner_id"] == &owner_id);
-                // if creation_succeeded {
-                //     // New account created and reward transferred successfully.
-                //     self.finalize_puzzle(crossword_pk, account_id, memo, signer_pk);
-                //     true
-                // } else {
-                //     // Something went wrong trying to create the new account.
-                //     false
-                // }
+
+                if task.is_object() && task["owner_id"].is_string() {
+                    // Check that task owner matches this owner
+                    assert_eq!(&owner_id, &task["owner_id"], "Task is not owned by you");
+                    log!("Minting croncat pet to {:?}", &owner_id);
+
+                    // NOTE: Possible for promise to fail and this blocks another attempt to claim pet
+                    self.pixelpet_accounts_claimed.insert(&owner_id);
+
+                    // Trigger call to pixel pets
+                    ext_pixelpet::distribute_croncat(
+                        owner_id,
+                        &self.pixelpet_account_id,
+                        NO_DEPOSIT,
+                        GAS_FOR_PXPET_DISTRO_CALL,
+                    );
+                } else {
+                    log!("No pet distributed");
+                }
             }
             PromiseResult::Failed => {
                 // Problem with the creation transaction, reward money has been returned to this contract.
-                // false
+                log!("No pet distributed");
             }
         }
     }
