@@ -58,7 +58,7 @@ export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 
 
 # RE:Deploy all the contracts to their rightful places
-near deploy --wasmFile ./res/manager.wasm --accountId $CRON_ACCOUNT_ID
+# near deploy --wasmFile ./res/manager.wasm --accountId $CRON_ACCOUNT_ID
 
 
 # Check all configs first

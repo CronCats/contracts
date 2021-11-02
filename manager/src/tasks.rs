@@ -337,7 +337,8 @@ impl Contract {
 
 // Internal methods
 impl Contract {
-    pub fn hash(&self, item: &Task) -> Vec<u8> {
+    /// Get the hash of a task based on parameters
+    fn hash(&self, item: &Task) -> Vec<u8> {
         // Generate hash, needs to be from known values so we can reproduce the hash without storing
         let input = format!(
             "{:?}{:?}{:?}{:?}",
@@ -353,7 +354,7 @@ impl Contract {
     }
 
     /// Check if a cadence string is valid by attempting to parse it
-    pub fn validate_cadence(&self, cadence: &str) -> bool {
+    fn validate_cadence(&self, cadence: &str) -> bool {
         let s = Schedule::from_str(&cadence);
         if s.is_ok() {
             true

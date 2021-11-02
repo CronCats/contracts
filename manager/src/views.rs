@@ -143,6 +143,26 @@ impl Contract {
         task
     }
 
+    /// Get the hash of a task based on parameters
+    ///
+    /// ```bash
+    /// near view cron.testnet get_hash '{"contract_id": "YOUR_CONTRACT.near","function_id": "METHOD_NAME","cadence": "0 0 */1 * * *","owner_id": "YOUR_ACCOUNT.near"}'
+    /// ```
+    pub fn get_hash(
+        &self,
+        contract_id: String,
+        function_id: String,
+        cadence: String,
+        owner_id: AccountId
+    ) -> Vec<u8> {
+        // Generate hash, needs to be from known values so we can reproduce the hash without storing
+        let input = format!(
+            "{:?}{:?}{:?}{:?}",
+            contract_id, function_id, cadence, owner_id
+        );
+        env::sha256(input.as_bytes())
+    }
+
     /// Check how many tasks an agent can execute
     ///
     /// ```bash
