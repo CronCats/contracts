@@ -48,6 +48,21 @@ impl Contract {
             self.agents_eject_threshold = agents_eject_threshold.0;
         }
     }
+
+    /// Allows admin to remove slot data, in case a task gets stuck due to missed exits
+    pub fn remove_slot(&mut self, slot: U128) {
+        // assert_eq!(
+        //     self.owner_id,
+        //     env::predecessor_account_id(),
+        //     "Must be owner"
+        // );
+        assert_eq!(
+            env::current_account_id(),
+            env::predecessor_account_id(),
+            "Must be owner"
+        );
+        self.slots.remove(&slot.0);
+    }
 }
 
 #[cfg(test)]
