@@ -1,5 +1,5 @@
 set -e
-MASTER_ACC=tjtc.near
+MASTER_ACC=cron.near
 DAO_ROOT_ACC=sputnik-dao.near
 DAO_NAME=croncat
 DAO_ACCOUNT=$DAO_NAME.$DAO_ROOT_ACC
