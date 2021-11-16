@@ -3,6 +3,7 @@
 members = [
   "manager",
   "rewards",
+  "examples/airdrop",
   "examples/counter",
   "examples/charity",
   "examples/cross-contract"
