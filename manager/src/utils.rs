@@ -93,7 +93,7 @@ impl Contract {
 
         // EJECT!
         // Dont eject if only 1 agent remaining... so sad. no lonely allowed.
-        if self.agent_active_queue.len() > 1 {
+        if self.agent_active_queue.len() > 2 {
             for id in bad_agents {
                 self.exit_agent(Some(id), Some(true));
             }
