@@ -51,7 +51,7 @@ impl Contract {
     /// Return operations balances, for external on-chain contract monitoring
     ///
     /// near call cron.testnet tick '{}'
-    pub fn tick(&mut self) -> (Balance, Balance, Balance) {
+    pub fn tick(&mut self) {
         // TBD: Internal staking management
         log!(
             "Balances [Operations, Treasury]:  [{},{}]",
@@ -62,12 +62,6 @@ impl Contract {
         // execute agent management every tick so we can allow coming/going of agents without each agent paying to manage themselves
         // NOTE: the agent CAN pay to execute "tick" method if they are anxious to become an active agent. The most they can query is every 10s.
         self.manage_agents();
-
-        (
-            env::account_balance(),
-            self.available_balance,
-            self.staked_balance,
-        )
     }
 
     /// Manage agents

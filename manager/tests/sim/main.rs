@@ -816,10 +816,7 @@ fn common_tick_workflow() {
         CryptoHash::default(),
     ));
     let (_, res_outcome) = res.unwrap();
-    // TODO: figure out why the balance here is changing (first arg)
-    // TICK responds with balance, task total balance, staked balance
-    // let res_computed = b"[50848814243575983200000000,843360000000000000000000,0]".to_vec();
-    assert_ne!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
+    assert_eq!(res_outcome.status, ExecutionStatus::SuccessValue(vec![]));
 
     // Not sure if we need this
     assert!(
