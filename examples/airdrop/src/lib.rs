@@ -110,6 +110,7 @@ pub struct Airdrop {
     ft_account: AccountId,
     ft_balance: u128,
     nft_account: AccountId,
+    // TODO: these dont make sense yet
     nft_token_holders: UnorderedMap<u128, AccountId>,
     nft_account_holdings: UnorderedMap<AccountId, Vec<u128>>,
 }
@@ -236,7 +237,7 @@ impl Airdrop {
     /// - If used in conjunction with croncat, amount is optional so the internal contract can decide on variable token amounts
     ///
     /// ```bash
-    /// near call airdrop.testnet multisend
+    /// near call airdrop.testnet multisend '{"transfer_type": "FungibleToken", "amount": "1234567890000000"}' --amount 0.00000000000000000001
     /// ```
     #[payable]
     pub fn multisend(&mut self, transfer_type: TransferType, amount: Option<U128>) {
@@ -251,6 +252,20 @@ impl Airdrop {
         // TODO: Get max index and see if we exceeded or are going to exceed
         assert!(self.accounts.len() > 0, "No accounts");
         let token_amount = amount.unwrap_or(U128::from(0));
+
+        let start = self.index;
+        let end = u128::min(self.index * self.page_size, self.accounts.len());
+
+        // Return all tasks within range
+        // let keys = self.accounts.keys_as_vector();
+        let keys = self.accounts.as_vector();
+        for i in start..end {
+            if let Some(page_account) = keys.get(i) {
+                if let Some(acct) = self.accounts.get(&page_account) {
+                    
+                }
+            }
+        }
 
         // loop and transfer funds to each account
         // TODO: Change to paginated setup
