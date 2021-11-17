@@ -13,11 +13,13 @@ use near_sdk::{
 };
 use std::str::FromStr;
 pub use tasks::Task;
+pub use triggers::Trigger;
 
 mod agent;
 mod owner;
 mod storage_impl;
 mod tasks;
+mod triggers;
 mod utils;
 mod views;
 
@@ -45,6 +47,7 @@ pub enum StorageKeys {
     Slots,
     AgentsActive,
     AgentsPending,
+    Triggers,
 }
 
 #[near_bindgen]
@@ -70,6 +73,7 @@ pub struct Contract {
     // Basic management
     slots: TreeMap<u128, Vec<Vec<u8>>>,
     tasks: UnorderedMap<Vec<u8>, Task>,
+    triggers: UnorderedMap<Vec<u8>, Trigger>,
 
     // Economics
     available_balance: Balance,
@@ -81,8 +85,10 @@ pub struct Contract {
 
     // Storage
     agent_storage_usage: StorageUsage,
+    trigger_storage_usage: StorageUsage,
 }
 
+// TODO: Setup state migration for triggers, including initial storage calculation
 #[near_bindgen]
 impl Contract {
     /// ```bash
@@ -94,6 +100,7 @@ impl Contract {
             paused: false,
             owner_id: env::signer_account_id(),
             tasks: UnorderedMap::new(StorageKeys::Tasks),
+            triggers: UnorderedMap::new(StorageKeys::Triggers),
             agents: LookupMap::new(StorageKeys::Agents),
             agent_active_queue: Vector::new(StorageKeys::AgentsActive),
             agent_pending_queue: Vector::new(StorageKeys::AgentsPending),
@@ -108,27 +115,43 @@ impl Contract {
             proxy_callback_gas: GAS_FOR_CALLBACK,
             slot_granularity: SLOT_GRANULARITY,
             agent_storage_usage: 0,
+            trigger_storage_usage: 0,
         };
         this.measure_account_storage_usage();
         this
     }
 
+    // TODO: Trigger storage calc
     /// Measure the storage an agent will take and need to provide
     fn measure_account_storage_usage(&mut self) {
         let initial_storage_usage = env::storage_usage();
+        let max_len_string = "a".repeat(64);
+
         // Create a temporary, dummy entry and measure the storage used.
-        let tmp_account_id = "a".repeat(64);
         let tmp_agent = Agent {
             status: agent::AgentStatus::Pending,
-            payable_account_id: tmp_account_id.clone(),
+            payable_account_id: max_len_string.clone(),
             balance: U128::from(0),
             total_tasks_executed: U128::from(0),
             last_missed_slot: 0,
         };
-        self.agents.insert(&tmp_account_id, &tmp_agent);
+        self.agents.insert(&max_len_string, &tmp_agent);
         self.agent_storage_usage = env::storage_usage() - initial_storage_usage;
         // Remove the temporary entry.
-        self.agents.remove(&tmp_account_id);
+        self.agents.remove(&max_len_string);
+
+        // Calc the trigger storage needs
+        let tmp_trigger = Trigger {
+            owner_id: max_len_string.clone(),
+            contract_id: max_len_string.clone(),
+            function_id: max_len_string.clone(),
+            task_hash: max_len_string.clone(),
+            arguments: "a".repeat(1024),
+        };
+        self.triggers.insert(&max_len_string, &tmp_trigger);
+        self.trigger_storage_usage = env::storage_usage() - initial_storage_usage;
+        // Remove the temporary entry.
+        self.triggers.remove(&max_len_string);
     }
 
     /// Takes an optional `offset`: the number of seconds to offset from now (current block timestamp)
