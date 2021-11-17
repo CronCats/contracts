@@ -5,7 +5,8 @@ members = [
   "rewards",
   "examples/counter",
   "examples/charity",
-  "examples/cross-contract"
+  "examples/cross-contract",
+  "examples/views"
 ]
 
 [profile.release]
