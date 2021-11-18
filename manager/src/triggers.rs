@@ -22,6 +22,9 @@ pub struct Trigger {
     /// The task to trigger if view results in TRUE
     /// Task can still use a cadence, or can utilize a very large time window and allow view triggers to be main source of execution
     pub task_hash: Base64VecU8,
+
+    /// Useful for responses in view calls
+    pub hash: Option<Base64VecU8>,
 }
 
 #[near_bindgen]
@@ -51,6 +54,7 @@ impl Contract {
             function_id,
             task_hash,
             arguments: arguments.unwrap_or_else(|| Base64VecU8::from(vec![])),
+            hash: None,
         };
 
         let trigger_hash = self.trigger_hash(&item);
@@ -111,8 +115,9 @@ impl Contract {
         for i in start..end {
             if let Some(trigger_hash) = keys.get(i) {
                 if let Some(trigger) = self.triggers.get(&trigger_hash) {
-                    // TODO: Add the computed trigger hash here!
-                    ret.push(trigger);
+                    let mut trig: Trigger = trigger;
+                    trig.hash = Some(Base64VecU8::from(self.trigger_hash(&trig)));
+                    ret.push(trig);
                 }
             }
         }
