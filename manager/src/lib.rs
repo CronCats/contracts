@@ -9,7 +9,7 @@ use near_sdk::{
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json::json,
-    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, StorageUsage,
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseResult, StorageUsage,
 };
 use std::str::FromStr;
 pub use tasks::Task;
@@ -141,17 +141,18 @@ impl Contract {
         self.agents.remove(&max_len_string);
 
         // Calc the trigger storage needs
+        let tmp_hash = max_len_string.clone().try_to_vec().unwrap();
         let tmp_trigger = Trigger {
             owner_id: max_len_string.clone(),
             contract_id: max_len_string.clone(),
             function_id: max_len_string.clone(),
-            task_hash: max_len_string.clone(),
-            arguments: "a".repeat(1024),
+            task_hash: Base64VecU8::from(tmp_hash.clone()),
+            arguments: Base64VecU8::from("a".repeat(1024).try_to_vec().unwrap()),
         };
-        self.triggers.insert(&max_len_string, &tmp_trigger);
+        self.triggers.insert(&tmp_hash, &tmp_trigger);
         self.trigger_storage_usage = env::storage_usage() - initial_storage_usage;
         // Remove the temporary entry.
-        self.triggers.remove(&max_len_string);
+        self.triggers.remove(&tmp_hash);
     }
 
     /// Takes an optional `offset`: the number of seconds to offset from now (current block timestamp)

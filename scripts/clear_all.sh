@@ -10,7 +10,7 @@ export FACTORY=testnet
 # export FACTORY=registrar
 
 if [ -z ${NEAR_ACCT+x} ]; then
-  export NEAR_ACCT=cron.$FACTORY
+  export NEAR_ACCT=weicat.$FACTORY
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi
