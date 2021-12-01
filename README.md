@@ -123,6 +123,10 @@ near call crud.$NEAR_ACCT status --accountId crud.$NEAR_ACCT
 
 ## Changelog
 
+### `0.4.4`
+
+Mainnet security mitigation
+
 ### `0.4.0`
 
 Mainnet preparation, convenience methods, multi-agent support

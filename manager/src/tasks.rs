@@ -56,6 +56,12 @@ impl Contract {
         assert_eq!(self.paused, false, "Create task paused");
         // check cadence can be parsed
         assert!(self.validate_cadence(&cadence), "Cadence string invalid");
+        // check that the method is NOT the callback of this contract
+        assert!(function_id != "callback_for_proxy_call", "Function id invalid");
+        // cannot be THIS contract id, unless predecessor is owner of THIS contract
+        if contract_id.clone().to_string() == env::current_account_id() {
+            assert_eq!(contract_id.clone().to_string(), self.owner_id, "Creator invalid");
+        }
 
         let item = Task {
             owner_id: env::predecessor_account_id(),
@@ -498,6 +504,71 @@ mod tests {
             Some(200),
             None,
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "Function id invalid")]
+    fn test_task_create_bad_function_id() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(1000000000020000000100)
+            .build());
+        contract.create_task(
+            accounts(3),
+            "callback_for_proxy_call".to_string(),
+            "0 0 */1 * * *".to_string(),
+            Some(true),
+            Some(U128::from(100)),
+            Some(200),
+            None,
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Creator invalid")]
+    fn test_task_create_bad_contract_id() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(1000000000020000000100)
+            .build());
+        contract.create_task(
+            accounts(0),
+            "tick".to_string(),
+            "0 0 */1 * * *".to_string(),
+            Some(true),
+            Some(U128::from(100)),
+            Some(200),
+            None,
+        );
+    }
+
+    #[test]
+    fn test_task_create_okay_contract_id() {
+        let mut context = get_context(accounts(0));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(1000000000040000000200)
+            .build());
+        contract.create_task(
+            accounts(0),
+            "tick".to_string(),
+            "0 0 */1 * * *".to_string(),
+            Some(true),
+            Some(U128::from(100)),
+            Some(200),
+            None,
+        );
+
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.get_tasks(None, None, None).len(), 1);
     }
 
     #[test]
