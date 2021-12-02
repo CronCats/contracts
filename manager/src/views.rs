@@ -57,6 +57,20 @@ impl Contract {
         )
     }
 
+    /// Check if a cadence string is valid by attempting to parse it
+    /// 
+    /// ```bash
+    /// near view cron.testnet validate_cadence '{"cadence": "0 0 * * * *"}'
+    /// ```
+    pub fn validate_cadence(&self, cadence: String) -> bool {
+        let s = Schedule::from_str(&cadence);
+        if s.is_ok() {
+            true
+        } else {
+            false
+        }
+    }
+
     /// Gets a set of tasks.
     /// Default: Returns the next executable set of tasks hashes.
     ///

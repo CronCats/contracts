@@ -34,7 +34,7 @@ fi
 
 export MAX_GAS=300000000000000
 
-export CRON_ACCOUNT_ID=agent1.$NEAR_ACCT
+export CRON_ACCOUNT_ID=manager_v1.$NEAR_ACCT
 export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 
 ######
@@ -46,7 +46,7 @@ export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 
 
 ## create all accounts
-near create-account $CRON_ACCOUNT_ID --masterAccount $NEAR_ACCT --initialBalance 1000
+# near create-account $CRON_ACCOUNT_ID --masterAccount $NEAR_ACCT --initialBalance 1000
 
 
 # Deploy all the contracts to their rightful places
