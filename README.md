@@ -123,6 +123,10 @@ near call crud.$NEAR_ACCT status --accountId crud.$NEAR_ACCT
 
 ## Changelog
 
+### `0.4.5`
+
+Add validate cadence view method, add owner proxy for sweeping
+
 ### `0.4.4`
 
 Mainnet security mitigation

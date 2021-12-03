@@ -69,8 +69,8 @@ export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 
 
 # Check all configs first
-# near view $CRON_ACCOUNT_ID version
-# near view $CRON_ACCOUNT_ID get_info
-near view $REWARDS_ACCOUNT_ID version
+near view $CRON_ACCOUNT_ID version
+near view $CRON_ACCOUNT_ID get_info
+# near view $REWARDS_ACCOUNT_ID version
 
 echo "Mainnet Deploy Complete"
