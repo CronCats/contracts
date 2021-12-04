@@ -1,5 +1,5 @@
 set -e
-MASTER_ACC=cron.near
+MASTER_ACC=tjtc.near
 DAO_ROOT_ACC=sputnik-dao.near
 DAO_NAME=croncat
 DAO_ACCOUNT=$DAO_NAME.$DAO_ROOT_ACC
@@ -54,7 +54,7 @@ METAPOOL_ACCT=meta-pool.near
 # near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Unstake all funds from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "unstake", "args": "'$FIXED_ARGS'", "deposit": "0", "gas": "20000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
 
 # # Withdraw balance back (example: EKZqArNzsjq9hpYuYt37Y59qU1kmZoxguLwRH2RnDELd)
-# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Withdraw unstaked funds from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "withdraw_unstaked", "args": "e30=", "deposit": "0", "gas": "20000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
+near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Withdraw unstaked funds from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "withdraw_unstaked", "args": "e30=", "deposit": "0", "gas": "20000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
 
 ## --------------------------------
 ## PARAS.ID NFTs

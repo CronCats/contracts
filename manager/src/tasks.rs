@@ -130,6 +130,33 @@ impl Contract {
         self.exit_task(hash);
     }
 
+    /// Refill a task with more balance to continue its execution
+    /// NOTE: Sending balance here for a task that doesnt exist will result in loss of funds, or you could just use this as an opportunity for donations :D
+    /// NOTE: Currently restricting this to owner only, so owner can make sure the task ends
+    ///
+    /// ```bash
+    /// near call cron.testnet refill_balance '{"task_hash": ""}' --accountId YOU.testnet --amount 5
+    /// ```
+    #[payable]
+    pub fn refill_balance(&mut self, task_hash: Base64VecU8) {
+        let hash = task_hash.0;
+        let mut task = self.tasks.get(&hash).expect("No task found by hash");
+
+        assert_eq!(
+            task.owner_id,
+            env::predecessor_account_id(),
+            "Only owner can refill their task"
+        );
+
+        // Update task total balance
+        let amount = env::attached_deposit();
+        task.total_deposit = U128::from(task.total_deposit.0.saturating_add(amount));
+        self.tasks.insert(&hash, &task);
+
+        // Add the attached balance into available_balance
+        self.available_balance = self.available_balance.saturating_add(amount);
+    }
+
     /// Internal management of finishing a task.
     /// Responsible for cleaning up storage &
     /// returning any remaining balance to task owner.
