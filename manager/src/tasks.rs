@@ -55,11 +55,12 @@ impl Contract {
         // No adding tasks while contract is paused
         assert_eq!(self.paused, false, "Create task paused");
         // check cadence can be parsed
-        assert!(self.validate_cadence(&cadence), "Cadence string invalid");
-        // check that the method is NOT the callback of this contract
-        assert!(function_id != "callback_for_proxy_call", "Function id invalid");
-        // cannot be THIS contract id, unless predecessor is owner of THIS contract
+        assert!(self.validate_cadence(cadence.clone()), "Cadence string invalid");
+        // Additional checks
         if contract_id.clone().to_string() == env::current_account_id() {
+            // check that the method is NOT the callback of this contract
+            assert!(function_id != "callback_for_proxy_call", "Function id invalid");
+            // cannot be THIS contract id, unless predecessor is owner of THIS contract
             assert_eq!(contract_id.clone().to_string(), self.owner_id, "Creator invalid");
         }
 
@@ -366,6 +367,102 @@ impl Contract {
         slot_tasks.push(task_hash.clone());
         self.slots.insert(&next_slot, &slot_tasks);
     }
+
+    /// Executes a task based on the current task slot
+    #[private]
+    pub fn proxy_call_owner(&mut self) {
+        // No adding tasks while contract is paused
+        assert_eq!(self.paused, false, "Task execution paused");
+        // Get current slot based on block or timestamp
+        let current_slot = self.get_slot_id(None);
+
+        // get task based on current slot
+        // priority goes to tasks that have fallen behind (using floor key)
+        let (slot_opt, slot_ballpark) = if let Some(k) = self.slots.floor_key(&current_slot) {
+            (self.slots.get(&k), k)
+        } else {
+            (self.slots.get(&current_slot), current_slot)
+        };
+        log!("slot_ballpark {:?} current_slot {:?}", &slot_ballpark, &current_slot);
+
+        let mut slot_data = slot_opt.expect("No tasks found in slot");
+
+        // Get a single task hash, then retrieve task details
+        let hash = slot_data.pop().expect("No tasks available");
+
+        // After popping, ensure state is rewritten back
+        if slot_data.is_empty() {
+            // Clean up slot if no more data
+            self.slots.remove(&slot_ballpark);
+            // log!("Slot {} cleaned", &slot_ballpark);
+        } else {
+            self.slots.insert(&slot_ballpark, &slot_data);
+        }
+
+        let mut task = self.tasks.get(&hash).expect("No task found by hash");
+
+        // Fee breakdown:
+        // - Used Gas: Task Txn Fee Cost
+        // - Agent Fee: Incentivize Execution SLA
+        //
+        // Task Fee Examples:
+        // Total Fee = Gas Fee + Agent Fee
+        // Total Balance = Task Deposit + Total Fee
+        //
+        // NOTE: Gas cost includes the cross-contract call & internal logic of this contract.
+        // Direct contract gas fee will be lower than task execution costs, however
+        // we require the task owner to appropriately estimate gas for overpayment.
+        // The gas overpayment will also accrue to the agent since there is no way to read
+        // how much gas was actually used on callback.
+        let call_fee_used = u128::from(task.gas) * self.gas_price;
+        let call_total_fee = call_fee_used + self.agent_fee;
+        let call_total_balance = task.deposit.0 + call_total_fee;
+
+        // safety check and not burn too much gas.
+        if call_total_balance > task.total_deposit.0 {
+            log!("Not enough task balance to execute task, exiting");
+            // Process task exit, if no future task can execute
+            return self.exit_task(hash);
+        }
+
+        self.available_balance = self.available_balance - call_total_fee;
+
+        // Decrease task balance, Update task storage
+        task.total_deposit = U128::from(task.total_deposit.0 - call_total_balance);
+        self.tasks.insert(&hash, &task);
+
+        // Call external contract with task variables
+        let promise_first = env::promise_create(
+            task.contract_id.clone(),
+            &task.function_id.as_bytes(),
+            task.arguments.0.as_slice(),
+            task.deposit.0,
+            task.gas,
+        );
+
+        // if out of balance or non-recurring, exit callback
+        if !task.recurring || call_total_balance > task.total_deposit.0 {
+            // Process task exit, if no future task can execute
+            self.exit_task(hash);
+            env::promise_return(promise_first);
+        } else {
+            // if recurring, callback for scheduling
+            let promise_second = env::promise_then(
+                promise_first,
+                env::current_account_id(),
+                b"callback_for_proxy_call",
+                json!({
+                    "task_hash": hash,
+                    "current_slot": U128::from(current_slot)
+                })
+                .to_string()
+                .as_bytes(),
+                0,
+                GAS_FOR_CALLBACK,
+            );
+            env::promise_return(promise_second);
+        }
+    }
 }
 
 // Internal methods
@@ -384,16 +481,6 @@ impl Contract {
     /// NOTE: this is not the final used amount, just the user-specified amount total needed
     fn task_balance_uses(&self, task: &Task) -> u128 {
         task.deposit.0 + (u128::from(task.gas) * self.gas_price) + self.agent_fee
-    }
-
-    /// Check if a cadence string is valid by attempting to parse it
-    fn validate_cadence(&self, cadence: &str) -> bool {
-        let s = Schedule::from_str(&cadence);
-        if s.is_ok() {
-            true
-        } else {
-            false
-        }
     }
 }
 
@@ -541,10 +628,10 @@ mod tests {
         let mut contract = Contract::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000020000000100)
+            .attached_deposit(1000000000040000000200)
             .build());
         contract.create_task(
-            accounts(3),
+            accounts(0),
             "callback_for_proxy_call".to_string(),
             "0 0 */1 * * *".to_string(),
             Some(true),
@@ -562,7 +649,7 @@ mod tests {
         let mut contract = Contract::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000020000000100)
+            .attached_deposit(1000000000040000000200)
             .build());
         contract.create_task(
             accounts(0),
