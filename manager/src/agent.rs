@@ -87,6 +87,7 @@ impl Contract {
         };
 
         self.agents.insert(&account, &agent);
+        self.available_balance = self.available_balance.saturating_add(required_deposit);
 
         // If the user deposited more than needed, refund them.
         let refund = deposit - required_deposit;
@@ -116,6 +117,14 @@ impl Contract {
         } else {
             panic!("Agent must register");
         };
+
+        // If the user deposited more than needed, refund them.
+        let yocto: Balance = 1;
+        let refund = env::attached_deposit() - yocto;
+        self.available_balance = self.available_balance.saturating_add(yocto);
+        if refund > 0 {
+            Promise::new(env::predecessor_account_id()).transfer(refund);
+        }
     }
 
     /// Removes the agent from the active set of agents.
@@ -161,6 +170,7 @@ impl Contract {
             }
 
             log!("Withdrawal of {} has been sent.", withdrawal_amount);
+            self.available_balance = self.available_balance.saturating_sub(withdrawal_amount);
             Promise::new(agent.payable_account_id.to_string()).transfer(withdrawal_amount)
         } else {
             env::panic(b"No Agent")

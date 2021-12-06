@@ -107,7 +107,7 @@ impl Contract {
         self.slots.insert(&next_slot, &slot_slots);
 
         // Add the attached balance into available_balance
-        self.available_balance += env::attached_deposit();
+        self.available_balance = self.available_balance.saturating_add(env::attached_deposit());
 
         Base64VecU8::from(hash)
     }
@@ -169,11 +169,14 @@ impl Contract {
 
         // return any balance
         if task.total_deposit.0 > 0 {
-            Promise::new(task.owner_id.to_string()).transfer(task.total_deposit.0);
+            let task_balance_remaining = task.total_deposit.0;
+            self.available_balance = self.available_balance.saturating_sub(task_balance_remaining);
+            Promise::new(task.owner_id.to_string()).transfer(task_balance_remaining);
         }
 
         // Remove task from schedule
-        // Get previous task hashes in slot, find index of task hash, remove
+        // Get task hashes in slot, find index of task hash, remove
+        // TODO: Check that this actually removes task from all slots!
         let next_slot = self.get_slot_from_cadence(task.cadence.clone());
         let mut slot_tasks = self.slots.get(&next_slot).unwrap_or(Vec::new());
         if slot_tasks.len() != 0 {
@@ -215,6 +218,13 @@ impl Contract {
         };
 
         let mut slot_data = slot_opt.expect("No tasks found in slot");
+
+        // Clean up slot if no more data
+        if slot_data.is_empty() {
+            self.slots.remove(&slot_ballpark);
+            log!("Slot {} cleaned", &slot_ballpark);
+            return;
+        }
 
         // Check if agent has exceeded their slot task allotment
         // TODO: An agent can check to execute IF slot is +1 and their index is within range???
@@ -284,9 +294,9 @@ impl Contract {
         // we require the task owner to appropriately estimate gas for overpayment.
         // The gas overpayment will also accrue to the agent since there is no way to read
         // how much gas was actually used on callback.
-        let call_fee_used = u128::from(task.gas) * self.gas_price;
-        let call_total_fee = call_fee_used + self.agent_fee;
-        let call_total_balance = task.deposit.0 + call_total_fee;
+        let call_fee_used = u128::from(task.gas).saturating_mul(self.gas_price);
+        let call_total_fee = call_fee_used.saturating_add(self.agent_fee);
+        let call_total_balance = task.deposit.0.saturating_add(call_total_fee);
 
         // safety check and not burn too much gas.
         if call_total_balance > task.total_deposit.0 {
@@ -298,9 +308,9 @@ impl Contract {
         // Update agent storage
         // Increment agent reward & task count
         // Reward for agent MUST include the amount of gas used as a reimbursement
-        agent.balance = U128::from(agent.balance.0 + call_total_fee);
-        agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0 + 1);
-        self.available_balance = self.available_balance - call_total_fee;
+        agent.balance = U128::from(agent.balance.0.saturating_add(call_total_fee));
+        agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0.saturating_add(1));
+        self.available_balance = self.available_balance.saturating_sub(call_total_fee);
 
         // Reset missed slot, if any
         if agent.last_missed_slot != 0 {
@@ -309,7 +319,7 @@ impl Contract {
         self.agents.insert(&env::signer_account_id(), &agent);
 
         // Decrease task balance, Update task storage
-        task.total_deposit = U128::from(task.total_deposit.0 - call_total_balance);
+        task.total_deposit = U128::from(task.total_deposit.0.saturating_sub(call_total_balance));
         self.tasks.insert(&hash, &task);
 
         // Call external contract with task variables
@@ -469,6 +479,20 @@ impl Contract {
             );
             env::promise_return(promise_second);
         }
+    }
+
+    /// Deletes a task in its entirety, returning any remaining balance to task owner.
+    ///
+    /// ```bash
+    /// near call cron.testnet remove_task_owner '{"task_hash": ""}' --accountId YOU.testnet
+    /// ```
+    #[private]
+    pub fn remove_task_owner(&mut self, task_hash: Base64VecU8) {
+        let hash = task_hash.0;
+        self.tasks.get(&hash).expect("No task found by hash");
+
+        // If owner, allow to remove task
+        self.exit_task(hash);
     }
 }
 

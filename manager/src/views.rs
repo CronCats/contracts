@@ -162,7 +162,7 @@ impl Contract {
     /// Gets the data payload of a single task by hash
     ///
     /// ```bash
-    /// near view cron.testnet get_task '{"task_hash": "r2Jv…T4U4="}'
+    /// near view manager_v1.cron.testnet get_task '{"task_hash": "r2Jv…T4U4="}'
     /// ```
     pub fn get_task(&self, task_hash: Base64VecU8) -> Task {
         let task_hash = task_hash.0;
@@ -173,7 +173,7 @@ impl Contract {
     /// Get the hash of a task based on parameters
     ///
     /// ```bash
-    /// near view cron.testnet get_hash '{"contract_id": "YOUR_CONTRACT.near","function_id": "METHOD_NAME","cadence": "0 0 */1 * * *","owner_id": "YOUR_ACCOUNT.near"}'
+    /// near view manager_v1.cron.testnet get_hash '{"contract_id": "YOUR_CONTRACT.near","function_id": "METHOD_NAME","cadence": "0 0 */1 * * *","owner_id": "YOUR_ACCOUNT.near"}'
     /// ```
     pub fn get_hash(
         &self,

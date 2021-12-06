@@ -68,6 +68,7 @@ impl StorageManagement for Contract {
                 self.remove_agent(account_id.clone());
 
                 // We add 1 to reimburse for the 1 yoctoⓃ used to call this method
+                self.available_balance = self.available_balance.saturating_sub(balance + 1);
                 Promise::new(account_id).transfer(balance + 1);
                 log!(
                     "Agent has been removed and refunded the storage cost of {}",
