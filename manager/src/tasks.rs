@@ -942,6 +942,96 @@ mod tests {
         contract.remove_task(Base64VecU8::from(vec![0, 1, 2, 3]));
     }
 
+
+    #[test]
+    #[should_panic(expected = "No task found by hash")]
+    fn test_task_refill_no_task() {
+        let context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.refill_balance(Base64VecU8::from(vec![0, 1, 2, 3]));
+    }
+
+    #[test]
+    #[should_panic(expected = "Only owner can refill their task")]
+    fn test_task_refill_not_owner() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context.is_view(true).build());
+        assert!(contract.get_tasks(None, None, None).is_empty());
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(1000000000020000000100)
+            .build());
+        let task_hash = contract.create_task(
+            accounts(3),
+            "increment".to_string(),
+            "0 0 */1 * * *".to_string(),
+            Some(false),
+            Some(U128::from(100)),
+            Some(200),
+            None,
+        );
+
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.get_tasks(None, None, None).len(), 1);
+
+        testing_env!(context
+            .is_view(false)
+            .signer_account_id(accounts(4))
+            .predecessor_account_id(accounts(4))
+            .build());
+        contract.refill_balance(task_hash);
+    }
+
+    #[test]
+    fn test_task_refill_balance_success() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context.is_view(true).build());
+        assert!(contract.get_tasks(None, None, None).is_empty());
+
+        let start_balance:Balance = 1000000000020000000100;
+        let refill_balance:Balance = 1000000000020000000100;
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(1000000000020000000100)
+            .build());
+        let task_hash = contract.create_task(
+            accounts(3),
+            "increment".to_string(),
+            "0 0 */1 * * *".to_string(),
+            Some(false),
+            Some(U128::from(100)),
+            Some(200),
+            None,
+        );
+
+        testing_env!(context.is_view(true).build());
+        assert_eq!(contract.get_tasks(None, None, None).len(), 1);
+
+        let available_balance:Balance = contract.available_balance;
+        testing_env!(context
+            .is_view(false)
+            .signer_account_id(accounts(1))
+            .predecessor_account_id(accounts(1))
+            .attached_deposit(refill_balance)
+            .build());
+        contract.refill_balance(task_hash.clone());
+        testing_env!(context.is_view(true).build());
+
+        // Check:
+        // - task total_deposit updated
+        // - available_balance updated
+        let updated_task = contract.get_task(task_hash);
+        let updated_balance = start_balance.saturating_add(refill_balance);
+        let updated_available_balance = available_balance.saturating_add(refill_balance);
+        assert_eq!(updated_task.total_deposit.0, updated_balance, "Wrong deposit total");
+        assert_eq!(contract.available_balance, updated_available_balance, "Wrong total available");
+    }
+
     #[test]
     fn test_get_slot_id_current_block() {
         let mut context = get_context(accounts(1));
