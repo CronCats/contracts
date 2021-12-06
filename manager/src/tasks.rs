@@ -387,6 +387,13 @@ impl Contract {
 
         let mut slot_data = slot_opt.expect("No tasks found in slot");
 
+        // Clean up slot if no more data
+        if slot_data.is_empty() {
+            self.slots.remove(&slot_ballpark);
+            log!("Slot {} cleaned", &slot_ballpark);
+            return;
+        }
+
         // Get a single task hash, then retrieve task details
         let hash = slot_data.pop().expect("No tasks available");
 
