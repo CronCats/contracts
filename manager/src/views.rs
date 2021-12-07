@@ -58,7 +58,7 @@ impl Contract {
     }
 
     /// Check if a cadence string is valid by attempting to parse it
-    /// 
+    ///
     /// ```bash
     /// near view cron.testnet validate_cadence '{"cadence": "0 0 * * * *"}'
     /// ```

@@ -195,13 +195,21 @@ impl Contract {
 
                 if !task.owner_id.is_empty() {
                     let mut pet_owner_id = owner_id.clone();
-                    // Two paths: 
+                    // Two paths:
                     // 1. automated claim via croncat manager
                     // 2. directly without manager, but has a task already
                     if &owner_id == &self.cron_account_id {
                         // Check that the task is the right function method
-                        assert_eq!(&task.contract_id, &env::current_account_id(), "Must be game account id");
-                        assert_eq!(&task.function_id, &String::from("pet_check_task_ownership"), "Must be game function method");
+                        assert_eq!(
+                            &task.contract_id,
+                            &env::current_account_id(),
+                            "Must be game account id"
+                        );
+                        assert_eq!(
+                            &task.function_id,
+                            &String::from("pet_check_task_ownership"),
+                            "Must be game function method"
+                        );
                         pet_owner_id = task.owner_id.replace("\"", "");
                     } else {
                         // Check that task owner matches this owner

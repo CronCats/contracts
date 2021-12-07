@@ -63,6 +63,29 @@ impl Contract {
         );
         self.slots.remove(&slot.0);
     }
+
+    /// Allows admin to calculate internal balances
+    #[private]
+    pub fn calc_balances(&mut self) {
+        let base_balance = ONE_NEAR * 5;
+        let storage_balance = env::storage_byte_cost().saturating_mul(env::storage_usage() as u128);
+
+        // Using storage + threshold as the start for how much balance is required
+        let mut total_available_balance = base_balance.saturating_add(storage_balance);
+
+        // Loop all tasks and add
+        for (_, t) in self.tasks.iter() {
+            total_available_balance = total_available_balance.saturating_add(t.total_deposit.0);
+        }
+        log!(
+            "Prev bal: {}, New Bal: {}",
+            self.available_balance,
+            total_available_balance
+        );
+
+        // update internal value
+        self.available_balance = total_available_balance;
+    }
 }
 
 #[cfg(test)]
@@ -142,5 +165,38 @@ mod tests {
         assert_eq!(contract.agent_task_ratio[0], 2);
         assert_eq!(contract.agent_task_ratio[1], 5);
         assert_eq!(contract.paused, true);
+    }
+
+    #[test]
+    fn test_calc_balances() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.calc_balances();
+        testing_env!(context.is_view(true).build());
+        let base_storage_balance = contract.available_balance;
+
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(ONE_NEAR * 5)
+            .build());
+        contract.create_task(
+            accounts(3),
+            "increment".to_string(),
+            "0 0 */1 * * *".to_string(),
+            Some(true),
+            Some(U128::from(ONE_NEAR)),
+            Some(200),
+            None,
+        );
+        testing_env!(context.is_view(false).build());
+
+        // recalc the balances
+        contract.calc_balances();
+        testing_env!(context.is_view(true).build());
+        assert_eq!(
+            contract.available_balance,
+            ONE_NEAR * 5 + base_storage_balance
+        );
     }
 }
