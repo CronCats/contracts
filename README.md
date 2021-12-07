@@ -123,6 +123,10 @@ near call crud.$NEAR_ACCT status --accountId crud.$NEAR_ACCT
 
 ## Changelog
 
+### `0.4.7`
+
+Adjust old slot agent coverage, max gas assertion on task create
+
 ### `0.4.6`
 
 Add refill balance method, fix empty slots, more available_balance coverage

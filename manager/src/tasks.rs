@@ -1,5 +1,9 @@
 use crate::*;
 
+pub const MAX_NEAR_GAS: Gas = 300_000_000_000_000;
+pub const GAS_FOR_PROXY_CALL: Gas = 20_000_000_000_000;
+pub const GAS_FOR_PROXY_CALLBACK: Gas = 10_000_000_000_000;
+
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Task {
@@ -55,13 +59,31 @@ impl Contract {
         // No adding tasks while contract is paused
         assert_eq!(self.paused, false, "Create task paused");
         // check cadence can be parsed
-        assert!(self.validate_cadence(cadence.clone()), "Cadence string invalid");
+        assert!(
+            self.validate_cadence(cadence.clone()),
+            "Cadence string invalid"
+        );
+        // Tasks will fail if they specify more than available gas
+        assert!(
+            MAX_NEAR_GAS
+                > gas
+                    .unwrap_or(0)
+                    .saturating_add(GAS_FOR_PROXY_CALL.saturating_add(GAS_FOR_PROXY_CALLBACK)),
+            "Maximum gas allocation exceeded"
+        );
         // Additional checks
         if contract_id.clone().to_string() == env::current_account_id() {
             // check that the method is NOT the callback of this contract
-            assert!(function_id != "callback_for_proxy_call", "Function id invalid");
+            assert!(
+                function_id != "callback_for_proxy_call",
+                "Function id invalid"
+            );
             // cannot be THIS contract id, unless predecessor is owner of THIS contract
-            assert_eq!(contract_id.clone().to_string(), self.owner_id, "Creator invalid");
+            assert_eq!(
+                env::predecessor_account_id(),
+                self.owner_id,
+                "Creator invalid"
+            );
         }
 
         let item = Task {
@@ -107,7 +129,9 @@ impl Contract {
         self.slots.insert(&next_slot, &slot_slots);
 
         // Add the attached balance into available_balance
-        self.available_balance = self.available_balance.saturating_add(env::attached_deposit());
+        self.available_balance = self
+            .available_balance
+            .saturating_add(env::attached_deposit());
 
         Base64VecU8::from(hash)
     }
@@ -170,7 +194,9 @@ impl Contract {
         // return any balance
         if task.total_deposit.0 > 0 {
             let task_balance_remaining = task.total_deposit.0;
-            self.available_balance = self.available_balance.saturating_sub(task_balance_remaining);
+            self.available_balance = self
+                .available_balance
+                .saturating_sub(task_balance_remaining);
             Promise::new(task.owner_id.to_string()).transfer(task_balance_remaining);
         }
 
@@ -227,17 +253,10 @@ impl Contract {
         }
 
         // Check if agent has exceeded their slot task allotment
-        // TODO: An agent can check to execute IF slot is +1 and their index is within range???
+        // TODO: An agent can check to execute IF slot is +/-1 and their index is within range???
         let (can_execute, current_agent_index, _) =
             self.check_agent_can_execute(env::predecessor_account_id(), slot_data.len() as u64);
-        assert!(can_execute, "Agent has exceeded execution for this slot");
-        // Rotate agent index
-        if self.agent_active_index as u64 == self.agent_active_queue.len().saturating_sub(1) {
-            self.agent_active_index = 0;
-        } else if self.agent_active_queue.len() > 1 {
-            // Only change the index IF there are more than 1 agents ;)
-            self.agent_active_index += 1;
-        }
+
         // IF previous agent missed, then store their slot missed. We know this is true IF this slot is using slot_ballpark
         // NOTE: While this isnt perfect, the eventual outcome is fine.
         //       If agent gets ticked as "missed" for maximum of 1 slot, then fixes the situation on next round.
@@ -264,6 +283,17 @@ impl Contract {
                         self.agents.insert(&missed_agent_id, &m_agent);
                     }
                 }
+            }
+        } else {
+            // ONLY check if this is the current slot, otherwise old slots will get skipped
+            assert!(can_execute, "Agent has exceeded execution for this slot");
+
+            // Rotate agent index
+            if self.agent_active_index as u64 == self.agent_active_queue.len().saturating_sub(1) {
+                self.agent_active_index = 0;
+            } else if self.agent_active_queue.len() > 1 {
+                // Only change the index IF there are more than 1 agents ;)
+                self.agent_active_index += 1;
             }
         }
 
@@ -393,7 +423,11 @@ impl Contract {
         } else {
             (self.slots.get(&current_slot), current_slot)
         };
-        log!("slot_ballpark {:?} current_slot {:?}", &slot_ballpark, &current_slot);
+        log!(
+            "slot_ballpark {:?} current_slot {:?}",
+            &slot_ballpark,
+            &current_slot
+        );
 
         let mut slot_data = slot_opt.expect("No tasks found in slot");
 
@@ -652,6 +686,27 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Maximum gas allocation exceeded")]
+    fn test_task_too_much_gas() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(1000000000020000000100)
+            .build());
+        contract.create_task(
+            accounts(3),
+            "increment".to_string(),
+            "0 0 */1 * * *".to_string(),
+            Some(true),
+            Some(U128::from(100)),
+            Some(270_000_000_000_000),
+            None,
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "Function id invalid")]
     fn test_task_create_bad_function_id() {
         let mut context = get_context(accounts(1));
@@ -675,20 +730,22 @@ mod tests {
     #[test]
     #[should_panic(expected = "Creator invalid")]
     fn test_task_create_bad_contract_id() {
-        let mut context = get_context(accounts(1));
+        let mut context = get_context(accounts(0));
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000040000000200)
+            .attached_deposit(6000000000040000000200)
+            .predecessor_account_id(accounts(2))
+            .signer_account_id(accounts(2))
             .build());
         contract.create_task(
             accounts(0),
             "tick".to_string(),
-            "0 0 */1 * * *".to_string(),
+            "0 0 * * * *".to_string(),
             Some(true),
-            Some(U128::from(100)),
-            Some(200),
+            Some(U128::from(0)),
+            Some(20000000000000),
             None,
         );
     }
@@ -973,7 +1030,6 @@ mod tests {
         contract.remove_task(Base64VecU8::from(vec![0, 1, 2, 3]));
     }
 
-
     #[test]
     #[should_panic(expected = "No task found by hash")]
     fn test_task_refill_no_task() {
@@ -1024,8 +1080,8 @@ mod tests {
         testing_env!(context.is_view(true).build());
         assert!(contract.get_tasks(None, None, None).is_empty());
 
-        let start_balance:Balance = 1000000000020000000100;
-        let refill_balance:Balance = 1000000000020000000100;
+        let start_balance: Balance = 1000000000020000000100;
+        let refill_balance: Balance = 1000000000020000000100;
         testing_env!(context
             .is_view(false)
             .attached_deposit(1000000000020000000100)
@@ -1043,7 +1099,7 @@ mod tests {
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.get_tasks(None, None, None).len(), 1);
 
-        let available_balance:Balance = contract.available_balance;
+        let available_balance: Balance = contract.available_balance;
         testing_env!(context
             .is_view(false)
             .signer_account_id(accounts(1))
@@ -1059,8 +1115,14 @@ mod tests {
         let updated_task = contract.get_task(task_hash);
         let updated_balance = start_balance.saturating_add(refill_balance);
         let updated_available_balance = available_balance.saturating_add(refill_balance);
-        assert_eq!(updated_task.total_deposit.0, updated_balance, "Wrong deposit total");
-        assert_eq!(contract.available_balance, updated_available_balance, "Wrong total available");
+        assert_eq!(
+            updated_task.total_deposit.0, updated_balance,
+            "Wrong deposit total"
+        );
+        assert_eq!(
+            contract.available_balance, updated_available_balance,
+            "Wrong total available"
+        );
     }
 
     #[test]

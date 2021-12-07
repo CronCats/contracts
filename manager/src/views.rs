@@ -58,7 +58,7 @@ impl Contract {
     }
 
     /// Check if a cadence string is valid by attempting to parse it
-    /// 
+    ///
     /// ```bash
     /// near view cron.testnet validate_cadence '{"cadence": "0 0 * * * *"}'
     /// ```
@@ -237,17 +237,24 @@ impl Contract {
 
             // Get slot total to test agent in slot
             // get task based on current slot, priority goes to tasks that have fallen behind (using floor key)
-            let slot_opt = if let Some(k) = self.slots.floor_key(&current_slot) {
-                self.slots.get(&k)
+            let (slot_opt, slot_ballpark) = if let Some(k) = self.slots.floor_key(&current_slot) {
+                (self.slots.get(&k), k)
             } else {
-                self.slots.get(&current_slot)
+                (self.slots.get(&current_slot), current_slot)
             };
             let slot_data = slot_opt.unwrap_or_default();
+
+            // // Otherwise, assess if they are in active set, or are able to cover an agent that missed previous slot
+            // let (can_execute, _, agent_tasks) =
+            //     self.check_agent_can_execute(account_id.to_string(), slot_data.len() as u64);
+            // if !can_execute {
+            //     return empty;
+            // }
 
             // Otherwise, assess if they are in active set, or are able to cover an agent that missed previous slot
             let (can_execute, _, agent_tasks) =
                 self.check_agent_can_execute(account_id.to_string(), slot_data.len() as u64);
-            if !can_execute {
+            if !can_execute && slot_ballpark == current_slot {
                 return empty;
             }
 
