@@ -1,5 +1,9 @@
 use crate::*;
 
+pub const MAX_NEAR_GAS: Gas = 300_000_000_000_000;
+pub const GAS_FOR_PROXY_CALL: Gas = 20_000_000_000_000;
+pub const GAS_FOR_PROXY_CALLBACK: Gas = 10_000_000_000_000;
+
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Task {
@@ -59,6 +63,14 @@ impl Contract {
             self.validate_cadence(cadence.clone()),
             "Cadence string invalid"
         );
+        // Tasks will fail if they specify more than available gas
+        assert!(
+            MAX_NEAR_GAS
+                > gas
+                    .unwrap_or(0)
+                    .saturating_add(GAS_FOR_PROXY_CALL.saturating_add(GAS_FOR_PROXY_CALLBACK)),
+            "Maximum gas allocation exceeded"
+        );
         // Additional checks
         if contract_id.clone().to_string() == env::current_account_id() {
             // check that the method is NOT the callback of this contract
@@ -68,7 +80,7 @@ impl Contract {
             );
             // cannot be THIS contract id, unless predecessor is owner of THIS contract
             assert_eq!(
-                contract_id.clone().to_string(),
+                env::predecessor_account_id(),
                 self.owner_id,
                 "Creator invalid"
             );
@@ -241,17 +253,10 @@ impl Contract {
         }
 
         // Check if agent has exceeded their slot task allotment
-        // TODO: An agent can check to execute IF slot is +1 and their index is within range???
+        // TODO: An agent can check to execute IF slot is +/-1 and their index is within range???
         let (can_execute, current_agent_index, _) =
             self.check_agent_can_execute(env::predecessor_account_id(), slot_data.len() as u64);
-        assert!(can_execute, "Agent has exceeded execution for this slot");
-        // Rotate agent index
-        if self.agent_active_index as u64 == self.agent_active_queue.len().saturating_sub(1) {
-            self.agent_active_index = 0;
-        } else if self.agent_active_queue.len() > 1 {
-            // Only change the index IF there are more than 1 agents ;)
-            self.agent_active_index += 1;
-        }
+
         // IF previous agent missed, then store their slot missed. We know this is true IF this slot is using slot_ballpark
         // NOTE: While this isnt perfect, the eventual outcome is fine.
         //       If agent gets ticked as "missed" for maximum of 1 slot, then fixes the situation on next round.
@@ -278,6 +283,17 @@ impl Contract {
                         self.agents.insert(&missed_agent_id, &m_agent);
                     }
                 }
+            }
+        } else {
+            // ONLY check if this is the current slot, otherwise old slots will get skipped
+            assert!(can_execute, "Agent has exceeded execution for this slot");
+
+            // Rotate agent index
+            if self.agent_active_index as u64 == self.agent_active_queue.len().saturating_sub(1) {
+                self.agent_active_index = 0;
+            } else if self.agent_active_queue.len() > 1 {
+                // Only change the index IF there are more than 1 agents ;)
+                self.agent_active_index += 1;
             }
         }
 
@@ -670,6 +686,27 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Maximum gas allocation exceeded")]
+    fn test_task_too_much_gas() {
+        let mut context = get_context(accounts(1));
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        testing_env!(context
+            .is_view(false)
+            .attached_deposit(1000000000020000000100)
+            .build());
+        contract.create_task(
+            accounts(3),
+            "increment".to_string(),
+            "0 0 */1 * * *".to_string(),
+            Some(true),
+            Some(U128::from(100)),
+            Some(270_000_000_000_000),
+            None,
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "Function id invalid")]
     fn test_task_create_bad_function_id() {
         let mut context = get_context(accounts(1));
@@ -693,20 +730,22 @@ mod tests {
     #[test]
     #[should_panic(expected = "Creator invalid")]
     fn test_task_create_bad_contract_id() {
-        let mut context = get_context(accounts(1));
+        let mut context = get_context(accounts(0));
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000040000000200)
+            .attached_deposit(6000000000040000000200)
+            .predecessor_account_id(accounts(2))
+            .signer_account_id(accounts(2))
             .build());
         contract.create_task(
             accounts(0),
             "tick".to_string(),
-            "0 0 */1 * * *".to_string(),
+            "0 0 * * * *".to_string(),
             Some(true),
-            Some(U128::from(100)),
-            Some(200),
+            Some(U128::from(0)),
+            Some(20000000000000),
             None,
         );
     }
