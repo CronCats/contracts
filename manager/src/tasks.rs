@@ -80,7 +80,7 @@ impl Contract {
             );
             // cannot be THIS contract id, unless predecessor is owner of THIS contract
             assert_eq!(
-                contract_id.clone().to_string(),
+                env::predecessor_account_id(),
                 self.owner_id,
                 "Creator invalid"
             );
@@ -730,20 +730,22 @@ mod tests {
     #[test]
     #[should_panic(expected = "Creator invalid")]
     fn test_task_create_bad_contract_id() {
-        let mut context = get_context(accounts(1));
+        let mut context = get_context(accounts(0));
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context
             .is_view(false)
-            .attached_deposit(1000000000040000000200)
+            .attached_deposit(6000000000040000000200)
+            .predecessor_account_id(accounts(2))
+            .signer_account_id(accounts(2))
             .build());
         contract.create_task(
             accounts(0),
             "tick".to_string(),
-            "0 0 */1 * * *".to_string(),
+            "0 0 * * * *".to_string(),
             Some(true),
-            Some(U128::from(100)),
-            Some(200),
+            Some(U128::from(0)),
+            Some(20000000000000),
             None,
         );
     }
