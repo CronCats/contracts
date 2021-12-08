@@ -12,7 +12,7 @@ export FACTORY=testnet
 export MAX_GAS=300000000000000
 
 if [ -z ${NEAR_ACCT+x} ]; then
-  export NEAR_ACCT=cron.$FACTORY
+  export NEAR_ACCT=croncat.$FACTORY
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi

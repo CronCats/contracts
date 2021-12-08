@@ -27,7 +27,7 @@ export FACTORY=testnet
 
 if [ -z ${NEAR_ACCT+x} ]; then
   # you will need to change this to something you own
-  export NEAR_ACCT=cron.$FACTORY
+  export NEAR_ACCT=croncat.$FACTORY
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi
