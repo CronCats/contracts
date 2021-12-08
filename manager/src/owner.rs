@@ -65,26 +65,46 @@ impl Contract {
     }
 
     /// Allows admin to calculate internal balances
+    /// Returns surplus and rewards balances
+    /// Can be used to measure how much surplus is remaining for staking / etc
     #[private]
-    pub fn calc_balances(&mut self) {
-        let base_balance = ONE_NEAR * 5;
+    pub fn calc_balances(&mut self) -> (U128, U128) {
+        let base_balance = ONE_NEAR * 5; // safety overhead
         let storage_balance = env::storage_byte_cost().saturating_mul(env::storage_usage() as u128);
 
         // Using storage + threshold as the start for how much balance is required
-        let mut total_available_balance = base_balance.saturating_add(storage_balance);
+        let required_balance = base_balance.saturating_add(storage_balance);
+        let mut total_task_balance: Balance = 0;
+        let mut total_reward_balance: Balance = 0;
 
         // Loop all tasks and add
         for (_, t) in self.tasks.iter() {
-            total_available_balance = total_available_balance.saturating_add(t.total_deposit.0);
+            total_task_balance = total_task_balance.saturating_add(t.total_deposit.0);
         }
-        log!(
-            "Prev bal: {}, New Bal: {}",
-            self.available_balance,
-            total_available_balance
-        );
 
-        // update internal value
-        self.available_balance = total_available_balance;
+        // Loop all agents rewards and add
+        for a in self.agent_active_queue.iter() {
+            if let Some(agent) = self.agents.get(&a) {
+                total_reward_balance = total_reward_balance.saturating_add(agent.balance.0);
+            }
+        }
+
+        let total_available_balance: Balance =
+            total_task_balance.saturating_add(total_reward_balance);
+
+        // Calculate surplus, which could be used for staking
+        let surplus = u128::max(
+            total_available_balance.saturating_sub(required_balance.saturating_mul(4)),
+            0,
+        );
+        log!("Stakeable surplus {}", surplus);
+
+        // update internal values
+        self.available_balance =
+            u128::max(total_available_balance.saturating_sub(required_balance), 0);
+
+        // Return surplus value in case we want to trigger staking based off outcome
+        (U128::from(surplus), U128::from(total_reward_balance))
     }
 }
 
@@ -172,9 +192,9 @@ mod tests {
         let mut context = get_context(accounts(1));
         testing_env!(context.build());
         let mut contract = Contract::new();
+        let base_agent_storage: u128 = 2260000000000000000000;
         contract.calc_balances();
         testing_env!(context.is_view(true).build());
-        let base_storage_balance = contract.available_balance;
 
         testing_env!(context
             .is_view(false)
@@ -189,14 +209,14 @@ mod tests {
             Some(200),
             None,
         );
+        contract.register_agent(Some(accounts(1)));
         testing_env!(context.is_view(false).build());
 
         // recalc the balances
-        contract.calc_balances();
+        let (surplus, rewards) = contract.calc_balances();
         testing_env!(context.is_view(true).build());
-        assert_eq!(
-            contract.available_balance,
-            ONE_NEAR * 5 + base_storage_balance
-        );
+        assert_eq!(contract.available_balance, 0);
+        assert_eq!(surplus.0, 0);
+        assert_eq!(rewards.0, base_agent_storage);
     }
 }
