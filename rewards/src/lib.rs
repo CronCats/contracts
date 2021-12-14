@@ -2,19 +2,19 @@ use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::UnorderedSet,
     env, ext_contract,
-    json_types::{Base64VecU8, AccountId, U128, U64},
+    json_types::{Base64VecU8, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json, AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseResult,
 };
 
-near_sdk::setup_alloc!();
+use std::str::FromStr;
 
 // Fee Definitions
 pub const NO_DEPOSIT: u128 = 0;
-pub const GAS_FOR_CHECK_TASK_CALL: Gas = 60_000_000_000_000;
-pub const GAS_FOR_CHECK_TASK_CALLBACK: Gas = 60_000_000_000_000;
-pub const GAS_FOR_PXPET_DISTRO_CALL: Gas = 20_000_000_000_000;
+pub const GAS_FOR_CHECK_TASK_CALL: Gas = Gas(60_000_000_000_000);
+pub const GAS_FOR_CHECK_TASK_CALLBACK: Gas = Gas(60_000_000_000_000);
+pub const GAS_FOR_PXPET_DISTRO_CALL: Gas = Gas(20_000_000_000_000);
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
@@ -127,7 +127,7 @@ impl Contract {
             self.pixelpet_accounts_claimed.len(),
             self.pixelpet_accounts_claimed
                 .iter()
-                .map(|a| a + ",")
+                .map(|a| a.to_string() + ",")
                 .collect(),
         )
     }
@@ -165,13 +165,13 @@ impl Contract {
         // Get the task data
         ext_croncat::get_task(
             task_hash,
-            &self.cron_account_id,
+            self.cron_account_id.clone(),
             NO_DEPOSIT,
             GAS_FOR_CHECK_TASK_CALL,
         )
         .then(ext_rewards::pet_distribute_croncat(
             owner_id,
-            &env::current_account_id(),
+            env::current_account_id(),
             NO_DEPOSIT,
             GAS_FOR_CHECK_TASK_CALLBACK,
         ))
@@ -193,7 +193,7 @@ impl Contract {
                 let task: Task = serde_json::de::from_slice(&task_result)
                     .expect("Could not get result from task hash");
 
-                if !task.owner_id.is_empty() {
+                if !task.owner_id.to_string().is_empty() {
                     let mut pet_owner_id = owner_id.clone();
                     // Two paths:
                     // 1. automated claim via croncat manager
@@ -210,7 +210,7 @@ impl Contract {
                             &String::from("pet_check_task_ownership"),
                             "Must be game function method"
                         );
-                        pet_owner_id = task.owner_id.replace("\"", "");
+                        pet_owner_id = AccountId::from_str(task.owner_id.to_string().replace("\"", "").as_str()).unwrap();
                     } else {
                         // Check that task owner matches this owner
                         assert_eq!(&owner_id, &task.owner_id, "Task is not owned by you");
@@ -223,7 +223,7 @@ impl Contract {
                     // Trigger call to pixel pets
                     ext_pixelpet::distribute_croncat(
                         pet_owner_id,
-                        &self.pixelpet_account_id,
+                        self.pixelpet_account_id.clone(),
                         NO_DEPOSIT,
                         GAS_FOR_PXPET_DISTRO_CALL,
                     );

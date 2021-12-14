@@ -64,10 +64,7 @@ impl Contract {
             "Cadence string invalid"
         );
         // Tasks will fail if they specify more than available gas
-        let create_gas = gas.unwrap_or(Gas(0));
-        // TODO: Figure out why the Gas methods are not working..
-        // let compare_gas = Gas::from(GAS_FOR_PROXY_CALL).add_assign(GAS_FOR_PROXY_CALLBACK);
-        let compare_gas = Gas(create_gas.0 + GAS_FOR_PROXY_CALL.0 + GAS_FOR_PROXY_CALLBACK.0);
+        let compare_gas = gas.unwrap_or(Gas(0)) + GAS_FOR_PROXY_CALL + GAS_FOR_PROXY_CALLBACK;
         assert!(
             MAX_NEAR_GAS > compare_gas,
             "Maximum gas allocation exceeded"
