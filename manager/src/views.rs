@@ -32,7 +32,7 @@ impl Contract {
         U128,
         U128,
         U128,
-        U64,
+        Gas,
         U64,
         U64,
         U128,
@@ -50,7 +50,7 @@ impl Contract {
             U128::from(self.staked_balance),
             U128::from(self.agent_fee),
             U128::from(self.gas_price),
-            U64::from(self.proxy_callback_gas),
+            self.proxy_callback_gas,
             U64::from(self.slot_granularity),
             U64::from(self.agent_storage_usage),
             U128::from(env::account_balance()),
@@ -198,9 +198,14 @@ impl Contract {
     pub fn get_agent_ids(&self) -> (String, String) {
         let comma: &str = ",";
         (
-            self.agent_active_queue.iter().map(|a| a + comma).collect(),
-            // self.agent_active_queue.iter().collect(),
-            self.agent_pending_queue.iter().map(|a| a + comma).collect(),
+            self.agent_active_queue
+                .iter()
+                .map(|a| a.to_string() + comma)
+                .collect(),
+            self.agent_pending_queue
+                .iter()
+                .map(|a| a.to_string() + comma)
+                .collect(),
         )
     }
 
@@ -209,7 +214,7 @@ impl Contract {
     /// ```bash
     /// near view cron.testnet get_agent_tasks '{"account_id": "YOUR_AGENT.testnet"}'
     /// ```
-    pub fn get_agent_tasks(&self, account_id: ValidAccountId) -> (U64, U128) {
+    pub fn get_agent_tasks(&self, account_id: AccountId) -> (U64, U128) {
         let current_slot = self.get_slot_id(None);
         let empty = (U64::from(0), U128::from(current_slot));
 
@@ -220,7 +225,7 @@ impl Contract {
         }
 
         // Get tasks only for THIS agent
-        if let Some(a) = self.agents.get(&account_id.to_string()) {
+        if let Some(a) = self.agents.get(&account_id) {
             // Return nothing if agent has missed total threshold
             let last_slot = a.last_missed_slot;
             if a.last_missed_slot != 0
@@ -246,14 +251,14 @@ impl Contract {
 
             // // Otherwise, assess if they are in active set, or are able to cover an agent that missed previous slot
             // let (can_execute, _, agent_tasks) =
-            //     self.check_agent_can_execute(account_id.to_string(), slot_data.len() as u64);
+            //     self.check_agent_can_execute(account_id, slot_data.len() as u64);
             // if !can_execute {
             //     return empty;
             // }
 
             // Otherwise, assess if they are in active set, or are able to cover an agent that missed previous slot
             let (can_execute, _, agent_tasks) =
-                self.check_agent_can_execute(account_id.to_string(), slot_data.len() as u64);
+                self.check_agent_can_execute(account_id, slot_data.len() as u64);
             if !can_execute && slot_ballpark == current_slot {
                 return empty;
             }
@@ -354,19 +359,22 @@ impl Contract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::json_types::ValidAccountId;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env, MockedBlockchain};
+    use near_sdk::testing_env;
+    use near_sdk::{AccountId, PublicKey};
 
     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
     const AGENT_STORAGE_FEE: u128 = 2260000000000000000000;
 
-    fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
+    fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(accounts(0))
             .signer_account_id(predecessor_account_id.clone())
-            .signer_account_pk(b"ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM".to_vec())
+            .signer_account_pk(
+                PublicKey::from_str("ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM")
+                    .unwrap(),
+            )
             .predecessor_account_id(predecessor_account_id)
             .block_timestamp(BLOCK_START_TS);
         builder
@@ -401,7 +409,7 @@ mod tests {
             "*/10 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.create_task(
@@ -410,7 +418,7 @@ mod tests {
             "*/10 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         testing_env!(context
@@ -450,7 +458,7 @@ mod tests {
             "*/1 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.create_task(
@@ -459,7 +467,7 @@ mod tests {
             "*/2 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
 
@@ -475,7 +483,7 @@ mod tests {
             .block_timestamp(BLOCK_START_TS + (120 * NANO))
             .predecessor_account_id(accounts(4))
             .build());
-        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4), 1);
         assert_eq!(can_exec, true, "Can execute: Single Agent: True");
         assert_eq!(index, 0, "Can execute: Single Agent: Index 0");
         testing_env!(context
@@ -483,7 +491,7 @@ mod tests {
             .block_timestamp(BLOCK_START_TS + (240 * NANO))
             .predecessor_account_id(accounts(4))
             .build());
-        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(4), 1);
         assert_eq!(can_exec_2, true, "Can execute: Single Agent: True");
         assert_eq!(index_2, 0, "Can execute: Single Agent: Index 0");
     }
@@ -508,7 +516,7 @@ mod tests {
             "*/1 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.create_task(
@@ -517,7 +525,7 @@ mod tests {
             "*/2 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.create_task(
@@ -526,7 +534,7 @@ mod tests {
             "*/3 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.create_task(
@@ -535,7 +543,7 @@ mod tests {
             "*/4 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         testing_env!(context
@@ -558,10 +566,10 @@ mod tests {
         contract.register_agent(Some(accounts(5)));
         contract.tick();
         testing_env!(context.is_view(true).build());
-        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4), 1);
         assert_eq!(can_exec, true, "Can execute: Multi Agent: True");
         assert_eq!(index, 0, "Can execute: Multi Agent: Index 0");
-        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5), 1);
         assert_eq!(can_exec_2, false, "Can execute: Multi Agent: False");
         assert_eq!(index_2, 1, "Can execute: Multi Agent: Index 0");
 
@@ -572,10 +580,10 @@ mod tests {
             .build());
         contract.agent_active_index = 1;
         testing_env!(context.is_view(true).build());
-        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4), 1);
         assert_eq!(can_exec, false, "Can execute: Multi Agent: True");
         assert_eq!(index, 0, "Can execute: Multi Agent: Index 0");
-        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5), 1);
         assert_eq!(can_exec_2, true, "Can execute: Multi Agent: False");
         assert_eq!(index_2, 1, "Can execute: Multi Agent: Index 0");
     }
@@ -604,7 +612,7 @@ mod tests {
             "*/1 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.create_task(
@@ -613,7 +621,7 @@ mod tests {
             "*/2 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.create_task(
@@ -622,7 +630,7 @@ mod tests {
             "*/3 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.create_task(
@@ -631,7 +639,7 @@ mod tests {
             "*/4 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         testing_env!(context
@@ -654,11 +662,11 @@ mod tests {
         contract.register_agent(Some(accounts(5)));
         contract.tick();
         // testing_env!(context.is_view(true).build());
-        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4), 1);
         assert_eq!(can_exec, true, "Can execute: Multi Agent: True");
         assert_eq!(index, 0, "Can execute: Multi Agent: Index 0");
         contract.agent_active_index = 1;
-        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5), 1);
         assert_eq!(can_exec_2, true, "Can execute: Multi Agent: True");
         assert_eq!(index_2, 1, "Can execute: Multi Agent: Index 0");
 
@@ -669,11 +677,11 @@ mod tests {
             .build());
         contract.agent_active_index = 0;
         // testing_env!(context.is_view(true).build());
-        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4), 1);
         assert_eq!(can_exec, true, "Can execute: Multi Agent: True");
         assert_eq!(index, 0, "Can execute: Multi Agent: Index 0");
         contract.agent_active_index = 1;
-        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5), 1);
         assert_eq!(can_exec_2, true, "Can execute: Multi Agent: True");
         assert_eq!(index_2, 1, "Can execute: Multi Agent: Index 0");
     }
@@ -702,7 +710,7 @@ mod tests {
             "*/1 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.create_task(
@@ -711,7 +719,7 @@ mod tests {
             "*/1 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.create_task(
@@ -720,7 +728,7 @@ mod tests {
             "*/1 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         ); // #poojokes
         contract.create_task(
@@ -729,7 +737,7 @@ mod tests {
             "*/1 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         ); // #poojokes
         testing_env!(context
@@ -752,25 +760,25 @@ mod tests {
         contract.register_agent(Some(accounts(5)));
         contract.tick();
         // testing_env!(context.is_view(true).build());
-        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4).to_string(), 3);
+        let (can_exec, index, _) = contract.check_agent_can_execute(accounts(4), 3);
         assert_eq!(can_exec, true, "Can execute: Multi Agent: True");
         assert_eq!(index, 0, "Can execute: Multi Agent: Index 0");
         contract.agent_active_index = 1;
-        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5).to_string(), 2);
+        let (can_exec_2, index_2, _) = contract.check_agent_can_execute(accounts(5), 2);
         assert_eq!(can_exec_2, true, "Can execute: Multi Agent: True");
         assert_eq!(index_2, 1, "Can execute: Multi Agent: Index 1");
         contract.agent_active_index = 0;
-        let (can_exec_3, index_3, _) = contract.check_agent_can_execute(accounts(4).to_string(), 1);
+        let (can_exec_3, index_3, _) = contract.check_agent_can_execute(accounts(4), 1);
         assert_eq!(can_exec_3, true, "Can execute: Multi Agent: True");
         assert_eq!(index_3, 0, "Can execute: Multi Agent: Index 0");
-        let (can_exec_4, index_4, _) = contract.check_agent_can_execute(accounts(5).to_string(), 1);
+        let (can_exec_4, index_4, _) = contract.check_agent_can_execute(accounts(5), 1);
         assert_eq!(can_exec_4, false, "Can execute: Multi Agent: False");
         assert_eq!(index_4, 1, "Can execute: Multi Agent: Index 1");
         contract.agent_active_index = 1;
-        let (can_exec_5, index_5, _) = contract.check_agent_can_execute(accounts(4).to_string(), 0);
+        let (can_exec_5, index_5, _) = contract.check_agent_can_execute(accounts(4), 0);
         assert_eq!(can_exec_5, false, "Can execute: Multi Agent: True");
         assert_eq!(index_5, 0, "Can execute: Multi Agent: Index 0");
-        let (can_exec_6, index_6, _) = contract.check_agent_can_execute(accounts(5).to_string(), 0);
+        let (can_exec_6, index_6, _) = contract.check_agent_can_execute(accounts(5), 0);
         assert_eq!(can_exec_6, false, "Can execute: Multi Agent: False");
         assert_eq!(index_6, 1, "Can execute: Multi Agent: Index 1");
     }

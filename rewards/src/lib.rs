@@ -2,7 +2,7 @@ use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::UnorderedSet,
     env, ext_contract,
-    json_types::{Base64VecU8, ValidAccountId, U128, U64},
+    json_types::{Base64VecU8, AccountId, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json, AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseResult,
@@ -95,7 +95,7 @@ impl Contract {
     /// near call rewards.cron.testnet --initFunction new --initArgs '{"cron_account_id": "manager.cron.testnet", "dao_account_id": "dao.sputnikv2.testnet"}' --accountId cron.testnet
     /// ```
     #[init]
-    pub fn new(cron_account_id: ValidAccountId, dao_account_id: ValidAccountId) -> Self {
+    pub fn new(cron_account_id: AccountId, dao_account_id: AccountId) -> Self {
         Contract {
             paused: false,
             cron_account_id: cron_account_id.into(),
@@ -252,14 +252,14 @@ impl Contract {
 // #[cfg(test)]
 // mod tests {
 //     use super::*;
-//     use near_sdk::json_types::ValidAccountId;
+//     use near_sdk::json_types::AccountId;
 //     use near_sdk::test_utils::{accounts, VMContextBuilder};
 //     use near_sdk::{testing_env, MockedBlockchain};
 
 //     const BLOCK_START_BLOCK: u64 = 52_201_040;
 //     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
 
-//     fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
+//     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
 //         let mut builder = VMContextBuilder::new();
 //         builder
 //             .current_account_id(accounts(0))

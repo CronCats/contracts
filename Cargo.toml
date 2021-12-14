@@ -2,10 +2,7 @@
 # include a member for each contract
 members = [
   "manager",
-  "rewards",
-  "examples/counter",
-  "examples/charity",
-  "examples/cross-contract"
+  "e2e"
 ]
 
 [profile.release]

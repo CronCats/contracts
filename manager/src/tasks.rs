@@ -1,8 +1,8 @@
 use crate::*;
 
-pub const MAX_NEAR_GAS: Gas = 300_000_000_000_000;
-pub const GAS_FOR_PROXY_CALL: Gas = 20_000_000_000_000;
-pub const GAS_FOR_PROXY_CALLBACK: Gas = 10_000_000_000_000;
+pub const MAX_NEAR_GAS: Gas = Gas(300_000_000_000_000);
+pub const GAS_FOR_PROXY_CALL: Gas = Gas(20_000_000_000_000);
+pub const GAS_FOR_PROXY_CALLBACK: Gas = Gas(10_000_000_000_000);
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(crate = "near_sdk::serde")]
@@ -48,7 +48,7 @@ impl Contract {
     #[payable]
     pub fn create_task(
         &mut self,
-        contract_id: ValidAccountId,
+        contract_id: AccountId,
         function_id: String,
         cadence: String,
         recurring: Option<bool>,
@@ -64,15 +64,16 @@ impl Contract {
             "Cadence string invalid"
         );
         // Tasks will fail if they specify more than available gas
+        let create_gas = gas.unwrap_or(Gas(0));
+        // TODO: Figure out why the Gas methods are not working..
+        // let compare_gas = Gas::from(GAS_FOR_PROXY_CALL).add_assign(GAS_FOR_PROXY_CALLBACK);
+        let compare_gas = Gas(create_gas.0 + GAS_FOR_PROXY_CALL.0 + GAS_FOR_PROXY_CALLBACK.0);
         assert!(
-            MAX_NEAR_GAS
-                > gas
-                    .unwrap_or(0)
-                    .saturating_add(GAS_FOR_PROXY_CALL.saturating_add(GAS_FOR_PROXY_CALLBACK)),
+            MAX_NEAR_GAS > compare_gas,
             "Maximum gas allocation exceeded"
         );
         // Additional checks
-        if contract_id.clone().to_string() == env::current_account_id() {
+        if contract_id.clone() == env::current_account_id() {
             // check that the method is NOT the callback of this contract
             assert!(
                 function_id != "callback_for_proxy_call",
@@ -197,7 +198,7 @@ impl Contract {
             self.available_balance = self
                 .available_balance
                 .saturating_sub(task_balance_remaining);
-            Promise::new(task.owner_id.to_string()).transfer(task_balance_remaining);
+            Promise::new(task.owner_id).transfer(task_balance_remaining);
         }
 
         // Remove task from schedule
@@ -228,7 +229,7 @@ impl Contract {
         // only registered agent signed, because micropayments will benefit long term
         let agent_opt = self.agents.get(&env::predecessor_account_id());
         if agent_opt.is_none() {
-            env::panic(b"Agent not registered");
+            env::panic_str("Agent not registered");
         }
         let mut agent = agent_opt.unwrap();
 
@@ -324,7 +325,7 @@ impl Contract {
         // we require the task owner to appropriately estimate gas for overpayment.
         // The gas overpayment will also accrue to the agent since there is no way to read
         // how much gas was actually used on callback.
-        let call_fee_used = u128::from(task.gas).saturating_mul(self.gas_price);
+        let call_fee_used = u128::from(Gas::from(task.gas).0) * self.gas_price;
         let call_total_fee = call_fee_used.saturating_add(self.agent_fee);
         let call_total_balance = task.deposit.0.saturating_add(call_total_fee);
 
@@ -355,7 +356,7 @@ impl Contract {
         // Call external contract with task variables
         let promise_first = env::promise_create(
             task.contract_id.clone(),
-            &task.function_id.as_bytes(),
+            &task.function_id,
             task.arguments.0.as_slice(),
             task.deposit.0,
             task.gas,
@@ -371,7 +372,7 @@ impl Contract {
             let promise_second = env::promise_then(
                 promise_first,
                 env::current_account_id(),
-                b"callback_for_proxy_call",
+                "callback_for_proxy_call",
                 json!({
                     "task_hash": hash,
                     "current_slot": U128::from(current_slot)
@@ -465,7 +466,7 @@ impl Contract {
         // we require the task owner to appropriately estimate gas for overpayment.
         // The gas overpayment will also accrue to the agent since there is no way to read
         // how much gas was actually used on callback.
-        let call_fee_used = u128::from(task.gas) * self.gas_price;
+        let call_fee_used = u128::from(Gas::from(task.gas).0) * self.gas_price;
         let call_total_fee = call_fee_used + self.agent_fee;
         let call_total_balance = task.deposit.0 + call_total_fee;
 
@@ -485,7 +486,7 @@ impl Contract {
         // Call external contract with task variables
         let promise_first = env::promise_create(
             task.contract_id.clone(),
-            &task.function_id.as_bytes(),
+            &task.function_id,
             task.arguments.0.as_slice(),
             task.deposit.0,
             task.gas,
@@ -501,7 +502,7 @@ impl Contract {
             let promise_second = env::promise_then(
                 promise_first,
                 env::current_account_id(),
-                b"callback_for_proxy_call",
+                "callback_for_proxy_call",
                 json!({
                     "task_hash": hash,
                     "current_slot": U128::from(current_slot)
@@ -545,16 +546,16 @@ impl Contract {
     /// Returns the base amount required to execute 1 task
     /// NOTE: this is not the final used amount, just the user-specified amount total needed
     fn task_balance_uses(&self, task: &Task) -> u128 {
-        task.deposit.0 + (u128::from(task.gas) * self.gas_price) + self.agent_fee
+        task.deposit.0 + (u128::from(Gas::from(task.gas).0) * self.gas_price) + self.agent_fee
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::json_types::ValidAccountId;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env, MockedBlockchain};
+    use near_sdk::testing_env;
+    use near_sdk::{AccountId, PublicKey};
 
     use chrono::prelude::DateTime;
     use chrono::Utc;
@@ -567,14 +568,14 @@ mod tests {
 
     pub fn get_sample_task() -> Task {
         Task {
-            owner_id: String::from("bob"),
-            contract_id: String::from("danny"),
+            owner_id: accounts(1),
+            contract_id: accounts(3),
             function_id: String::from("increment"),
             cadence: String::from("0 0 */1 * * *"),
             recurring: false,
             total_deposit: U128::from(1000000000020000000100),
             deposit: U128::from(100),
-            gas: 200,
+            gas: Gas(200),
             arguments: Base64VecU8::from(vec![]),
         }
     }
@@ -592,12 +593,15 @@ mod tests {
         newdate.to_string()
     }
 
-    fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
+    fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(accounts(0))
             .signer_account_id(predecessor_account_id.clone())
-            .signer_account_pk(b"ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM".to_vec())
+            .signer_account_pk(
+                PublicKey::from_str("ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM")
+                    .unwrap(),
+            )
             .predecessor_account_id(predecessor_account_id)
             .block_index(BLOCK_START_BLOCK)
             .block_timestamp(BLOCK_START_TS);
@@ -630,7 +634,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
 
@@ -659,7 +663,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(true),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
     }
@@ -680,7 +684,7 @@ mod tests {
             "raspberry_oat_milk".to_string(),
             Some(true),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
     }
@@ -701,7 +705,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(true),
             Some(U128::from(100)),
-            Some(270_000_000_000_000),
+            Some(Gas(270_000_000_000_000)),
             None,
         );
     }
@@ -722,7 +726,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(true),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
     }
@@ -745,7 +749,7 @@ mod tests {
             "0 0 * * * *".to_string(),
             Some(true),
             Some(U128::from(0)),
-            Some(20000000000000),
+            Some(Gas(20000000000000)),
             None,
         );
     }
@@ -765,7 +769,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(true),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
 
@@ -788,7 +792,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100000)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
     }
@@ -808,7 +812,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(true),
             Some(U128::from(100000)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
     }
@@ -827,7 +831,7 @@ mod tests {
     //         "0 0 */1 * * *".to_string(),
     //         Some(true),
     //         Some(U128::from(100000000000000000)),
-    //         Some(0),
+    //         Some(Gas(0)),
     //         None,
     //     );
     // }
@@ -852,7 +856,7 @@ mod tests {
             "*/10 * * * * *".to_string(),
             Some(false),
             Some(U128::from(0)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         testing_env!(context.is_view(true).build());
@@ -921,14 +925,14 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         testing_env!(context
             .is_view(false)
             .block_index(1260)
             .attached_deposit(3000000000000300)
-            .prepaid_gas(300000000000)
+            .prepaid_gas(Gas(300000000000))
             .build());
         contract.proxy_call();
     }
@@ -949,7 +953,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
         contract.update_settings(None, None, Some(true), None, None, None, None, None);
@@ -974,7 +978,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
 
@@ -1006,7 +1010,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
 
@@ -1057,7 +1061,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
 
@@ -1092,7 +1096,7 @@ mod tests {
             "0 0 */1 * * *".to_string(),
             Some(false),
             Some(U128::from(100)),
-            Some(200),
+            Some(Gas(200)),
             None,
         );
 
