@@ -8,8 +8,6 @@ use near_sdk::{
     serde_json, AccountId, BorshStorageKey, Gas, PanicOnDefault, Promise,
 };
 
-near_sdk::setup_alloc!();
-
 /// Basic configs
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const NANOS: u64 = 1_000_000;
@@ -19,14 +17,14 @@ pub const MILLISECONDS_IN_DAY: u64 = 86_400_000;
 
 /// Gas & Balance Configs
 pub const NO_DEPOSIT: u128 = 0;
-pub const GAS_FOR_COMPUTE_CALL: Gas = 70_000_000_000_000;
-pub const GAS_FOR_COMPUTE_CALLBACK: Gas = 40_000_000_000_000;
-pub const GAS_FOR_SCHEDULE_CALL: Gas = 25_000_000_000_000;
-pub const GAS_FOR_SCHEDULE_CALLBACK: Gas = 5_000_000_000_000;
-pub const GAS_FOR_UPDATE_CALL: Gas = 15_000_000_000_000;
-pub const GAS_FOR_REMOVE_CALL: Gas = 20_000_000_000_000;
-pub const GAS_FOR_STATUS_CALL: Gas = 25_000_000_000_000;
-pub const GAS_FOR_STATUS_CALLBACK: Gas = 25_000_000_000_000;
+pub const GAS_FOR_COMPUTE_CALL: Gas = Gas(70_000_000_000_000);
+pub const GAS_FOR_COMPUTE_CALLBACK: Gas = Gas(40_000_000_000_000);
+pub const GAS_FOR_SCHEDULE_CALL: Gas = Gas(25_000_000_000_000);
+pub const GAS_FOR_SCHEDULE_CALLBACK: Gas = Gas(5_000_000_000_000);
+pub const GAS_FOR_UPDATE_CALL: Gas = Gas(15_000_000_000_000);
+pub const GAS_FOR_REMOVE_CALL: Gas = Gas(20_000_000_000_000);
+pub const GAS_FOR_STATUS_CALL: Gas = Gas(25_000_000_000_000);
+pub const GAS_FOR_STATUS_CALLBACK: Gas = Gas(25_000_000_000_000);
 
 /// Error messages
 const ERR_ONLY_OWNER: &str = "Must be called by owner";
@@ -233,12 +231,12 @@ impl CrudContract {
     /// ```
     pub fn compute(&mut self) -> Promise {
         ext_croncat::get_info(
-            &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
+            self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
             env::attached_deposit(),
             GAS_FOR_SCHEDULE_CALL,
         )
         .then(ext::compute_callback(
-            &env::current_account_id(),
+            env::current_account_id(),
             NO_DEPOSIT,
             GAS_FOR_COMPUTE_CALLBACK,
         ))
@@ -449,19 +447,19 @@ impl CrudContract {
         // NOTE: Could check that the balance supplied is enough to cover XX task calls.
 
         ext_croncat::create_task(
-            env::current_account_id(),
+            env::current_account_id().to_string(),
             function_id,
             period,
             Some(true),
             Some(U128::from(NO_DEPOSIT)),
             Some(GAS_FOR_COMPUTE_CALL), // 30 Tgas
             None,
-            &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
+            self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
             env::attached_deposit(),
             GAS_FOR_SCHEDULE_CALL,
         )
         .then(ext::schedule_callback(
-            &env::current_account_id(),
+            env::current_account_id(),
             NO_DEPOSIT,
             GAS_FOR_SCHEDULE_CALLBACK,
         ))
@@ -491,7 +489,7 @@ impl CrudContract {
 
         ext_croncat::remove_task(
             task_hash,
-            &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
+            self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
             NO_DEPOSIT,
             GAS_FOR_REMOVE_CALL,
         )
@@ -515,12 +513,12 @@ impl CrudContract {
         ext_croncat::get_task(
             // hash,
             serde_json::to_string(&hash).unwrap().to_string(),
-            &self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
+            self.cron.clone().expect(ERR_NO_CRON_CONFIGURED),
             NO_DEPOSIT,
             GAS_FOR_STATUS_CALL,
         )
         .then(ext::schedule_callback(
-            &env::current_account_id(),
+            env::current_account_id(),
             NO_DEPOSIT,
             GAS_FOR_STATUS_CALLBACK,
         ))

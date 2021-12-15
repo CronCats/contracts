@@ -3,7 +3,10 @@
 members = [
   "manager",
   "e2e",
-  "rewards"
+  "rewards",
+  "examples/counter",
+  "examples/charity",
+  "examples/cross-contract"
 ]
 
 [profile.release]

@@ -4,8 +4,6 @@ use near_sdk::{
     env, log, near_bindgen, AccountId, BorshStorageKey, PanicOnDefault, Promise,
 };
 
-near_sdk::setup_alloc!();
-
 #[derive(BorshStorageKey, BorshSerialize)]
 pub enum StorageKeys {
     Accounts,
@@ -103,16 +101,18 @@ impl Donations {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use near_sdk::json_types::AccountId;
+    use near_sdk::{AccountId, PublicKey};
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env, MockedBlockchain};
+    use near_sdk::{testing_env};
+    use std::str::FromStr;
 
     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(accounts(0))
             .signer_account_id(predecessor_account_id.clone())
-            .signer_account_pk(b"ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM".to_vec())
+            .signer_account_pk(PublicKey::from_str("ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM")
+                    .unwrap())
             .predecessor_account_id(predecessor_account_id)
             .block_index(1234)
             .block_timestamp(1_600_000_000_000_000_000);
@@ -133,7 +133,7 @@ mod tests {
         let mut context = get_context(accounts(1));
         testing_env!(context.is_view(false).build());
         let mut contract = Donations::new();
-        contract.add_account(accounts(2).to_string());
+        contract.add_account(accounts(2));
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.beneficiaries.len(), 1, "Wrong number of accounts");
     }
@@ -143,9 +143,9 @@ mod tests {
         let mut context = get_context(accounts(1));
         testing_env!(context.is_view(false).build());
         let mut contract = Donations::new();
-        contract.add_account(accounts(2).to_string());
+        contract.add_account(accounts(2));
         assert_eq!(contract.beneficiaries.len(), 1, "Wrong number of accounts");
-        contract.remove_account(accounts(2).to_string());
+        contract.remove_account(accounts(2));
         testing_env!(context.is_view(true).build());
         assert_eq!(contract.beneficiaries.len(), 0, "Wrong number of accounts");
     }
@@ -155,10 +155,10 @@ mod tests {
         let mut context = get_context(accounts(1));
         testing_env!(context.is_view(false).build());
         let mut contract = Donations::new();
-        contract.add_account(accounts(2).to_string());
-        contract.add_account(accounts(3).to_string());
-        contract.add_account(accounts(4).to_string());
-        contract.add_account(accounts(5).to_string());
+        contract.add_account(accounts(2));
+        contract.add_account(accounts(3));
+        contract.add_account(accounts(4));
+        contract.add_account(accounts(5));
         assert_eq!(contract.beneficiaries.len(), 4, "Wrong number of accounts");
         contract.reset();
         testing_env!(context.is_view(true).build());
@@ -170,8 +170,8 @@ mod tests {
         let mut context = get_context(accounts(1));
         testing_env!(context.is_view(false).build());
         let mut contract = Donations::new();
-        contract.add_account(accounts(2).to_string());
-        contract.add_account(accounts(3).to_string());
+        contract.add_account(accounts(2));
+        contract.add_account(accounts(3));
         assert_eq!(contract.beneficiaries.len(), 2, "Wrong number of accounts");
         testing_env!(context
             .is_view(false)

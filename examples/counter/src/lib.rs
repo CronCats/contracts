@@ -9,10 +9,7 @@
 //! [reset]: struct.Counter.html#method.reset
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::{env, near_bindgen};
-
-#[global_allocator]
-static ALLOC: near_sdk::wee_alloc::WeeAlloc = near_sdk::wee_alloc::WeeAlloc::INIT;
+use near_sdk::{near_bindgen, log};
 
 // add the following attributes to prepare your code for serialization and invocation on the blockchain
 // More built-in Rust attributes here: https://doc.rust-lang.org/reference/attributes.html#built-in-attributes-index
@@ -54,7 +51,7 @@ impl Counter {
         // real smart contracts will want to have safety checks
         self.val += 1;
         let log_message = format!("Increased number to {}", self.val);
-        env::log(log_message.as_bytes());
+        log!(&log_message);
         after_counter_change();
     }
 
@@ -71,7 +68,7 @@ impl Counter {
         // real smart contracts will want to have safety checks
         self.val -= 1;
         let log_message = format!("Decreased number to {}", self.val);
-        env::log(log_message.as_bytes());
+        log!(&log_message);
         after_counter_change();
     }
 
@@ -79,7 +76,7 @@ impl Counter {
     pub fn reset(&mut self) {
         self.val = 0;
         // Another way to log is to cast a string into bytes, hence "b" below:
-        env::log(b"Reset counter to zero");
+        log!("Reset counter to zero");
     }
 }
 
@@ -88,7 +85,7 @@ impl Counter {
 // while this function cannot be invoked directly on the blockchain, it can be called from an invoked function
 fn after_counter_change() {
     // show helpful warning that i8 (8-bit signed integer) will overflow above 127 or below -128
-    env::log("Make sure you don't overflow, my friend.".as_bytes());
+    log!("Make sure you don't overflow, my friend.");
 }
 
 /*
@@ -102,7 +99,6 @@ fn after_counter_change() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::MockedBlockchain;
     use near_sdk::{testing_env, VMContext};
 
     // part of writing unit tests is setting up a mock context
