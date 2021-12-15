@@ -33,8 +33,6 @@ async fn manager_init(worker: Worker<impl Network>, contract: &Contract) -> anyh
 async fn main() -> anyhow::Result<()> {
     let worker = workspaces::sandbox();
     let agent = worker.dev_create().await?;
-    let path = std::env::current_dir()?;
-    println!("The current directory is {} {}", path.display(), MANAGER_WASM);
     println!("AGENT: {}", agent.id());
 
     let manager = utils::dev_deploy(worker.clone(), MANAGER_WASM)
