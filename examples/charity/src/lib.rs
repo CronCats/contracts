@@ -101,9 +101,9 @@ impl Donations {
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests {
     use super::*;
-    use near_sdk::{AccountId, PublicKey};
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env};
+    use near_sdk::testing_env;
+    use near_sdk::{AccountId, PublicKey};
     use std::str::FromStr;
 
     fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
@@ -111,8 +111,10 @@ mod tests {
         builder
             .current_account_id(accounts(0))
             .signer_account_id(predecessor_account_id.clone())
-            .signer_account_pk(PublicKey::from_str("ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM")
-                    .unwrap())
+            .signer_account_pk(
+                PublicKey::from_str("ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM")
+                    .unwrap(),
+            )
             .predecessor_account_id(predecessor_account_id)
             .block_index(1234)
             .block_timestamp(1_600_000_000_000_000_000);

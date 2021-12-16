@@ -210,7 +210,10 @@ impl Contract {
                             &String::from("pet_check_task_ownership"),
                             "Must be game function method"
                         );
-                        pet_owner_id = AccountId::from_str(task.owner_id.to_string().replace("\"", "").as_str()).unwrap();
+                        pet_owner_id = AccountId::from_str(
+                            task.owner_id.to_string().replace("\"", "").as_str(),
+                        )
+                        .unwrap();
                     } else {
                         // Check that task owner matches this owner
                         assert_eq!(&owner_id, &task.owner_id, "Task is not owned by you");
