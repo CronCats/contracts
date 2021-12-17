@@ -2,8 +2,9 @@
 #![cfg(not(target_arch = "wasm32"))]
 use workspaces::prelude::*;
 
-mod utils;
 mod bootstrap;
+mod tasks;
+mod utils;
 
 // Core runtime contracts
 const MANAGER_WASM: &str = "../res/manager.wasm";
@@ -20,22 +21,31 @@ async fn main() -> anyhow::Result<()> {
     let worker = workspaces::sandbox();
 
     let croncat = worker.dev_create_account().await?;
-    println!("CRONCAT: {}", croncat.id());
+    println!("CRONCAT: {}", &croncat.id());
 
     let manager_contract =
-        utils::create_subaccount_and_deploy_file(&worker, &croncat, "manager_v1", MANAGER_WASM).await?;
+        utils::create_subaccount_and_deploy_file(&worker, &croncat, "manager_v1", MANAGER_WASM)
+            .await?;
+    println!("manager_contract id: {}", &manager_contract.id());
     let rewards_contract =
-        utils::create_subaccount_and_deploy_file(&worker, &croncat, "rewards", REWARDS_WASM).await?;
+        utils::create_subaccount_and_deploy_file(&worker, &croncat, "rewards", REWARDS_WASM)
+            .await?;
+    println!("rewards_contract id: {}", &rewards_contract.id());
     let charity_contract =
-        utils::create_subaccount_and_deploy_file(&worker, &croncat, "charity", CHARITY_WASM).await?;
+        utils::create_subaccount_and_deploy_file(&worker, &croncat, "charity", CHARITY_WASM)
+            .await?;
+    println!("charity_contract id: {}", &charity_contract.id());
     let counter_contract =
-        utils::create_subaccount_and_deploy_file(&worker, &croncat, "counter", COUNTER_WASM).await?;
+        utils::create_subaccount_and_deploy_file(&worker, &croncat, "counter", COUNTER_WASM)
+            .await?;
+    println!("counter_contract id: {}", &counter_contract.id());
     let crudcross_contract =
-        utils::create_subaccount_and_deploy_file(&worker, &croncat, "crudcross", CRUD_CROSS_WASM).await?;
+        utils::create_subaccount_and_deploy_file(&worker, &croncat, "crudcross", CRUD_CROSS_WASM)
+            .await?;
+    println!("crudcross_contract id: {}", &crudcross_contract.id());
 
     let users = worker.dev_create_account().await?;
-    // let dao = worker.dev_create_account().await?;
-    println!("users: {}", users.id());
+    let dao = worker.dev_create_account().await?;
 
     // NOTE: Adding many more agents in the future for diff scenarios, so naming convention has numbers
     let user_1 = utils::create_subaccount(&worker, &users, "user_1").await?;
@@ -43,17 +53,19 @@ async fn main() -> anyhow::Result<()> {
     println!("user_1: {}", user_1.id());
     println!("agent_1: {}", agent_1.id());
 
-    println!("manager_contract id: {:?}", &manager_contract.id());
-    println!("rewards_contract id: {:?}", &rewards_contract.id());
-    println!("charity_contract id: {:?}", &charity_contract.id());
-    println!("counter_contract id: {:?}", &counter_contract.id());
-    println!("crudcross_contract id: {:?}", &crudcross_contract.id());
-
     // initialize each contract with basics:
     bootstrap::init_manager(&worker, &manager_contract).await?;
-    // bootstrap::init_rewards(&worker, &manager_contract, manager_contract.id().to_string(), dao.id().to_string()).await?;
-    // bootstrap::init_crudcross(&worker, &manager_contract, manager_contract.id().to_string()).await?;
-    println!("crudcross_contract id: {:?}", &crudcross_contract.id());
+    bootstrap::init_rewards(
+        &worker,
+        &rewards_contract,
+        &manager_contract.id(),
+        &dao.id(),
+    )
+    .await?;
+    bootstrap::init_crudcross(&worker, &crudcross_contract, &manager_contract.id()).await?;
+
+    // Tasks
+    tasks::lifecycle(&worker, &manager_contract, &user_1).await?;
 
     Ok(())
 }

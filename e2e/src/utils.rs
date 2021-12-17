@@ -1,6 +1,8 @@
-use workspaces::prelude::*;
-use workspaces::{Contract, DevNetwork, Network, Worker, Account};
+#![cfg(test)]
+#![cfg(not(target_arch = "wasm32"))]
+// use workspaces::prelude::*;
 use near_units::parse_near;
+use workspaces::{Account, Contract, Network, Worker};
 
 // // helper that deploys a specific contract to mainnet
 // pub async fn deploy(worker: Worker<impl Network>, contract_file: String) -> anyhow::Result<Contract> {
@@ -8,15 +10,15 @@ use near_units::parse_near;
 //     worker.deploy(file).await
 // }
 
-// helper that deploys a specific contract
-// NOTE: `dev_deploy` is only available on `DevNetwork`s such sandbox and testnet.
-pub async fn dev_deploy(
-    worker: Worker<impl DevNetwork>,
-    contract_file: &str,
-) -> anyhow::Result<Contract> {
-    let file = std::fs::read(contract_file)?;
-    worker.dev_deploy(file).await
-}
+// // helper that deploys a specific contract
+// // NOTE: `dev_deploy` is only available on `DevNetwork`s such sandbox and testnet.
+// pub async fn dev_deploy(
+//     worker: Worker<impl DevNetwork>,
+//     contract_file: &str,
+// ) -> anyhow::Result<Contract> {
+//     let file = std::fs::read(contract_file)?;
+//     worker.dev_deploy(file).await
+// }
 
 /// Creates a sub account & deploys the contract file to it
 pub async fn create_subaccount(
@@ -27,7 +29,7 @@ pub async fn create_subaccount(
     // Create sub account
     let subaccount = account
         .create_subaccount(&worker, account_id)
-        .initial_balance(parse_near!("10"))
+        .initial_balance(parse_near!("10 N"))
         .transact()
         .await?
         .into_result()?;
