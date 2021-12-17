@@ -34,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
         utils::create_subaccount_and_deploy_file(&worker, &croncat, "crudcross", CRUD_CROSS_WASM).await?;
 
     let users = worker.dev_create_account().await?;
+    // let dao = worker.dev_create_account().await?;
     println!("users: {}", users.id());
 
     // NOTE: Adding many more agents in the future for diff scenarios, so naming convention has numbers
@@ -50,6 +51,9 @@ async fn main() -> anyhow::Result<()> {
 
     // initialize each contract with basics:
     bootstrap::init_manager(&worker, &manager_contract).await?;
+    // bootstrap::init_rewards(&worker, &manager_contract, manager_contract.id().to_string(), dao.id().to_string()).await?;
+    // bootstrap::init_crudcross(&worker, &manager_contract, manager_contract.id().to_string()).await?;
+    println!("crudcross_contract id: {:?}", &crudcross_contract.id());
 
     Ok(())
 }

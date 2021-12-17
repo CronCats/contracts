@@ -14,11 +14,43 @@ use workspaces::{Contract, Network, Worker};
 // #[tokio::test]
 pub async fn init_manager(worker: &Worker<impl Network>, contract: &Contract) -> anyhow::Result<()> {
     let result = contract.call(&worker, "new")
-        .args_json(serde_json::json!({}))
+        .args_json(serde_json::json!({}))?
         .transact()
         .await?;
-    
-    assert_eq!(1,1);
+
+    // TODO:
+    // assert_eq!(result.status, SuccessValue, "Manager init failed");
+
+    Ok(())
+}
+
+// Bootstrap the core contract: Manager
+pub async fn init_rewards(worker: &Worker<impl Network>, contract: &Contract, cron: String, dao: String) -> anyhow::Result<()> {
+    let result = contract.call(&worker, "new")
+        .args_json(serde_json::json!({
+            "cron_account_id": cron,
+            "dao_account_id": dao
+        }))?
+        .transact()
+        .await?;
+
+    // TODO:
+    // assert_eq!(result.status, SuccessValue, "Manager init failed");
+
+    Ok(())
+}
+
+// Bootstrap the core contract: Manager
+pub async fn init_crudcross(worker: &Worker<impl Network>, contract: &Contract, cron: String) -> anyhow::Result<()> {
+    let result = contract.call(&worker, "new")
+        .args_json(serde_json::json!({
+            "cron": cron
+        }))?
+        .transact()
+        .await?;
+
+    // TODO:
+    // assert_eq!(result.status, SuccessValue, "Manager init failed");
 
     Ok(())
 }
