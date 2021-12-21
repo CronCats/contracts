@@ -91,7 +91,6 @@ impl Contract {
     /// near call cron.testnet new --accountId cron.testnet
     /// ```
     #[init]
-    #[payable]
     pub fn new() -> Self {
         let mut this = Contract {
             paused: false,

@@ -261,18 +261,14 @@ mod tests {
     fn test_move_balance() {
         let mut context = get_context(accounts(1));
         testing_env!(context
-            .attached_deposit(ONE_NEAR * 50)
             .is_view(false)
             .build());
         let mut contract = Contract::new();
         contract.calc_balances();
-        testing_env!(context.is_view(true).build());
-
-        testing_env!(context.is_view(false).build());
         contract.move_balance(U128::from(ONE_NEAR / 2), accounts(1).to_string());
         testing_env!(context.is_view(true).build());
 
         let (_, _, _, surplus) = contract.get_balances();
-        assert_eq!(surplus.0, 141928000000000000000000000);
+        assert_eq!(surplus.0, 91928000000000000000000000);
     }
 }
