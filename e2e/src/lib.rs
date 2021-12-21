@@ -2,6 +2,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 use workspaces::prelude::*;
 
+mod agents_basic;
 mod bootstrap;
 mod tasks;
 mod utils;
@@ -66,6 +67,9 @@ async fn main() -> anyhow::Result<()> {
 
     // Tasks
     tasks::lifecycle(&worker, &manager_contract, &user_1).await?;
+
+    // Agent Flows
+    agents_basic::lifecycle(&worker, &manager_contract, &agent_1).await?;
 
     Ok(())
 }
