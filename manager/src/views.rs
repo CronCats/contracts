@@ -57,6 +57,34 @@ impl Contract {
         )
     }
 
+    /// Gets the balances for treasury management
+    ///
+    /// ```bash
+    /// near view cron.testnet get_balances
+    /// ```
+    pub fn get_balances(
+        &self,
+    ) -> (
+        U128, // total balance
+        U128, // available balance
+        U128, // staked balance
+        U128, // surplus (available to treasury)
+    ) {
+        let base_balance = BASE_BALANCE; // safety overhead
+        let storage_balance = env::storage_byte_cost().saturating_mul(env::storage_usage() as u128);
+        let required_balance = base_balance.saturating_add(storage_balance);
+        let total_balance: u128 = if self.available_balance > 0 { self.available_balance } else { env::account_balance() };
+        let surplus = u128::max(total_balance.saturating_sub(required_balance), 0);
+
+        // Return surplus value in case we want to trigger staking based off outcome
+        (
+            U128::from(env::account_balance()),
+            U128::from(self.available_balance),
+            U128::from(self.staked_balance),
+            U128::from(surplus),
+        )
+    }
+
     /// Check if a cadence string is valid by attempting to parse it
     ///
     /// ```bash

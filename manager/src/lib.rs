@@ -25,6 +25,7 @@ near_sdk::setup_alloc!();
 
 // Balance & Fee Definitions
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
+pub const BASE_BALANCE: Balance = ONE_NEAR * 5; // safety overhead
 pub const GAS_BASE_PRICE: Balance = 100_000_000;
 pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
 // actual is: 13534954161128, higher in case treemap rebalance
@@ -53,6 +54,7 @@ pub struct Contract {
     // Runtime
     paused: bool,
     owner_id: AccountId,
+    treasury_id: Option<AccountId>,
 
     // Agent management
     agents: LookupMap<AccountId, Agent>,
@@ -89,10 +91,12 @@ impl Contract {
     /// near call cron.testnet new --accountId cron.testnet
     /// ```
     #[init]
+    #[payable]
     pub fn new() -> Self {
         let mut this = Contract {
             paused: false,
             owner_id: env::signer_account_id(),
+            treasury_id: None,
             tasks: UnorderedMap::new(StorageKeys::Tasks),
             agents: LookupMap::new(StorageKeys::Agents),
             agent_active_queue: Vector::new(StorageKeys::AgentsActive),
