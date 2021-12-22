@@ -74,7 +74,7 @@ pub struct Contract {
     tasks: UnorderedMap<Vec<u8>, Task>,
 
     // Economics
-    available_balance: Balance,
+    available_balance: Balance, // tasks + rewards balance
     staked_balance: Balance,
     agent_fee: Balance,
     gas_price: Balance,

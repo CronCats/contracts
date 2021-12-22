@@ -131,6 +131,8 @@ impl Contract {
         let (_, _, _, surplus) = self.get_balances();
         assert!(amount.0 < surplus.0, "Amount is too high");
 
+        // transfer
+        // NOTE: Not updating available balance, as we are simply allowing surplus transfer only
         Promise::new(account_id).transfer(amount.0)
     }
 }
