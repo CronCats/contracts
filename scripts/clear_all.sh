@@ -17,6 +17,7 @@ fi
 
 export CRON_ACCOUNT_ID=manager_v1.$NEAR_ACCT
 export REWARDS_ACCOUNT_ID=rewards.$NEAR_ACCT
+export AIRDROP_ACCOUNT_ID=airdrop.$NEAR_ACCT
 export COUNTER_ACCOUNT_ID=counter.$NEAR_ACCT
 export AGENT_ACCOUNT_ID=agent.$NEAR_ACCT
 export USER_ACCOUNT_ID=user.$NEAR_ACCT
@@ -26,6 +27,7 @@ export DAO_ACCOUNT_ID=croncat.sputnikv2.$FACTORY
 # clear and recreate all accounts
 near delete $CRON_ACCOUNT_ID $NEAR_ACCT
 near delete $REWARDS_ACCOUNT_ID $NEAR_ACCT
+near delete $AIRDROP_ACCOUNT_ID $NEAR_ACCT
 near delete $COUNTER_ACCOUNT_ID $NEAR_ACCT
 near delete $AGENT_ACCOUNT_ID $NEAR_ACCT
 near delete $USER_ACCOUNT_ID $NEAR_ACCT
