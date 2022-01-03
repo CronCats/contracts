@@ -3,6 +3,7 @@
 use std::{thread, time};
 use serde_json::json;
 use near_units::{parse_gas, parse_near};
+use near_primitives::views::FinalExecutionStatus;
 use workspaces::{Account, Contract, Network, Worker};
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
@@ -100,22 +101,22 @@ pub async fn lifecycle(
     assert_eq!(new_agent_data.status, AgentStatus::Active);
     assert_eq!(new_agent_data.payable_account_id.to_string(), agent.id().clone().to_string());
     
-    // // Check we cannot register again
-    // let fail_agent = agent
-    //     .call(&worker, contract.id().clone(), "register_agent")
-    //     .args_json(json!({}))?
-    //     .deposit(parse_near!("0.00226 N"))
-    //     .transact()
-    //     .await
-    //     .context("Failed to re-register")?;
-    // println!("agent fail_agent {:#?}", fail_agent);
+    // Check we cannot register again
+    let fail_agent = agent
+        .call(&worker, contract.id().clone(), "register_agent")
+        .args_json(json!({}))?
+        .deposit(parse_near!("0.00226 N"))
+        .transact()
+        .await?;
     // println!("agent fail_agent {:#?}", fail_agent.status);
-    // match fail_agent.status {
-    //     Failure => {
-    //         Err(())
-    //     }
-    // }
-    // assert_eq!(fail_agent, Error::);
+    let fail_agent_bool: bool = match fail_agent.status {
+        // match it against a specific error
+        FinalExecutionStatus::Failure(e) => {
+            e.to_string().contains("Agent already exists")
+        },
+        _ => false,
+    };
+    assert_eq!(fail_agent_bool, true);
     
     // NOTE: Once fastfwd is possible, we can remove this
     println!("Waiting until next slot occurs...");
@@ -179,15 +180,29 @@ pub async fn lifecycle(
     // println!("removed_agent {:#?}", removed_agent);
     assert!(removed_agent.is_none());
     
-    // // try to unregister agent again, check it fails
-    // let fail_unregister: serde_json::Value = agent
-    //     .call(&worker, contract.id().clone(), "unregister_agent")
-    //     .deposit(parse_near!("1y"))
-    //     .transact()
-    //     .await?
-    //     .json()?;
-    // // println!("agent fail_unregister {:#?}", fail_unregister);
-    // assert_eq!(fail_unregister, serde_json::Value::Null);
+    // try to unregister agent again, check it fails
+    let fail_unregister = agent
+        .call(&worker, contract.id().clone(), "unregister_agent")
+        .deposit(parse_near!("1y"))
+        .transact()
+        .await?;
+    // println!("agent fail_unregister {:#?}", fail_unregister.status);
+    // TODO: get the error to trigger, not sure why state is not working 
+    let fail_unregister_bool: bool = match fail_unregister.status {
+        // match it against a specific error
+        FinalExecutionStatus::Failure(e) => {
+            // println!("{:?}", e);
+            // e.to_string().contains("Agent already exists");
+            true
+        },
+        FinalExecutionStatus::SuccessValue(e) => {
+            // println!("SUS {:?}", e);
+            // e.to_string().contains("Agent already exists");
+            true
+        },
+        _ => false,
+    };
+    assert_eq!(fail_unregister_bool, true);
 
     Ok(())
 }

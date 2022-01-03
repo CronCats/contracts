@@ -63,6 +63,7 @@ impl StorageManagement for Contract {
         let account_id = env::predecessor_account_id();
         let force = force.unwrap_or(false);
         if let Some(agent) = self.agents.get(&account_id) {
+            println!("agent ----------------- {:?}", &agent);
             let balance = agent.balance.0;
             if balance == 0 || force {
                 self.remove_agent(account_id.clone());
