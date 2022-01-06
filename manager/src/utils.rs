@@ -2,49 +2,6 @@ use crate::*;
 
 #[near_bindgen]
 impl Contract {
-    // // NOTE: For large state transitions, needs to be able to migrate over paginated sets?
-    // /// Migrate State
-    // /// Safely upgrade contract storage
-    // ///
-    // /// ```bash
-    // /// near call cron.testnet migrate_state --accountId cron.testnet
-    // /// ```
-    // #[init(ignore_state)]
-    // #[private]
-    // pub fn migrate_state() -> Self {
-    //     // Deserialize the state using the old contract structure.
-    //     let old_contract: Contract = env::state_read().expect("Old state doesn't exist");
-    //     // Verify that the migration can only be done by the owner.
-    //     // This is not necessary, if the upgrade is done internally.
-    //     assert_eq!(
-    //         &env::predecessor_account_id(),
-    //         &old_contract.owner_id,
-    //         "Can only be called by the owner"
-    //     );
-
-    //     // Create the new contract using the data from the old contract.
-    //     // Contract { owner_id: old_contract.owner_id, data: old_contract.data, new_data }
-    //     Contract {
-    //         paused: false,
-    //         owner_id: old_contract.owner_id,
-    //         tasks: old_contract.tasks,
-    //         slots: old_contract.slots,
-    //         slot_granularity: old_contract.slot_granularity,
-    //         available_balance: old_contract.available_balance,
-    //         staked_balance: old_contract.staked_balance,
-    //         agent_fee: old_contract.agent_fee,
-    //         gas_price: old_contract.gas_price,
-    //         proxy_callback_gas: old_contract.proxy_callback_gas,
-    //         agents: old_contract.agents,
-    //         agent_storage_usage: old_contract.agent_storage_usage,
-    //         agent_active_queue: Vector::new(StorageKeys::AgentsActive),
-    //         agent_pending_queue: Vector::new(StorageKeys::AgentsPending),
-    //         agent_task_ratio: [1, 2],
-    //         agent_active_index: 0,
-    //         agents_eject_threshold: 10,
-    //     }
-    // }
-
     /// Tick: Cron Manager Heartbeat
     /// Used to manage agents, manage internal use of funds
     ///

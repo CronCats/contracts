@@ -648,7 +648,7 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         testing_env!(context.is_view(false).build());
-        contract.update_settings(None, None, Some(true), None, None, None, None, None);
+        contract.update_settings(None, None, Some(true), None, None, None, None, None, None);
         testing_env!(context
             .is_view(false)
             .attached_deposit(1000000000020000000100)
@@ -952,7 +952,7 @@ mod tests {
             Some(200),
             None,
         );
-        contract.update_settings(None, None, Some(true), None, None, None, None, None);
+        contract.update_settings(None, None, Some(true), None, None, None, None, None, None);
         testing_env!(context.is_view(false).block_index(1260).build());
         contract.proxy_call();
     }
@@ -1178,6 +1178,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         testing_env!(context.is_view(true).build());
         let slot = contract.get_slot_id(None);
@@ -1187,6 +1188,7 @@ mod tests {
         contract.update_settings(
             None,
             Some(10_000_000_000),
+            None,
             None,
             None,
             None,
