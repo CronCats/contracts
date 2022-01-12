@@ -74,7 +74,7 @@ pub struct Airdrop {
     index: u128,
     page_size: u128,
 
-    // FT & NFT balances:
+    // FT & NFT:
     ft_account: AccountId,
     nft_account: AccountId,
 }
@@ -126,6 +126,7 @@ impl Airdrop {
     pub fn add_account(&mut self, account_id: AccountId) {
         assert!(self.managers.contains(&env::predecessor_account_id()), "Must be manager");
         assert!(self.accounts.len() < MAX_ACCOUNTS, "Max accounts stored");
+        assert!(!self.managers.contains(&account_id), "Account already added");
         self.accounts.insert(&account_id);
     }
 
@@ -155,8 +156,8 @@ impl Airdrop {
     /// ```bash
     /// near view airdrop.testnet stats
     /// ```
-    pub fn stats(&self) -> (u128, u128) {
-        (self.index, self.page_size)
+    pub fn stats(&self) -> (u128, u128, u64, u64) {
+        (self.index, self.page_size, self.managers.len(), self.accounts.len())
     }
 
     /// Send airdrop to paginated accounts!
@@ -177,7 +178,7 @@ impl Airdrop {
         let token_amount = amount.unwrap_or(U128::from(0));
 
         let start = self.index;
-        let end = u128::min(self.index * self.page_size, self.accounts.len() as u128);
+        let end = u128::max(self.index * self.page_size, self.accounts.len() as u128);
 
         // Check current index
         // Stop if index has run out of accounts
