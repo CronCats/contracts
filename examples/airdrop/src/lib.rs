@@ -2,10 +2,12 @@ use std::convert::TryFrom;
 
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
-    collections::{UnorderedSet},
+    collections::UnorderedSet,
+    env, ext_contract,
     json_types::{ValidAccountId, U128},
+    log, near_bindgen,
     serde::{Deserialize, Serialize},
-    env, log, near_bindgen, AccountId, BorshStorageKey, PanicOnDefault, Promise, ext_contract, Balance, Gas
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise,
 };
 
 near_sdk::setup_alloc!();
@@ -40,17 +42,13 @@ pub enum TransferType {
 
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
 pub struct NftToken {
-  id: u128,
-  owner_id: AccountId,
+    id: u128,
+    owner_id: AccountId,
 }
 
 #[ext_contract(ext_ft)]
 pub trait ExtFungibleToken {
-    fn ft_transfer(
-        &self,
-        receiver_id: AccountId,
-        amount: U128,
-    );
+    fn ft_transfer(&self, receiver_id: AccountId, amount: U128);
     fn ft_balance_of(&self, account_id: AccountId) -> U128;
 }
 
@@ -85,9 +83,14 @@ impl Airdrop {
     /// near call airdrop.testnet new --accountId airdrop.testnet
     /// ```
     #[init]
-    pub fn new(ft_account_id: Option<ValidAccountId>, nft_account_id: Option<ValidAccountId>) -> Self {
-        let default_ft_account = ValidAccountId::try_from(env::current_account_id().as_str()).unwrap();
-        let default_nft_account = ValidAccountId::try_from(env::current_account_id().as_str()).unwrap();
+    pub fn new(
+        ft_account_id: Option<ValidAccountId>,
+        nft_account_id: Option<ValidAccountId>,
+    ) -> Self {
+        let default_ft_account =
+            ValidAccountId::try_from(env::current_account_id().as_str()).unwrap();
+        let default_nft_account =
+            ValidAccountId::try_from(env::current_account_id().as_str()).unwrap();
         Airdrop {
             accounts: UnorderedSet::new(StorageKeys::Accounts),
             managers: UnorderedSet::new(StorageKeys::Managers),
@@ -124,9 +127,15 @@ impl Airdrop {
     /// near call airdrop.testnet add_account '{"account_id":"friend.testnet"}'
     /// ```
     pub fn add_account(&mut self, account_id: AccountId) {
-        assert!(self.managers.contains(&env::predecessor_account_id()), "Must be manager");
+        assert!(
+            self.managers.contains(&env::predecessor_account_id()),
+            "Must be manager"
+        );
         assert!(self.accounts.len() < MAX_ACCOUNTS, "Max accounts stored");
-        assert!(!self.managers.contains(&account_id), "Account already added");
+        assert!(
+            !self.managers.contains(&account_id),
+            "Account already added"
+        );
         self.accounts.insert(&account_id);
     }
 
@@ -136,7 +145,10 @@ impl Airdrop {
     /// near call airdrop.testnet remove_account '{"account_id":"friend.testnet"}'
     /// ```
     pub fn remove_account(&mut self, account_id: AccountId) {
-        assert!(self.managers.contains(&env::predecessor_account_id()), "Must be manager");
+        assert!(
+            self.managers.contains(&env::predecessor_account_id()),
+            "Must be manager"
+        );
         self.accounts.remove(&account_id);
     }
 
@@ -146,7 +158,10 @@ impl Airdrop {
     /// near call airdrop.testnet reset
     /// ```
     pub fn reset(&mut self) {
-        assert!(self.managers.contains(&env::predecessor_account_id()), "Must be manager");
+        assert!(
+            self.managers.contains(&env::predecessor_account_id()),
+            "Must be manager"
+        );
         self.accounts.clear();
         log!("Removed all accounts");
     }
@@ -157,7 +172,10 @@ impl Airdrop {
     /// near call airdrop.testnet reset_index
     /// ```
     pub fn reset_index(&mut self) {
-        assert!(self.managers.contains(&env::predecessor_account_id()), "Must be manager");
+        assert!(
+            self.managers.contains(&env::predecessor_account_id()),
+            "Must be manager"
+        );
         self.index = 0;
         log!("Reset index to 0");
     }
@@ -168,7 +186,12 @@ impl Airdrop {
     /// near view airdrop.testnet stats
     /// ```
     pub fn stats(&self) -> (u128, u128, u64, u64) {
-        (self.index, self.page_size, self.managers.len(), self.accounts.len())
+        (
+            self.index,
+            self.page_size,
+            self.managers.len(),
+            self.accounts.len(),
+        )
     }
 
     /// Send airdrop to paginated accounts!
@@ -192,7 +215,13 @@ impl Airdrop {
         let start = self.index;
         let end_index = u128::max(self.index.saturating_add(self.page_size), 0);
         let end = u128::min(end_index, self.accounts.len() as u128);
-        log!("start {:?}, end {:?} -- index {:?}, total {:?}", &start, &end, self.index, self.accounts.len());
+        log!(
+            "start {:?}, end {:?} -- index {:?}, total {:?}",
+            &start,
+            &end,
+            self.index,
+            self.accounts.len()
+        );
 
         // Check current index
         // Stop if index has run out of accounts
@@ -208,7 +237,7 @@ impl Airdrop {
                 match transfer_type {
                     TransferType::Near => {
                         Promise::new(acct).transfer(token_amount.into());
-                    },
+                    }
                     TransferType::FungibleToken => {
                         ext_ft::ft_transfer(
                             acct,
@@ -217,7 +246,7 @@ impl Airdrop {
                             ONE_YOCTO,
                             GAS_FOR_FT_TRANSFER,
                         );
-                    },
+                    }
                     TransferType::NonFungibleToken => {
                         ext_nft::nft_transfer(
                             acct,
