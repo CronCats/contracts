@@ -11,7 +11,7 @@ use near_sdk::{
 near_sdk::setup_alloc!();
 
 pub const MAX_ACCOUNTS: u64 = 100_000;
-pub const PAGINATION_SIZE: u128 = 10;
+pub const PAGINATION_SIZE: u128 = 5;
 
 const BASE_GAS: Gas = 5_000_000_000_000;
 const PROMISE_CALL: Gas = 5_000_000_000_000;
@@ -151,6 +151,17 @@ impl Airdrop {
         log!("Removed all accounts");
     }
 
+    /// Reset known accounts
+    ///
+    /// ```bash
+    /// near call airdrop.testnet reset_index
+    /// ```
+    pub fn reset_index(&mut self) {
+        assert!(self.managers.contains(&env::predecessor_account_id()), "Must be manager");
+        self.index = 0;
+        log!("Reset index to 0");
+    }
+
     /// Stats about the contract
     ///
     /// ```bash
@@ -176,9 +187,12 @@ impl Airdrop {
     pub fn multisend(&mut self, transfer_type: TransferType, amount: Option<U128>) {
         assert!(self.accounts.len() > 0, "No accounts");
         let token_amount = amount.unwrap_or(U128::from(0));
+        assert!(token_amount.0 > 0, "Nothing to send");
 
         let start = self.index;
-        let end = u128::max(self.index * self.page_size, self.accounts.len() as u128);
+        let end_index = u128::max(self.index.saturating_add(self.page_size), 0);
+        let end = u128::min(end_index, self.accounts.len() as u128);
+        log!("start {:?}, end {:?} -- index {:?}, total {:?}", &start, &end, self.index, self.accounts.len());
 
         // Check current index
         // Stop if index has run out of accounts
@@ -221,7 +235,7 @@ impl Airdrop {
         }
 
         // increment index upon completion
-        self.index = self.index.saturating_mul(self.page_size);
+        self.index = self.index.saturating_add(self.page_size);
     }
 }
 
