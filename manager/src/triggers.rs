@@ -66,7 +66,6 @@ impl Contract {
             function_id,
             task_hash,
             arguments: arguments.unwrap_or_else(|| Base64VecU8::from(vec![])),
-            hash: None,
         };
 
         let trigger_hash = self.trigger_hash(&item);
@@ -108,8 +107,8 @@ impl Contract {
     pub fn trigger_hash(&self, item: &Trigger) -> Vec<u8> {
         // Generate hash, needs to be from known values so we can reproduce the hash without storing
         let input = format!(
-            "{:?}{:?}{:?}{:?}",
-            item.contract_id, item.function_id, item.task_hash, item.owner_id
+            "{:?}{:?}{:?}{:?}{:?}",
+            item.contract_id, item.function_id, item.task_hash, item.owner_id, item.arguments
         );
         env::sha256(input.as_bytes())
     }
@@ -119,8 +118,8 @@ impl Contract {
     /// ```bash
     /// near view manager_v1.croncat.testnet get_triggers '{"from_index": 0, "limit": 10}'
     /// ```
-    pub fn get_triggers(&self, from_index: Option<U64>, limit: Option<U64>) -> Vec<Trigger> {
-        let mut ret: Vec<Trigger> = Vec::new();
+    pub fn get_triggers(&self, from_index: Option<U64>, limit: Option<U64>) -> Vec<TriggerHumanFriendly> {
+        let mut ret: Vec<TriggerHumanFriendly> = Vec::new();
         let mut start = 0;
         let mut end = 10;
         if let Some(from_index) = from_index {
@@ -135,9 +134,14 @@ impl Contract {
         for i in start..end {
             if let Some(trigger_hash) = keys.get(i) {
                 if let Some(trigger) = self.triggers.get(&trigger_hash) {
-                    let mut trig: Trigger = trigger;
-                    trig.hash = Some(Base64VecU8::from(self.trigger_hash(&trig)));
-                    ret.push(trig);
+                    ret.push(TriggerHumanFriendly {
+                        owner_id: trigger.owner_id.clone(),
+                        contract_id: trigger.contract_id.clone(),
+                        function_id: trigger.function_id.clone(),
+                        arguments: trigger.arguments.clone(),
+                        task_hash: trigger.task_hash.clone(),
+                        hash: Base64VecU8::from(self.trigger_hash(&trigger)),
+                    });
                 }
             }
         }

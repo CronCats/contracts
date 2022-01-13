@@ -157,7 +157,6 @@ impl Contract {
             function_id: max_len_string.clone(),
             task_hash: Base64VecU8::from(tmp_hash.clone()),
             arguments: Base64VecU8::from("a".repeat(1024).try_to_vec().unwrap()),
-            hash: None,
         };
         self.triggers.insert(&tmp_hash, &tmp_trigger);
         self.trigger_storage_usage = env::storage_usage() - initial_storage_usage;
