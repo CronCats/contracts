@@ -5,7 +5,7 @@ use crate::test_utils::{
     sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter,
     sim_helper_init_sputnikv2,
 };
-use manager::{Agent, Task};
+use manager::{Agent, TaskHumanFriendly};
 use near_sdk::json_types::{Base64VecU8, U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json;
@@ -17,8 +17,8 @@ use near_sdk_sim::{to_yocto, DEFAULT_GAS};
 
 // Load in contract bytes at runtime
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
-    pub CRON_MANAGER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/manager.wasm",
-    pub COUNTER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/rust_counter_tutorial.wasm",
+    pub CRON_MANAGER_WASM_BYTES => "../res/manager.wasm",
+    pub COUNTER_WASM_BYTES => "../res/rust_counter_tutorial.wasm",
     pub SPUTNIKV2_WASM_BYTES => "./tests/sputnik/sputnikdao2.wasm",
 }
 
@@ -104,16 +104,11 @@ fn simulate_many_tasks() {
     // Should find a task
     let mut get_tasks_view_res =
         root_runtime.view_method_call("cron.root", "get_slot_tasks", "{\"offset\": 1}".as_bytes());
-    println!("get_tasks_view_res {:?}", get_tasks_view_res);
+    // println!("get_tasks_view_res {:?}", get_tasks_view_res);
     // let mut success_val = r#"
     //     [["xdnWQtc0KAq2i+/vyFQSHGvr5K0DPgyVUYfE8886qMs="],"240000000000"]
     // "#;
-    let success_vecs: Vec<u8> = vec![
-        91, 91, 34, 120, 100, 110, 87, 81, 116, 99, 48, 75, 65, 113, 50, 105, 43, 47, 118, 121, 70,
-        81, 83, 72, 71, 118, 114, 53, 75, 48, 68, 80, 103, 121, 86, 85, 89, 102, 69, 56, 56, 56,
-        54, 113, 77, 115, 61, 34, 93, 44, 34, 51, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 34,
-        93,
-    ];
+    let success_vecs: Vec<u8> = vec![91, 91, 34, 50, 50, 71, 50, 90, 108, 84, 111, 119, 47, 52, 86, 105, 70, 68, 119, 70, 98, 72, 109, 97, 49, 51, 112, 87, 120, 118, 52, 111, 66, 122, 111, 114, 68, 111, 88, 112, 72, 53, 79, 97, 120, 56, 61, 34, 93, 44, 34, 51, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 34, 93];
     assert_eq!(
         get_tasks_view_res.unwrap(),
         success_vecs,
@@ -355,8 +350,7 @@ fn simulate_many_tasks() {
 fn simulate_basic_task_checks() {
     let (root, cron) = sim_helper_init();
     let counter = sim_helper_init_counter(&root);
-    let hhash = helper_create_task(&cron, &counter);
-    println!("HASHHHHH {:?}", hhash);
+    helper_create_task(&cron, &counter);
 
     // Nonexistent task fails.
     let mut task_view_result = root.view(
@@ -368,6 +362,7 @@ fn simulate_basic_task_checks() {
         .to_string()
         .into_bytes(),
     );
+    // println!("task_view_result {:?}", task_view_result);
     assert!(
         task_view_result.is_err(),
         "Expected nonexistent task to throw error."
@@ -382,13 +377,14 @@ fn simulate_basic_task_checks() {
         "get_task",
         &json!({ "task_hash": TASK_BASE64 }).to_string().into_bytes(),
     );
+    // println!("task_view_result {:?}", task_view_result);
     assert!(
         task_view_result.is_ok(),
         "Expected to find hash of task just added."
     );
-    let returned_task: Task = task_view_result.unwrap_json();
+    let returned_task: TaskHumanFriendly = task_view_result.unwrap_json();
 
-    let expected_task = Task {
+    let expected_task = TaskHumanFriendly {
         owner_id: COUNTER_ID.to_string(),
         contract_id: COUNTER_ID.to_string(),
         function_id: "increment".to_string(),
@@ -399,6 +395,7 @@ fn simulate_basic_task_checks() {
         gas: 3000000000000,
         arguments: Base64VecU8::from(vec![]),
         trigger_hash: None,
+        hash: Base64VecU8::from(vec![4, 23, 43, 212, 103, 88, 226, 36, 140, 121, 177, 90, 190, 238, 242, 207, 135, 90, 60, 48, 235, 150, 108, 83, 127, 151, 237, 11, 68, 65, 242, 100]),
     };
     assert_eq!(
         expected_task, returned_task,

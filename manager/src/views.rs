@@ -1,6 +1,6 @@
 use crate::*;
 
-// #[near_bindgen]
+#[near_bindgen]
 impl Contract {
     /// Returns semver of this contract.
     ///
@@ -36,7 +36,7 @@ impl Contract {
         U64,
         U64,
         U128,
-        U64,
+        // U64,
     ) {
         (
             self.paused,
@@ -55,7 +55,7 @@ impl Contract {
             U64::from(self.slot_granularity),
             U64::from(self.agent_storage_usage),
             U128::from(env::account_balance()),
-            U64::from(self.agent_active_index as u64),
+            // U64::from(self.agent_active_index as u64),
         )
     }
 
