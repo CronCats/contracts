@@ -1,9 +1,9 @@
 [workspace]
 # include a member for each contract
+# "examples/airdrop",
 members = [
   "manager",
   "rewards",
-  "examples/airdrop",
   "examples/counter",
   "examples/charity",
   "examples/cross-contract",
