@@ -17,8 +17,8 @@ use near_sdk_sim::{to_yocto, DEFAULT_GAS};
 
 // Load in contract bytes at runtime
 near_sdk_sim::lazy_static_include::lazy_static_include_bytes! {
-    pub CRON_MANAGER_WASM_BYTES => "../res/manager.wasm",
-    pub COUNTER_WASM_BYTES => "../res/rust_counter_tutorial.wasm",
+    pub CRON_MANAGER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/manager.wasm",
+    pub COUNTER_WASM_BYTES => "../target/wasm32-unknown-unknown/release/rust_counter_tutorial.wasm",
     pub SPUTNIKV2_WASM_BYTES => "./tests/sputnik/sputnikdao2.wasm",
 }
 
