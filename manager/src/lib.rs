@@ -1,4 +1,3 @@
-pub use agent::Agent;
 use cron_schedule::Schedule;
 use near_sdk::{
     assert_one_yocto,
@@ -12,7 +11,9 @@ use near_sdk::{
     AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseResult, StorageUsage,
 };
 use std::str::FromStr;
+pub use agent::Agent;
 pub use tasks::Task;
+pub use tasks::TaskHumanFriendly;
 pub use triggers::Trigger;
 
 mod agent;
@@ -27,6 +28,7 @@ near_sdk::setup_alloc!();
 
 // Balance & Fee Definitions
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
+pub const BASE_BALANCE: Balance = ONE_NEAR * 5; // safety overhead
 pub const GAS_BASE_PRICE: Balance = 100_000_000;
 pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
 // actual is: 13534954161128, higher in case treemap rebalance
@@ -48,14 +50,18 @@ pub enum StorageKeys {
     AgentsActive,
     AgentsPending,
     Triggers,
+    TaskOwners,
 }
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+// #[derive(BorshDeserialize, BorshSerialize, Deserialize, Serialize, PanicOnDefault)]
+// #[serde(crate = "near_sdk::serde")]
 pub struct Contract {
     // Runtime
     paused: bool,
     owner_id: AccountId,
+    treasury_id: Option<AccountId>,
 
     // Agent management
     agents: LookupMap<AccountId, Agent>,
@@ -73,10 +79,11 @@ pub struct Contract {
     // Basic management
     slots: TreeMap<u128, Vec<Vec<u8>>>,
     tasks: UnorderedMap<Vec<u8>, Task>,
+    task_owners: UnorderedMap<AccountId, Vec<Vec<u8>>>,
     triggers: UnorderedMap<Vec<u8>, Trigger>,
 
     // Economics
-    available_balance: Balance,
+    available_balance: Balance, // tasks + rewards balance
     staked_balance: Balance,
     agent_fee: Balance,
     gas_price: Balance,
@@ -88,18 +95,20 @@ pub struct Contract {
     trigger_storage_usage: StorageUsage,
 }
 
-// TODO: Setup state migration for triggers, including initial storage calculation
+// TODO: Setup state migration for tasks/triggers, including initial storage calculation
 #[near_bindgen]
 impl Contract {
     /// ```bash
-    /// near call cron.testnet new --accountId cron.testnet
+    /// near call manager_v1.croncat.testnet new --accountId manager_v1.croncat.testnet
     /// ```
     #[init]
     pub fn new() -> Self {
         let mut this = Contract {
             paused: false,
             owner_id: env::signer_account_id(),
+            treasury_id: None,
             tasks: UnorderedMap::new(StorageKeys::Tasks),
+            task_owners: UnorderedMap::new(StorageKeys::TaskOwners),
             triggers: UnorderedMap::new(StorageKeys::Triggers),
             agents: LookupMap::new(StorageKeys::Agents),
             agent_active_queue: Vector::new(StorageKeys::AgentsActive),
@@ -121,7 +130,7 @@ impl Contract {
         this
     }
 
-    // TODO: Trigger storage calc
+    // TODO: "Trigger" storage calc
     /// Measure the storage an agent will take and need to provide
     fn measure_account_storage_usage(&mut self) {
         let initial_storage_usage = env::storage_usage();

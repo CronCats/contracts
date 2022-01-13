@@ -28,7 +28,7 @@ const SPUTNIKV2_ID: &str = "sputnikv2.sim";
 const AGENT_ID: &str = "agent.sim";
 const USER_ID: &str = "user.sim";
 const NEW_NAME_ID: &str = "newname.sim";
-const TASK_BASE64: &str = "QgpuCtvr2ZRq87F8FG9qKaiKA400LXBOut5WohwCTxI=";
+const TASK_BASE64: &str = "BBcr1GdY4iSMebFavu7yz4daPDDrlmxTf5ftC0RB8mQ=";
 const AGENT_REGISTRATION_COST: u128 = 2_260_000_000_000_000_000_000;
 const AGENT_FEE: u128 = 60_000_000_000_000_000_000_000u128;
 
@@ -355,7 +355,8 @@ fn simulate_many_tasks() {
 fn simulate_basic_task_checks() {
     let (root, cron) = sim_helper_init();
     let counter = sim_helper_init_counter(&root);
-    helper_create_task(&cron, &counter);
+    let hhash = helper_create_task(&cron, &counter);
+    println!("HASHHHHH {:?}", hhash);
 
     // Nonexistent task fails.
     let mut task_view_result = root.view(
@@ -397,6 +398,7 @@ fn simulate_basic_task_checks() {
         deposit: U128::from(12000000000000),
         gas: 3000000000000,
         arguments: Base64VecU8::from(vec![]),
+        trigger_hash: None,
     };
     assert_eq!(
         expected_task, returned_task,

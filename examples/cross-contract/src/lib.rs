@@ -69,7 +69,26 @@ pub trait ExtCroncat {
     ) -> Base64VecU8;
     fn remove_task(&mut self, task_hash: Base64VecU8);
     fn proxy_call(&mut self);
-    fn get_info(&mut self) -> (bool, AccountId, U64, U64, [u64; 2], U128, U64, U64, U128, U128, U128, U128, U64, U64, U64, U128);
+    fn get_info(
+        &mut self,
+    ) -> (
+        bool,
+        AccountId,
+        U64,
+        U64,
+        [u64; 2],
+        U128,
+        U64,
+        U64,
+        U128,
+        U128,
+        U128,
+        U128,
+        U64,
+        U64,
+        U64,
+        U128,
+    );
 }
 
 #[ext_contract(ext)]
@@ -90,7 +109,24 @@ pub trait ExtCrossContract {
         &self,
         #[callback]
         #[serializer(borsh)]
-        info: (bool, AccountId, U64, U64, [u64; 2], U128, U64, U64, U128, U128, U128, U128, U64, U64, U64, U128),
+        info: (
+            bool,
+            AccountId,
+            U64,
+            U64,
+            [u64; 2],
+            U128,
+            U64,
+            U64,
+            U128,
+            U128,
+            U128,
+            U128,
+            U64,
+            U64,
+            U64,
+            U128,
+        ),
     );
 }
 
@@ -113,7 +149,7 @@ pub enum StorageKeys {
 #[derive(Default, BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct TickItem {
-    t: u64,  // point in time
+    t: u64,          // point in time
     x: Option<u128>, // value at time
     y: Option<u128>, // value at time
     z: Option<u128>, // value at time
@@ -168,7 +204,16 @@ impl CrudContract {
     /// ```bash
     /// near view crosscontract.testnet get_series
     /// ```
-    pub fn get_series(&self) -> (Vec<TickItem>, Vec<TickItem>, Vec<TickItem>, Vec<TickItem>, Vec<TickItem>, Vec<TickItem>) {
+    pub fn get_series(
+        &self,
+    ) -> (
+        Vec<TickItem>,
+        Vec<TickItem>,
+        Vec<TickItem>,
+        Vec<TickItem>,
+        Vec<TickItem>,
+        Vec<TickItem>,
+    ) {
         (
             self.hourly_balances.to_vec(),
             self.hourly_queues.to_vec(),
@@ -203,7 +248,27 @@ impl CrudContract {
     /// NOTE: This method helps contract understand remaining task balance, in case more is needed to continue running.
     /// NOTE: This could handle things about the task, or have logic about changing the task in some way.
     #[private]
-    pub fn compute_callback(&mut self, #[callback] info: (bool, AccountId, U64, U64, [u64; 2], U128, U64, U64, U128, U128, U128, U128, U64, U64, U64, U128)) {
+    pub fn compute_callback(
+        &mut self,
+        #[callback] info: (
+            bool,
+            AccountId,
+            U64,
+            U64,
+            [u64; 2],
+            U128,
+            U64,
+            U64,
+            U128,
+            U128,
+            U128,
+            U128,
+            U64,
+            U64,
+            U64,
+            U128,
+        ),
+    ) {
         // compute the current intervals
         let block_ts = env::block_timestamp();
         let rem_threshold = 60_000;
@@ -249,7 +314,7 @@ impl CrudContract {
             z: Some(staked_balance.0),
         };
         log!("New HR Balance: {:?}", hour_balance);
-        
+
         // More ticks
         let hour_queue = TickItem {
             t: block_ts / NANOS,
@@ -307,20 +372,52 @@ impl CrudContract {
             for i in start_index..end_index {
                 if let Some(tick) = self.daily_balances.get(i) {
                     // Aggregate tick numbers
-                    hour_balance_tick.x = if tick.x.is_some() { Some(hour_balance_tick.x.unwrap_or(0) + tick.x.unwrap_or(0)) } else { hour_balance_tick.x };
-                    hour_balance_tick.y = if tick.y.is_some() { Some(hour_balance_tick.y.unwrap_or(0) + tick.y.unwrap_or(0)) } else { hour_balance_tick.y };
-                    hour_balance_tick.z = if tick.z.is_some() { Some(hour_balance_tick.z.unwrap_or(0) + tick.z.unwrap_or(0)) } else { hour_balance_tick.z };
+                    hour_balance_tick.x = if tick.x.is_some() {
+                        Some(hour_balance_tick.x.unwrap_or(0) + tick.x.unwrap_or(0))
+                    } else {
+                        hour_balance_tick.x
+                    };
+                    hour_balance_tick.y = if tick.y.is_some() {
+                        Some(hour_balance_tick.y.unwrap_or(0) + tick.y.unwrap_or(0))
+                    } else {
+                        hour_balance_tick.y
+                    };
+                    hour_balance_tick.z = if tick.z.is_some() {
+                        Some(hour_balance_tick.z.unwrap_or(0) + tick.z.unwrap_or(0))
+                    } else {
+                        hour_balance_tick.z
+                    };
                 };
                 if let Some(tick) = self.hourly_queues.get(i) {
                     // Aggregate tick numbers
-                    hour_queue_tick.x = if tick.x.is_some() { Some(hour_queue_tick.x.unwrap_or(0) + tick.x.unwrap_or(0)) } else { hour_queue_tick.x };
-                    hour_queue_tick.y = if tick.y.is_some() { Some(hour_queue_tick.y.unwrap_or(0) + tick.y.unwrap_or(0)) } else { hour_queue_tick.y };
+                    hour_queue_tick.x = if tick.x.is_some() {
+                        Some(hour_queue_tick.x.unwrap_or(0) + tick.x.unwrap_or(0))
+                    } else {
+                        hour_queue_tick.x
+                    };
+                    hour_queue_tick.y = if tick.y.is_some() {
+                        Some(hour_queue_tick.y.unwrap_or(0) + tick.y.unwrap_or(0))
+                    } else {
+                        hour_queue_tick.y
+                    };
                 };
                 if let Some(tick) = self.hourly_slots.get(i) {
                     // Aggregate tick numbers
-                    hour_slots_tick.x = if tick.x.is_some() { Some(hour_slots_tick.x.unwrap_or(0) + tick.x.unwrap_or(0)) } else { hour_slots_tick.x };
-                    hour_slots_tick.y = if tick.y.is_some() { Some(hour_slots_tick.y.unwrap_or(0) + tick.y.unwrap_or(0)) } else { hour_slots_tick.y };
-                    hour_slots_tick.z = if tick.z.is_some() { Some(hour_slots_tick.z.unwrap_or(0) + tick.z.unwrap_or(0)) } else { hour_slots_tick.z };
+                    hour_slots_tick.x = if tick.x.is_some() {
+                        Some(hour_slots_tick.x.unwrap_or(0) + tick.x.unwrap_or(0))
+                    } else {
+                        hour_slots_tick.x
+                    };
+                    hour_slots_tick.y = if tick.y.is_some() {
+                        Some(hour_slots_tick.y.unwrap_or(0) + tick.y.unwrap_or(0))
+                    } else {
+                        hour_slots_tick.y
+                    };
+                    hour_slots_tick.z = if tick.z.is_some() {
+                        Some(hour_slots_tick.z.unwrap_or(0) + tick.z.unwrap_or(0))
+                    } else {
+                        hour_slots_tick.z
+                    };
                 };
             }
 

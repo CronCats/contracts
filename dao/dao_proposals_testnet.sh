@@ -3,7 +3,7 @@ MASTER_ACC=cron.testnet
 DAO_ROOT_ACC=sputnikv2.testnet
 DAO_NAME=croncat
 DAO_ACCOUNT=$DAO_NAME.$DAO_ROOT_ACC
-CRON_ACCOUNT=manager_v1.cron.testnet
+CRON_ACCOUNT=manager_v1.croncat.testnet
 
 export NEAR_ENV=testnet
 

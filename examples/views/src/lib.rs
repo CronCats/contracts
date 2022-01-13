@@ -10,8 +10,7 @@ pub const ONE_MINUTE: u64 = 60_000_000_000; // 60 seconds in nanos
 
 #[near_bindgen]
 #[derive(Default, BorshDeserialize, BorshSerialize)]
-pub struct Views {
-}
+pub struct Views {}
 
 #[near_bindgen]
 impl Views {

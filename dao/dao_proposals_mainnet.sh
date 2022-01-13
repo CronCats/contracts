@@ -1,3 +1,4 @@
+#!/bin/bash
 set -e
 MASTER_ACC=cron.near
 DAO_ROOT_ACC=sputnik-dao.near
@@ -57,7 +58,7 @@ METAPOOL_ACCT=meta-pool.near
 # # Unstake all (example: 9xVyewMkzxHfRGtx3EyG82mXX8CfPXLJeW4Xo2y6PpXX)
 # ARGS=`echo "{ \"amount\": \"10000000000000000000000000\" }" | base64`
 # FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
-# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Unstake all funds from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "unstake", "args": "'$FIXED_ARGS'", "deposit": "0", "gas": "20000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
+# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Unstake funds from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "unstake", "args": "'$FIXED_ARGS'", "deposit": "0", "gas": "20000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
 
 # # Withdraw balance back (example: EKZqArNzsjq9hpYuYt37Y59qU1kmZoxguLwRH2RnDELd)
 near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Withdraw unstaked funds from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "withdraw_unstaked", "args": "e30=", "deposit": "0", "gas": "20000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
@@ -128,3 +129,16 @@ PARAS_ACCT=x.paras.near
 # near call $DAO_ACCOUNT act_proposal '{"id": 0, "action" :"VoteApprove"}' --accountId $MASTER_ACC  --gas 300000000000000
 # near call $DAO_ACCOUNT act_proposal '{"id": 0, "action" :"VoteReject"}' --accountId $MASTER_ACC  --gas 300000000000000
 # near call $DAO_ACCOUNT act_proposal '{"id": 0, "action" :"VoteRemove"}' --accountId $MASTER_ACC  --gas 300000000000000
+
+# # Loop All Action IDs and submit action
+# vote_actions=(72 73 74 75 76 77 78 79)
+# for (( e=0; e<=${#vote_actions[@]} - 1; e++ ))
+# do
+#   # action="VoteApprove"
+#   # action="VoteReject"
+#   action="VoteRemove"
+#   SUB_ACT_PROPOSAL=`echo "{\"id\": ${vote_actions[e]}, \"action\" :\"${action}\"}"`
+#   echo "Payload ${SUB_ACT_PROPOSAL}"
+
+#   near call $DAO_ACCOUNT act_proposal '{"id": '${vote_actions[e]}', "action" :"'${action}'"}' --accountId $MASTER_ACC  --gas 300000000000000
+# done

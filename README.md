@@ -123,6 +123,22 @@ near call crud.$NEAR_ACCT status --accountId crud.$NEAR_ACCT
 
 ## Changelog
 
+### `0.4.7`
+
+Adjust old slot agent coverage, max gas assertion on task create
+
+### `0.4.6`
+
+Add refill balance method, fix empty slots, more available_balance coverage
+
+### `0.4.5`
+
+Add validate cadence view method, add owner proxy for sweeping
+
+### `0.4.4`
+
+Mainnet security mitigation
+
 ### `0.4.0`
 
 Mainnet preparation, convenience methods, multi-agent support

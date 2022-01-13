@@ -42,7 +42,7 @@ impl Contract {
     /// "payable_account_id" - Allows a different account id to be specified, so a user can receive funds at a different account than the agent account.
     ///
     /// ```bash
-    /// near call cron.testnet register_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
+    /// near call manager_v1.croncat.testnet register_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
     /// ```
     #[payable]
     pub fn register_agent(&mut self, payable_account_id: Option<ValidAccountId>) {
@@ -87,6 +87,7 @@ impl Contract {
         };
 
         self.agents.insert(&account, &agent);
+        self.available_balance = self.available_balance.saturating_add(required_deposit);
 
         // If the user deposited more than needed, refund them.
         let refund = deposit - required_deposit;
@@ -98,7 +99,7 @@ impl Contract {
     /// Update agent details, specifically the payable account id for an agent.
     ///
     /// ```bash
-    /// near call cron.testnet update_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
+    /// near call manager_v1.croncat.testnet update_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
     /// ```
     #[payable]
     pub fn update_agent(&mut self, payable_account_id: Option<ValidAccountId>) {
@@ -116,6 +117,14 @@ impl Contract {
         } else {
             panic!("Agent must register");
         };
+
+        // If the user deposited more than needed, refund them.
+        let yocto: Balance = 1;
+        let refund = env::attached_deposit() - yocto;
+        self.available_balance = self.available_balance.saturating_add(yocto);
+        if refund > 0 {
+            Promise::new(env::predecessor_account_id()).transfer(refund);
+        }
     }
 
     /// Removes the agent from the active set of agents.
@@ -123,7 +132,7 @@ impl Contract {
     /// Requires attaching 1 yoctoⓃ ensure it comes from a full-access key.
     ///
     /// ```bash
-    /// near call cron.testnet unregister_agent --accountId YOUR_AGENT.testnet
+    /// near call manager_v1.croncat.testnet unregister_agent --accountId YOUR_AGENT.testnet
     /// ```
     #[payable]
     pub fn unregister_agent(&mut self) {
@@ -161,6 +170,7 @@ impl Contract {
             }
 
             log!("Withdrawal of {} has been sent.", withdrawal_amount);
+            self.available_balance = self.available_balance.saturating_sub(withdrawal_amount);
             Promise::new(agent.payable_account_id.to_string()).transfer(withdrawal_amount)
         } else {
             env::panic(b"No Agent")
@@ -191,7 +201,7 @@ impl Contract {
     /// Allows an agent to withdraw all rewards, paid to the specified payable account id.
     ///
     /// ```bash
-    /// near call cron.testnet withdraw_task_balance --accountId YOUR_AGENT.testnet
+    /// near call manager_v1.croncat.testnet withdraw_task_balance --accountId YOUR_AGENT.testnet
     /// ```
     pub fn withdraw_task_balance(&mut self) -> Promise {
         self.exit_agent(None, None)
@@ -200,7 +210,7 @@ impl Contract {
     /// Gets the agent data stats
     ///
     /// ```bash
-    /// near view cron.testnet get_agent '{"account_id": "YOUR_AGENT.testnet"}'
+    /// near view manager_v1.croncat.testnet get_agent '{"account_id": "YOUR_AGENT.testnet"}'
     /// ```
     pub fn get_agent(&self, account_id: AccountId) -> Option<Agent> {
         self.agents.get(&account_id)

@@ -27,7 +27,7 @@ export FACTORY=testnet
 
 if [ -z ${NEAR_ACCT+x} ]; then
   # you will need to change this to something you own
-  export NEAR_ACCT=cron.$FACTORY
+  export NEAR_ACCT=croncat.$FACTORY
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi
@@ -72,10 +72,11 @@ near deploy --wasmFile ./res/views.wasm --accountId $VIEWS_ACCOUNT_ID
 
 # RE:Deploy all the contracts to their rightful places
 # near deploy --wasmFile ./res/manager.wasm --accountId $CRON_ACCOUNT_ID
-# near view $CRON_ACCOUNT_ID version
-# near view $CRON_ACCOUNT_ID get_info
 # near deploy --wasmFile ./res/rust_counter_tutorial.wasm --accountId $COUNTER_ACCOUNT_ID
 # near deploy --wasmFile ./res/cross_contract.wasm --accountId $CRUD_ACCOUNT_ID
 # near deploy --wasmFile ./res/rewards.wasm --accountId $REWARDS_ACCOUNT_ID
+
+near view $CRON_ACCOUNT_ID version
+near view $CRON_ACCOUNT_ID get_info
 
 echo "Testnet Deploy Complete"

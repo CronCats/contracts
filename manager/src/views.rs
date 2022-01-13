@@ -1,6 +1,6 @@
 use crate::*;
 
-#[near_bindgen]
+// #[near_bindgen]
 impl Contract {
     /// Returns semver of this contract.
     ///
@@ -14,7 +14,7 @@ impl Contract {
     /// Gets the configurations and stats
     ///
     /// ```bash
-    /// near view cron.testnet get_info
+    /// near view manager_v1.croncat.testnet get_info
     /// ```
     pub fn get_info(
         &self,
@@ -36,6 +36,7 @@ impl Contract {
         U64,
         U64,
         U128,
+        U64,
     ) {
         (
             self.paused,
@@ -54,7 +55,54 @@ impl Contract {
             U64::from(self.slot_granularity),
             U64::from(self.agent_storage_usage),
             U128::from(env::account_balance()),
+            U64::from(self.agent_active_index as u64),
         )
+    }
+
+    /// Gets the balances for treasury management
+    ///
+    /// ```bash
+    /// near view manager_v1.croncat.testnet get_balances
+    /// ```
+    pub fn get_balances(
+        &self,
+    ) -> (
+        U128, // total balance
+        U128, // available balance
+        U128, // staked balance
+        U128, // surplus (available to treasury)
+    ) {
+        let base_balance = BASE_BALANCE; // safety overhead
+        let storage_balance = env::storage_byte_cost().saturating_mul(env::storage_usage() as u128);
+        let required_balance = base_balance.saturating_add(storage_balance);
+        let total_balance: u128 = if self.available_balance > 0 {
+            self.available_balance
+        } else {
+            env::account_balance()
+        };
+        let surplus = u128::max(total_balance.saturating_sub(required_balance), 0);
+
+        // Return surplus value in case we want to trigger staking based off outcome
+        (
+            U128::from(env::account_balance()),
+            U128::from(self.available_balance),
+            U128::from(self.staked_balance),
+            U128::from(surplus),
+        )
+    }
+
+    /// Check if a cadence string is valid by attempting to parse it
+    ///
+    /// ```bash
+    /// near view manager_v1.croncat.testnet validate_cadence '{"cadence": "0 0 * * * *"}'
+    /// ```
+    pub fn validate_cadence(&self, cadence: String) -> bool {
+        let s = Schedule::from_str(&cadence);
+        if s.is_ok() {
+            true
+        } else {
+            false
+        }
     }
 
     /// Gets a set of tasks.
@@ -64,7 +112,7 @@ impl Contract {
     /// "offset" - An unsigned integer specifying how far in the future to check for tasks that are slotted.
     ///
     /// ```bash
-    /// near view cron.testnet get_slot_tasks
+    /// near view manager_v1.croncat.testnet get_slot_tasks
     /// ```
     pub fn get_slot_tasks(&self, offset: Option<u64>) -> (Vec<Base64VecU8>, U128) {
         let current_slot = self.get_slot_id(offset);
@@ -91,7 +139,7 @@ impl Contract {
     /// Gets list of active slot ids
     ///
     /// ```bash
-    /// near view cron.testnet get_slot_ids
+    /// near view manager_v1.croncat.testnet get_slot_ids
     /// ```
     pub fn get_slot_ids(&self) -> Vec<U128> {
         self.slots
@@ -106,21 +154,33 @@ impl Contract {
     /// REF: https://docs.near.org/docs/concepts/data-storage#gas-consumption-examples-1
     ///
     /// ```bash
-    /// near view cron.testnet get_tasks '{"from_index": 0, "limit": 10}'
+    /// near view manager_v1.croncat.testnet get_tasks '{"from_index": 0, "limit": 10}'
     /// ```
     pub fn get_tasks(
         &self,
         slot: Option<U128>,
         from_index: Option<U64>,
         limit: Option<U64>,
-    ) -> Vec<Task> {
-        let mut ret: Vec<Task> = Vec::new();
+    ) -> Vec<TaskHumanFriendly> {
+        let mut ret: Vec<TaskHumanFriendly> = Vec::new();
         if let Some(U128(slot_number)) = slot {
             // User specified a slot number, only return tasks in there.
             let tasks_in_slot = self.slots.get(&slot_number).unwrap_or_default();
             for task_hash in tasks_in_slot.iter() {
                 let task = self.tasks.get(&task_hash).expect("No task found by hash");
-                ret.push(task);
+                ret.push(TaskHumanFriendly {
+                    owner_id: task.owner_id.clone(),
+                    contract_id: task.contract_id.clone(),
+                    function_id: task.function_id.clone(),
+                    cadence: task.cadence.clone(),
+                    recurring: task.recurring,
+                    total_deposit: task.total_deposit,
+                    deposit: task.deposit,
+                    gas: task.gas,
+                    arguments: task.arguments.clone(),
+                    hash: Base64VecU8::from(task_hash.clone()),
+                    trigger_hash: task.trigger_hash,
+                });
             }
         } else {
             let mut start = 0;
@@ -137,7 +197,19 @@ impl Contract {
             for i in start..end {
                 if let Some(task_hash) = keys.get(i) {
                     if let Some(task) = self.tasks.get(&task_hash) {
-                        ret.push(task);
+                        ret.push(TaskHumanFriendly {
+                            owner_id: task.owner_id.clone(),
+                            contract_id: task.contract_id.clone(),
+                            function_id: task.function_id.clone(),
+                            cadence: task.cadence.clone(),
+                            recurring: task.recurring,
+                            total_deposit: task.total_deposit,
+                            deposit: task.deposit,
+                            gas: task.gas,
+                            arguments: task.arguments.clone(),
+                            hash: Base64VecU8::from(task_hash.clone()),
+                            trigger_hash: task.trigger_hash,
+                        });
                     }
                 }
             }
@@ -148,18 +220,31 @@ impl Contract {
     /// Gets the data payload of a single task by hash
     ///
     /// ```bash
-    /// near view cron.testnet get_task '{"task_hash": "r2Jv…T4U4="}'
+    /// near view manager_v1.croncat.testnet get_task '{"task_hash": "r2Jv…T4U4="}'
     /// ```
-    pub fn get_task(&self, task_hash: Base64VecU8) -> Task {
-        let task_hash = task_hash.0;
-        let task = self.tasks.get(&task_hash).expect("No task found by hash");
-        task
+    pub fn get_task(&self, task_hash: Base64VecU8) -> TaskHumanFriendly {
+        let hash = task_hash.clone().0;
+        let task = self.tasks.get(&hash).expect("No task found by hash");
+
+        TaskHumanFriendly {
+            owner_id: task.owner_id.clone(),
+            contract_id: task.contract_id.clone(),
+            function_id: task.function_id.clone(),
+            cadence: task.cadence.clone(),
+            recurring: task.recurring,
+            total_deposit: task.total_deposit,
+            deposit: task.deposit,
+            gas: task.gas,
+            arguments: task.arguments.clone(),
+            hash: task_hash,
+            trigger_hash: task.trigger_hash,
+        }
     }
 
     /// Get the hash of a task based on parameters
     ///
     /// ```bash
-    /// near view cron.testnet get_hash '{"contract_id": "YOUR_CONTRACT.near","function_id": "METHOD_NAME","cadence": "0 0 */1 * * *","owner_id": "YOUR_ACCOUNT.near"}'
+    /// near view manager_v1.croncat.testnet get_hash '{"contract_id": "YOUR_CONTRACT.near","function_id": "METHOD_NAME","cadence": "0 0 */1 * * *","owner_id": "YOUR_ACCOUNT.near", "arguments": ""}'
     /// ```
     pub fn get_hash(
         &self,
@@ -167,11 +252,12 @@ impl Contract {
         function_id: String,
         cadence: String,
         owner_id: AccountId,
+        arguments: Base64VecU8,
     ) -> Base64VecU8 {
         // Generate hash, needs to be from known values so we can reproduce the hash without storing
         let input = format!(
-            "{:?}{:?}{:?}{:?}",
-            contract_id, function_id, cadence, owner_id
+            "{:?}{:?}{:?}{:?}{:?}",
+            contract_id, function_id, cadence, owner_id, arguments
         );
         Base64VecU8::from(env::sha256(input.as_bytes()))
     }
@@ -179,7 +265,7 @@ impl Contract {
     /// Gets list of agent ids
     ///
     /// ```bash
-    /// near view cron.testnet get_agent_ids
+    /// near view manager_v1.croncat.testnet get_agent_ids
     /// ```
     pub fn get_agent_ids(&self) -> (String, String) {
         let comma: &str = ",";
@@ -193,7 +279,7 @@ impl Contract {
     /// Check how many tasks an agent can execute
     ///
     /// ```bash
-    /// near view cron.testnet get_agent_tasks '{"account_id": "YOUR_AGENT.testnet"}'
+    /// near view manager_v1.croncat.testnet get_agent_tasks '{"account_id": "YOUR_AGENT.testnet"}'
     /// ```
     pub fn get_agent_tasks(&self, account_id: ValidAccountId) -> (U64, U128) {
         let current_slot = self.get_slot_id(None);
@@ -223,17 +309,24 @@ impl Contract {
 
             // Get slot total to test agent in slot
             // get task based on current slot, priority goes to tasks that have fallen behind (using floor key)
-            let slot_opt = if let Some(k) = self.slots.floor_key(&current_slot) {
-                self.slots.get(&k)
+            let (slot_opt, slot_ballpark) = if let Some(k) = self.slots.floor_key(&current_slot) {
+                (self.slots.get(&k), k)
             } else {
-                self.slots.get(&current_slot)
+                (self.slots.get(&current_slot), current_slot)
             };
             let slot_data = slot_opt.unwrap_or_default();
+
+            // // Otherwise, assess if they are in active set, or are able to cover an agent that missed previous slot
+            // let (can_execute, _, agent_tasks) =
+            //     self.check_agent_can_execute(account_id.to_string(), slot_data.len() as u64);
+            // if !can_execute {
+            //     return empty;
+            // }
 
             // Otherwise, assess if they are in active set, or are able to cover an agent that missed previous slot
             let (can_execute, _, agent_tasks) =
                 self.check_agent_can_execute(account_id.to_string(), slot_data.len() as u64);
-            if !can_execute {
+            if !can_execute && slot_ballpark == current_slot {
                 return empty;
             }
 
@@ -252,7 +345,7 @@ impl Contract {
     /// Response: (canExecute: bool, agentIndex: u64, tasksAvailable: u64)
     ///
     /// ```bash
-    /// near view cron.testnet check_agent_can_execute '{"account_id": "YOU.testnet", "slot_tasks_remaining": 3}'
+    /// near view manager_v1.croncat.testnet check_agent_can_execute '{"account_id": "YOU.testnet", "slot_tasks_remaining": 3}'
     /// ```
     // NOTE: How does async affect this?
     pub fn check_agent_can_execute(

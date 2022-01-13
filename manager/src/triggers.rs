@@ -1,5 +1,5 @@
-use near_sdk::serde_json;
 use crate::*;
+use near_sdk::serde_json;
 
 pub const NO_DEPOSIT: Balance = 0;
 pub const VIEW_CALL_GAS: Gas = 240_000_000_000_000;
@@ -33,7 +33,7 @@ impl Contract {
     /// IMPORTANT: Trigger methods MUST respond with a boolean
     ///
     /// ```bash
-    /// near call cron.testnet create_trigger '{"contract_id": "counter.in.testnet","function_id": "increment","arguments":"","task_hash":""}' --accountId YOU.testnet
+    /// near call manager_v1.croncat.testnet create_trigger '{"contract_id": "counter.in.testnet","function_id": "increment","arguments":"","task_hash":""}' --accountId YOU.testnet
     /// ```
     #[payable]
     pub fn create_trigger(
@@ -45,8 +45,12 @@ impl Contract {
     ) -> Base64VecU8 {
         // No adding triggers while contract is paused
         assert_eq!(self.paused, false, "Create trigger paused");
-        // Check attached deposit includes trigger_storage_usage 
-        assert!(env::attached_deposit() >= self.trigger_storage_usage as u128, "Trigger storage payment of {} required", self.trigger_storage_usage);
+        // Check attached deposit includes trigger_storage_usage
+        assert!(
+            env::attached_deposit() >= self.trigger_storage_usage as u128,
+            "Trigger storage payment of {} required",
+            self.trigger_storage_usage
+        );
 
         let item = Trigger {
             owner_id: env::predecessor_account_id(),
@@ -71,7 +75,7 @@ impl Contract {
     /// Deletes a task in its entirety, returning any remaining balance to task owner.
     ///
     /// ```bash
-    /// near call cron.testnet remove_trigger '{"trigger_hash": ""}' --accountId YOU.testnet
+    /// near call manager_v1.croncat.testnet remove_trigger '{"trigger_hash": ""}' --accountId YOU.testnet
     /// ```
     pub fn remove_trigger(&mut self, trigger_hash: Base64VecU8) {
         let hash = trigger_hash.0;
@@ -84,22 +88,30 @@ impl Contract {
         );
 
         // If owner, allow to remove task
-        self.triggers.remove(&hash).expect("No trigger found by hash");
+        self.triggers
+            .remove(&hash)
+            .expect("No trigger found by hash");
 
         // Refund trigger storage
         Promise::new(trigger.owner_id).transfer(self.trigger_storage_usage as u128);
     }
 
+    /// Get the hash of a trigger based on parameters
+    pub fn trigger_hash(&self, item: &Trigger) -> Vec<u8> {
+        // Generate hash, needs to be from known values so we can reproduce the hash without storing
+        let input = format!(
+            "{:?}{:?}{:?}{:?}",
+            item.contract_id, item.function_id, item.task_hash, item.owner_id
+        );
+        env::sha256(input.as_bytes())
+    }
+
     /// Returns trigger data
     ///
     /// ```bash
-    /// near view cron.testnet get_triggers '{"from_index": 0, "limit": 10}'
+    /// near view manager_v1.croncat.testnet get_triggers '{"from_index": 0, "limit": 10}'
     /// ```
-    pub fn get_triggers(
-        &self,
-        from_index: Option<U64>,
-        limit: Option<U64>,
-    ) -> Vec<Trigger> {
+    pub fn get_triggers(&self, from_index: Option<U64>, limit: Option<U64>) -> Vec<Trigger> {
         let mut ret: Vec<Trigger> = Vec::new();
         let mut start = 0;
         let mut end = 10;
@@ -127,13 +139,13 @@ impl Contract {
     /// Allows agents to check if a view method should trigger a task immediately
     ///
     /// TODO:
-    /// - Check for range hash 
+    /// - Check for range hash
     /// - Loop range to find view BOOL TRUE
     /// - Get task details
     /// - Execute task
     ///
     /// ```bash
-    /// near call cron.testnet proxy_conditional_call '{"trigger_hash": ""}' --accountId YOU.testnet
+    /// near call manager_v1.croncat.testnet proxy_conditional_call '{"trigger_hash": ""}' --accountId YOU.testnet
     /// ```
     pub fn proxy_conditional_call(&mut self, trigger_hash: Base64VecU8) {
         // No adding tasks while contract is paused
@@ -145,7 +157,10 @@ impl Contract {
             env::panic(b"Agent not registered");
         }
 
-        let trigger = self.triggers.get(&trigger_hash.into()).expect("No task found by hash");
+        let trigger = self
+            .triggers
+            .get(&trigger_hash.into())
+            .expect("No task found by hash");
 
         // Call external contract with task variables
         let promise_first = env::promise_create(
@@ -190,7 +205,10 @@ impl Contract {
                 // TODO: Refactor to re-used method
                 if result {
                     let mut agent = self.agents.get(&agent_id).expect("Agent not found");
-                    let mut task = self.tasks.get(&task_hash.clone().into()).expect("No task found by hash");
+                    let mut task = self
+                        .tasks
+                        .get(&task_hash.clone().into())
+                        .expect("No task found by hash");
 
                     // Fee breakdown:
                     // - Used Gas: Task Txn Fee Cost
@@ -247,17 +265,3 @@ impl Contract {
         }
     }
 }
-
-// Internal methods
-impl Contract {
-    /// Get the hash of a trigger based on parameters
-    fn trigger_hash(&self, item: &Trigger) -> Vec<u8> {
-        // Generate hash, needs to be from known values so we can reproduce the hash without storing
-        let input = format!(
-            "{:?}{:?}{:?}{:?}",
-            item.contract_id, item.function_id, item.task_hash, item.owner_id
-        );
-        env::sha256(input.as_bytes())
-    }
-}
-
