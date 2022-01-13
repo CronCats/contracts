@@ -1,3 +1,4 @@
+pub use agent::Agent;
 use cron_schedule::Schedule;
 use near_sdk::{
     assert_one_yocto,
@@ -11,7 +12,6 @@ use near_sdk::{
     AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseResult, StorageUsage,
 };
 use std::str::FromStr;
-pub use agent::Agent;
 pub use tasks::Task;
 pub use tasks::TaskHumanFriendly;
 pub use triggers::Trigger;
@@ -73,7 +73,7 @@ pub struct Contract {
     // NOTE: Caveat, when there are odd number of tasks or agents, the overflow will be available to first-come first-serve. This doesnt negate the possibility of a failed txn from race case choosing winner inside a block.
     // NOTE: The overflow will be adjusted to be handled by sweeper in next implementation.
     agent_task_ratio: [u64; 2],
-    agent_active_index: u16,
+    agent_active_index: u64,
     agents_eject_threshold: u128,
 
     // Basic management

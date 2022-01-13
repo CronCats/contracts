@@ -22,9 +22,17 @@ pub struct Trigger {
     /// The task to trigger if view results in TRUE
     /// Task can still use a cadence, or can utilize a very large time window and allow view triggers to be main source of execution
     pub task_hash: Base64VecU8,
+}
 
-    /// Useful for responses in view calls
-    pub hash: Option<Base64VecU8>,
+#[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(crate = "near_sdk::serde")]
+pub struct TriggerHumanFriendly {
+    pub owner_id: AccountId,
+    pub contract_id: AccountId,
+    pub function_id: String,
+    pub arguments: Base64VecU8,
+    pub task_hash: Base64VecU8,
+    pub hash: Base64VecU8,
 }
 
 #[near_bindgen]
