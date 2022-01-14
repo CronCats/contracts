@@ -37,6 +37,7 @@ pub struct TriggerHumanFriendly {
 
 #[near_bindgen]
 impl Contract {
+    /// !IMPORTANT!:: BETA FEATURE!!!!!!!!!
     /// Configure a VIEW call to map to a task, allowing IFTTT functionality
     /// IMPORTANT: Trigger methods MUST respond with a boolean
     ///
@@ -68,7 +69,7 @@ impl Contract {
             arguments: arguments.unwrap_or_else(|| Base64VecU8::from(vec![])),
         };
 
-        let trigger_hash = self.trigger_hash(&item);
+        let trigger_hash = self.get_trigger_hash(&item);
 
         // Add trigger to catalog
         assert!(
@@ -104,7 +105,7 @@ impl Contract {
     }
 
     /// Get the hash of a trigger based on parameters
-    pub fn trigger_hash(&self, item: &Trigger) -> Vec<u8> {
+    pub fn get_trigger_hash(&self, item: &Trigger) -> Vec<u8> {
         // Generate hash, needs to be from known values so we can reproduce the hash without storing
         let input = format!(
             "{:?}{:?}{:?}{:?}{:?}",
@@ -118,7 +119,11 @@ impl Contract {
     /// ```bash
     /// near view manager_v1.croncat.testnet get_triggers '{"from_index": 0, "limit": 10}'
     /// ```
-    pub fn get_triggers(&self, from_index: Option<U64>, limit: Option<U64>) -> Vec<TriggerHumanFriendly> {
+    pub fn get_triggers(
+        &self,
+        from_index: Option<U64>,
+        limit: Option<U64>,
+    ) -> Vec<TriggerHumanFriendly> {
         let mut ret: Vec<TriggerHumanFriendly> = Vec::new();
         let mut start = 0;
         let mut end = 10;
@@ -148,6 +153,28 @@ impl Contract {
         ret
     }
 
+    /// Returns trigger
+    ///
+    /// ```bash
+    /// near view manager_v1.croncat.testnet get_trigger '{"trigger_hash": "..."}'
+    /// ```
+    pub fn get_trigger(&self, trigger_hash: Base64VecU8) -> TriggerHumanFriendly {
+        let trigger = self
+            .triggers
+            .get(&trigger_hash.0)
+            .expect("No trigger found");
+
+        TriggerHumanFriendly {
+            owner_id: trigger.owner_id.clone(),
+            contract_id: trigger.contract_id.clone(),
+            function_id: trigger.function_id.clone(),
+            arguments: trigger.arguments.clone(),
+            task_hash: trigger.task_hash.clone(),
+            hash: Base64VecU8::from(self.get_trigger_hash(&trigger)),
+        }
+    }
+
+    /// !IMPORTANT!:: BETA FEATURE!!!!!!!!!
     /// Allows agents to check if a view method should trigger a task immediately
     ///
     /// TODO:
@@ -172,7 +199,7 @@ impl Contract {
         let trigger = self
             .triggers
             .get(&trigger_hash.into())
-            .expect("No task found by hash");
+            .expect("No trigger found by hash");
 
         // Call external contract with task variables
         let promise_first = env::promise_create(
@@ -198,6 +225,7 @@ impl Contract {
         env::promise_return(promise_second);
     }
 
+    /// !IMPORTANT!:: BETA FEATURE!!!!!!!!!
     /// Callback, if response is TRUE, then do the actual proxy call
     #[private]
     pub fn proxy_conditional_callback(&mut self, task_hash: Base64VecU8, agent_id: AccountId) {

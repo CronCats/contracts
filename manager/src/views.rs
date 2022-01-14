@@ -177,7 +177,6 @@ impl Contract {
                     gas: task.gas,
                     arguments: task.arguments.clone(),
                     hash: Base64VecU8::from(task_hash.clone()),
-                    trigger_hash: task.trigger_hash,
                 });
             }
         } else {
@@ -206,10 +205,38 @@ impl Contract {
                             gas: task.gas,
                             arguments: task.arguments.clone(),
                             hash: Base64VecU8::from(task_hash.clone()),
-                            trigger_hash: task.trigger_hash,
                         });
                     }
                 }
+            }
+        }
+        ret
+    }
+
+    /// Returns tasks for a specific owner account
+    ///
+    /// ```bash
+    /// near view manager_v1.croncat.testnet get_tasks_by_owner '{"owner_id": "YOU.testnet"}'
+    /// ```
+    pub fn get_tasks_by_owner(&self, owner_id: AccountId) -> Vec<TaskHumanFriendly> {
+        let mut ret: Vec<TaskHumanFriendly> = Vec::new();
+        if let Some(U128(slot_number)) = slot {
+            // User specified a slot number, only return tasks in there.
+            let tasks_in_slot = self.slots.get(&slot_number).unwrap_or_default();
+            for task_hash in tasks_in_slot.iter() {
+                let task = self.tasks.get(&task_hash).expect("No task found by hash");
+                ret.push(TaskHumanFriendly {
+                    owner_id: task.owner_id.clone(),
+                    contract_id: task.contract_id.clone(),
+                    function_id: task.function_id.clone(),
+                    cadence: task.cadence.clone(),
+                    recurring: task.recurring,
+                    total_deposit: task.total_deposit,
+                    deposit: task.deposit,
+                    gas: task.gas,
+                    arguments: task.arguments.clone(),
+                    hash: Base64VecU8::from(task_hash.clone()),
+                });
             }
         }
         ret
@@ -235,7 +262,6 @@ impl Contract {
             gas: task.gas,
             arguments: task.arguments.clone(),
             hash: task_hash,
-            trigger_hash: task.trigger_hash,
         }
     }
 

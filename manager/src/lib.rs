@@ -130,7 +130,6 @@ impl Contract {
         this
     }
 
-    // TODO: "Trigger" storage calc
     /// Measure the storage an agent will take and need to provide
     fn measure_account_storage_usage(&mut self) {
         let initial_storage_usage = env::storage_usage();

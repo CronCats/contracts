@@ -34,9 +34,6 @@ pub struct Task {
 
     // NOTE: Only allow static pre-defined bytes
     pub arguments: Base64VecU8,
-
-    // For view+call setup
-    pub trigger_hash: Option<Base64VecU8>,
 }
 
 #[derive(BorshDeserialize, BorshSerialize, Debug, Serialize, Deserialize, PartialEq)]
@@ -52,7 +49,6 @@ pub struct TaskHumanFriendly {
     pub gas: Gas,
     pub arguments: Base64VecU8,
     pub hash: Base64VecU8,
-    pub trigger_hash: Option<Base64VecU8>,
 }
 
 #[near_bindgen]
@@ -115,7 +111,6 @@ impl Contract {
             deposit: U128::from(deposit.map(|v| v.0).unwrap_or(0u128)),
             gas: gas.unwrap_or(GAS_BASE_FEE),
             arguments: arguments.unwrap_or_else(|| Base64VecU8::from(vec![])),
-            trigger_hash: None,
         };
 
         // Check that balance is sufficient for 1 execution minimum
@@ -131,22 +126,34 @@ impl Contract {
             min_balance_needed
         );
 
-        let hash = self.hash(&item);
+        let hash = self.get_hash(
+            item.contract_id.clone(),
+            item.function_id.clone(),
+            item.cadence.clone(),
+            item.owner_id.clone(),
+            item.arguments.clone(),
+        );
 
         // Parse cadence into a future timestamp, then convert to a slot
         let next_slot = self.get_slot_from_cadence(item.cadence.clone());
 
         // Add task to catalog
         assert!(
-            self.tasks.insert(&hash, &item).is_none(),
+            self.tasks.insert(&hash.0, &item).is_none(),
             "Task already exists"
         );
 
         // Get previous task hashes in slot, add as needed
         let mut slot_slots = self.slots.get(&next_slot).unwrap_or(Vec::new());
-        slot_slots.push(hash.clone());
+        slot_slots.push(hash.0.clone());
         log!("Task next slot: {}", next_slot);
         self.slots.insert(&next_slot, &slot_slots);
+
+        // Keep track of which tasks are owned by whom
+        let mut owner_tasks = self.task_owners.get(&item.owner_id).unwrap_or(Vec::new());
+        owner_tasks.push(hash.0.clone());
+        log!("Task owner list: {}", item.owner_id);
+        self.task_owners.insert(&item.owner_id, &owner_tasks);
 
         // Add the attached balance into available_balance
         self.available_balance = self
@@ -228,6 +235,19 @@ impl Contract {
         if slot_tasks.len() != 0 {
             slot_tasks.retain(|h| h != &task_hash);
             self.slots.insert(&next_slot, &slot_tasks);
+        }
+
+        // Remove task from owners list of tasks
+        // Get task hashes in owner list, find index of task hash, remove
+        let mut owner_tasks = self.task_owners.get(&task.owner_id).unwrap_or(Vec::new());
+        if owner_tasks.len() != 0 {
+            owner_tasks.retain(|h| h != &task_hash);
+
+            if owner_tasks.len() > 0 {
+                self.task_owners.insert(&task.owner_id, &owner_tasks);
+            } else {
+                self.task_owners.remove(&task.owner_id);
+            }
         }
     }
 
@@ -535,6 +555,12 @@ impl Contract {
         }
     }
 
+    /// Returns the base amount required to execute 1 task
+    /// NOTE: this is not the final used amount, just the user-specified amount total needed
+    pub fn task_balance_uses(&self, task: &Task) -> u128 {
+        task.deposit.0 + (u128::from(task.gas) * self.gas_price) + self.agent_fee
+    }
+
     /// Deletes a task in its entirety, returning any remaining balance to task owner.
     ///
     /// ```bash
@@ -547,27 +573,6 @@ impl Contract {
 
         // If owner, allow to remove task
         self.exit_task(hash);
-    }
-}
-
-// Internal methods
-impl Contract {
-    /// Get the hash of a task based on parameters
-    fn hash(&self, item: &Task) -> Vec<u8> {
-        self.get_hash(
-            item.contract_id.clone(),
-            item.function_id.clone(),
-            item.cadence.clone(),
-            item.owner_id.clone(),
-            item.arguments.clone(),
-        )
-        .into()
-    }
-
-    /// Returns the base amount required to execute 1 task
-    /// NOTE: this is not the final used amount, just the user-specified amount total needed
-    fn task_balance_uses(&self, task: &Task) -> u128 {
-        task.deposit.0 + (u128::from(task.gas) * self.gas_price) + self.agent_fee
     }
 }
 
@@ -598,7 +603,6 @@ mod tests {
             deposit: U128::from(100),
             gas: 200,
             arguments: Base64VecU8::from(vec![]),
-            trigger_hash: None,
         }
     }
     pub fn get_sample_task_hr() -> TaskHumanFriendly {
@@ -612,7 +616,6 @@ mod tests {
             deposit: U128::from(100),
             gas: 200,
             arguments: Base64VecU8::from(vec![]),
-            trigger_hash: None,
             hash: Base64VecU8(vec![
                 25, 109, 16, 117, 147, 91, 137, 42, 231, 234, 13, 62, 155, 180, 27, 180, 212, 178,
                 59, 70, 79, 213, 58, 149, 177, 23, 184, 15, 43, 78, 56, 235,
