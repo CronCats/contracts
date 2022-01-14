@@ -145,7 +145,7 @@ impl Contract {
                         function_id: trigger.function_id.clone(),
                         arguments: trigger.arguments.clone(),
                         task_hash: trigger.task_hash.clone(),
-                        hash: Base64VecU8::from(self.trigger_hash(&trigger)),
+                        hash: Base64VecU8::from(self.get_trigger_hash(&trigger)),
                     });
                 }
             }

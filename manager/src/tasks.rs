@@ -1332,9 +1332,15 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         let task = get_sample_task();
-        let hash = contract.hash(&task);
+        let hash = contract.get_hash(
+            task.contract_id.clone(),
+            task.function_id.clone(),
+            task.cadence.clone(),
+            task.owner_id.clone(),
+            task.arguments.clone(),
+        );
         assert_eq!(
-            hash,
+            hash.0,
             [
                 25, 109, 16, 117, 147, 91, 137, 42, 231, 234, 13, 62, 155, 180, 27, 180, 212, 178,
                 59, 70, 79, 213, 58, 149, 177, 23, 184, 15, 43, 78, 56, 235

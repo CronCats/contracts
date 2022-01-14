@@ -399,7 +399,6 @@ fn simulate_basic_task_checks() {
         deposit: U128::from(12000000000000),
         gas: 3000000000000,
         arguments: Base64VecU8::from(vec![]),
-        trigger_hash: None,
         hash: Base64VecU8::from(vec![
             4, 23, 43, 212, 103, 88, 226, 36, 140, 121, 177, 90, 190, 238, 242, 207, 135, 90, 60,
             48, 235, 150, 108, 83, 127, 151, 237, 11, 68, 65, 242, 100,
