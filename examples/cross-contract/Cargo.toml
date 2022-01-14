@@ -1,6 +1,6 @@
 [package]
 name = "cross-contract"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Cron.cat", "@trevorjtclarke"]
 edition = "2018"
 
@@ -8,4 +8,4 @@ edition = "2018"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-near-sdk = "3.1.0"
+near-sdk = "4.0.0-pre.3"

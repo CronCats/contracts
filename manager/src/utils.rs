@@ -90,18 +90,21 @@ impl Contract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::json_types::ValidAccountId;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env, MockedBlockchain};
+    use near_sdk::testing_env;
+    use near_sdk::{AccountId, PublicKey};
 
     const BLOCK_START_TS: u64 = 1633759320000000000;
 
-    fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
+    fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(accounts(0))
             .signer_account_id(predecessor_account_id.clone())
-            .signer_account_pk(b"ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM".to_vec())
+            .signer_account_pk(
+                PublicKey::from_str("ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM")
+                    .unwrap(),
+            )
             .predecessor_account_id(predecessor_account_id)
             .block_timestamp(BLOCK_START_TS);
         builder

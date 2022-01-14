@@ -40,7 +40,7 @@ impl Contract {
             self.gas_price = gas_price.0;
         }
         if let Some(proxy_callback_gas) = proxy_callback_gas {
-            self.proxy_callback_gas = proxy_callback_gas.0;
+            self.proxy_callback_gas = Gas(proxy_callback_gas.0);
         }
         if let Some(agent_fee) = agent_fee {
             self.agent_fee = agent_fee.0;
@@ -140,19 +140,22 @@ impl Contract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::json_types::ValidAccountId;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env, MockedBlockchain};
+    use near_sdk::testing_env;
+    use near_sdk::{AccountId, PublicKey};
 
     const BLOCK_START_BLOCK: u64 = 52_201_040;
     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
 
-    fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
+    fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(accounts(0))
             .signer_account_id(predecessor_account_id.clone())
-            .signer_account_pk(b"ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM".to_vec())
+            .signer_account_pk(
+                PublicKey::from_str("ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM")
+                    .unwrap(),
+            )
             .predecessor_account_id(predecessor_account_id)
             .block_index(BLOCK_START_BLOCK)
             .block_timestamp(BLOCK_START_TS);

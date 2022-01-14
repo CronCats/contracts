@@ -7,12 +7,18 @@ edition = "2018"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+#[dependencies]
+#near-sdk = "3.1.0"
+#cron_schedule = "0.2.0"
+#near-contract-standards = "3.2.0"
+
 [dependencies]
-near-sdk = "3.1.0"
+near-sdk = "4.0.0-pre.3"
 cron_schedule = "0.2.0"
-near-contract-standards = "3.2.0"
+#near-contract-standards = "3.2.0"
+near-contract-standards = "4.0.0-pre.3"
 
 [dev-dependencies]
-near-sdk-sim = "3.1.0"
+#near-sdk-sim = "3.1.0"
 chrono = "~0.4"
-near-primitives-core = "0.4.0"
+#near-primitives-core = "0.4.0"

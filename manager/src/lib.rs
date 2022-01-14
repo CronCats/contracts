@@ -5,7 +5,7 @@ use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
     collections::{LookupMap, TreeMap, UnorderedMap, Vector},
     env,
-    json_types::{Base64VecU8, ValidAccountId, U128, U64},
+    json_types::{Base64VecU8, U128, U64},
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json::json,
@@ -21,15 +21,13 @@ mod tasks;
 mod utils;
 mod views;
 
-near_sdk::setup_alloc!();
-
 // Balance & Fee Definitions
 pub const ONE_NEAR: u128 = 1_000_000_000_000_000_000_000_000;
 pub const BASE_BALANCE: Balance = ONE_NEAR * 5; // safety overhead
 pub const GAS_BASE_PRICE: Balance = 100_000_000;
-pub const GAS_BASE_FEE: Gas = 3_000_000_000_000;
+pub const GAS_BASE_FEE: Gas = Gas(3_000_000_000_000);
 // actual is: 13534954161128, higher in case treemap rebalance
-pub const GAS_FOR_CALLBACK: Gas = 30_000_000_000_000;
+pub const GAS_FOR_CALLBACK: Gas = Gas(30_000_000_000_000);
 pub const AGENT_BASE_FEE: Balance = 500_000_000_000_000_000_000; // 0.0005 Ⓝ (2000 tasks = 1 Ⓝ)
 pub const STAKE_BALANCE_MIN: u128 = 10 * ONE_NEAR;
 
@@ -120,7 +118,7 @@ impl Contract {
     fn measure_account_storage_usage(&mut self) {
         let initial_storage_usage = env::storage_usage();
         // Create a temporary, dummy entry and measure the storage used.
-        let tmp_account_id = "a".repeat(64);
+        let tmp_account_id = AccountId::from_str("a".repeat(64).as_str()).unwrap();
         let tmp_agent = Agent {
             status: agent::AgentStatus::Pending,
             payable_account_id: tmp_account_id.clone(),
@@ -185,19 +183,22 @@ impl Contract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::json_types::ValidAccountId;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env, MockedBlockchain};
+    use near_sdk::testing_env;
+    use near_sdk::{AccountId, PublicKey};
 
     const BLOCK_START_BLOCK: u64 = 52_201_040;
     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
 
-    fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
+    fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(accounts(0))
             .signer_account_id(predecessor_account_id.clone())
-            .signer_account_pk(b"ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM".to_vec())
+            .signer_account_pk(
+                PublicKey::from_str("ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM")
+                    .unwrap(),
+            )
             .predecessor_account_id(predecessor_account_id)
             .block_index(BLOCK_START_BLOCK)
             .block_timestamp(BLOCK_START_TS);

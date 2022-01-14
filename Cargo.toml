@@ -2,6 +2,7 @@
 # include a member for each contract
 members = [
   "manager",
+  "e2e",
   "rewards",
   "examples/airdrop",
   "examples/counter",

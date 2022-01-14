@@ -45,7 +45,7 @@ impl Contract {
     /// near call cron.testnet register_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
     /// ```
     #[payable]
-    pub fn register_agent(&mut self, payable_account_id: Option<ValidAccountId>) {
+    pub fn register_agent(&mut self, payable_account_id: Option<AccountId>) {
         assert_eq!(self.paused, false, "Register agent paused");
 
         let deposit: Balance = env::attached_deposit();
@@ -62,7 +62,7 @@ impl Contract {
         // check that account isn't already added
         if let Some(agent) = self.agents.get(&account) {
             let panic_msg = format!("Agent already exists: {:?}. Refunding the deposit.", agent);
-            env::panic(panic_msg.as_bytes());
+            env::panic_str(panic_msg.as_str());
         };
 
         let payable_id = payable_account_id
@@ -102,7 +102,7 @@ impl Contract {
     /// near call cron.testnet update_agent '{"payable_account_id": "YOU.testnet"}' --accountId YOUR_AGENT.testnet
     /// ```
     #[payable]
-    pub fn update_agent(&mut self, payable_account_id: Option<ValidAccountId>) {
+    pub fn update_agent(&mut self, payable_account_id: Option<AccountId>) {
         assert_eq!(self.paused, false, "Update agent paused");
         assert_one_yocto();
 
@@ -171,9 +171,9 @@ impl Contract {
 
             log!("Withdrawal of {} has been sent.", withdrawal_amount);
             self.available_balance = self.available_balance.saturating_sub(withdrawal_amount);
-            Promise::new(agent.payable_account_id.to_string()).transfer(withdrawal_amount)
+            Promise::new(agent.payable_account_id).transfer(withdrawal_amount)
         } else {
-            env::panic(b"No Agent")
+            env::panic_str("No Agent")
         }
     }
 
@@ -220,20 +220,23 @@ impl Contract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use near_sdk::json_types::ValidAccountId;
     use near_sdk::test_utils::{accounts, VMContextBuilder};
-    use near_sdk::{testing_env, MockedBlockchain};
+    use near_sdk::testing_env;
+    use near_sdk::{AccountId, PublicKey};
 
     const BLOCK_START_BLOCK: u64 = 52_201_040;
     const BLOCK_START_TS: u64 = 1_624_151_503_447_000_000;
     const AGENT_REGISTRATION_COST: u128 = 2_260_000_000_000_000_000_000;
 
-    fn get_context(predecessor_account_id: ValidAccountId) -> VMContextBuilder {
+    fn get_context(predecessor_account_id: AccountId) -> VMContextBuilder {
         let mut builder = VMContextBuilder::new();
         builder
             .current_account_id(accounts(0))
             .signer_account_id(predecessor_account_id.clone())
-            .signer_account_pk(b"ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM".to_vec())
+            .signer_account_pk(
+                PublicKey::from_str("ed25519:4ZhGmuKTfQn9ZpHCQVRwEr4JnutL8Uu3kArfxEqksfVM")
+                    .unwrap(),
+            )
             .predecessor_account_id(predecessor_account_id)
             .block_index(BLOCK_START_BLOCK)
             .block_timestamp(BLOCK_START_TS);
@@ -246,7 +249,7 @@ mod tests {
         testing_env!(context.build());
         let contract = Contract::new();
         testing_env!(context.is_view(true).build());
-        assert!(contract.get_agent(accounts(1).to_string()).is_none());
+        assert!(contract.get_agent(accounts(1)).is_none());
     }
 
     #[test]
@@ -258,12 +261,12 @@ mod tests {
         contract.register_agent(Some(accounts(1)));
 
         testing_env!(context.is_view(true).build());
-        let _agent = contract.get_agent(accounts(1).to_string());
+        let _agent = contract.get_agent(accounts(1));
         assert_eq!(
-            contract.get_agent(accounts(1).to_string()),
+            contract.get_agent(accounts(1)),
             Some(Agent {
                 status: AgentStatus::Active,
-                payable_account_id: accounts(1).to_string(),
+                payable_account_id: accounts(1),
                 balance: U128::from(AGENT_REGISTRATION_COST),
                 total_tasks_executed: U128::from(0),
                 last_missed_slot: 0,
@@ -294,12 +297,12 @@ mod tests {
         contract.update_agent(Some(accounts(2)));
 
         testing_env!(context.is_view(true).build());
-        let _agent = contract.get_agent(accounts(1).to_string());
+        let _agent = contract.get_agent(accounts(1));
         assert_eq!(
-            contract.get_agent(accounts(1).to_string()),
+            contract.get_agent(accounts(1)),
             Some(Agent {
                 status: AgentStatus::Active,
-                payable_account_id: accounts(2).to_string(),
+                payable_account_id: accounts(2),
                 balance: U128::from(AGENT_REGISTRATION_COST),
                 total_tasks_executed: U128::from(0),
                 last_missed_slot: 0,
@@ -319,8 +322,8 @@ mod tests {
         contract.unregister_agent();
 
         testing_env!(context.is_view(true).build());
-        let _agent = contract.get_agent(accounts(1).to_string());
-        assert_eq!(contract.get_agent(accounts(1).to_string()), None);
+        let _agent = contract.get_agent(accounts(1));
+        assert_eq!(contract.get_agent(accounts(1)), None);
     }
 
     #[test]
