@@ -61,10 +61,10 @@ METAPOOL_ACCT=meta-pool.near
 # near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Unstake funds from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "unstake", "args": "'$FIXED_ARGS'", "deposit": "0", "gas": "20000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
 
 # # Withdraw balance back (example: EKZqArNzsjq9hpYuYt37Y59qU1kmZoxguLwRH2RnDELd)
-near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Withdraw unstaked funds from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "withdraw_unstaked", "args": "e30=", "deposit": "0", "gas": "20000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
+# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Withdraw unstaked funds from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "withdraw_unstaked", "args": "e30=", "deposit": "0", "gas": "20000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
 
 # # Harvest the earned $META token, NOTE: 1 yocto must be attached to perform the right action
-# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Harvest earned META from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "harvest_meta", "args": "e30=", "deposit": "1", "gas": "20000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
+# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Harvest earned META from metapool to croncat dao", "kind": {"FunctionCall": {"receiver_id": "'$METAPOOL_ACCT'", "actions": [{"method_name": "harvest_meta", "args": "e30=", "deposit": "1", "gas": "120000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
 
 ## --------------------------------
 ## PARAS.ID NFTs
