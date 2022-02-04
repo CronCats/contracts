@@ -152,7 +152,7 @@ impl Contract {
     /// REF: https://docs.near.org/docs/concepts/data-storage#gas-consumption-examples-1
     ///
     /// ```bash
-    /// near view manager_v1.croncat.testnet get_tasks '{"from_index": 0, "limit": 10}'
+    /// near view manager_v1.croncat.testnet get_tasks '{"from_index": "0", "limit": "100"}'
     /// ```
     pub fn get_tasks(
         &self,

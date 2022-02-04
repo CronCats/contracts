@@ -1,5 +1,5 @@
 set -e
-MASTER_ACC=cron.testnet
+MASTER_ACC=in.testnet
 DAO_ROOT_ACC=sputnikv2.testnet
 DAO_NAME=croncat
 DAO_ACCOUNT=$DAO_NAME.$DAO_ROOT_ACC
@@ -20,9 +20,9 @@ export NEAR_ENV=testnet
 
 
 # ## CRONCAT Launch proposal: TICK Task
-# ARGS=`echo "{\"contract_id\": \"$CRON_ACCOUNT\",\"function_id\": \"tick\",\"cadence\": \"0 0 * * * *\",\"recurring\": true,\"deposit\": \"0\",\"gas\": 2400000000000}" | base64`
+# ARGS=`echo "{\"contract_id\": \"$CRON_ACCOUNT\",\"function_id\": \"tick\",\"cadence\": \"0 0 * * * *\",\"recurring\": true,\"deposit\": \"0\",\"gas\": 9000000000000}" | base64`
 # FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
-# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Create cron task to manage TICK method to handle agents every hour", "kind": {"FunctionCall": {"receiver_id": "'$CRON_ACCOUNT'", "actions": [{"method_name": "create_task", "args": "'$FIXED_ARGS'", "deposit": "5000000000000000000000000", "gas": "50000000000000"}]}}}}' --accountId $MASTER_ACC --amount $BOND_AMOUNT
+# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Create cron task to manage TICK method to handle agents every hour", "kind": {"FunctionCall": {"receiver_id": "'$CRON_ACCOUNT'", "actions": [{"method_name": "create_task", "args": "'$FIXED_ARGS'", "deposit": "10000000000000000000000000", "gas": "50000000000000"}]}}}}' --accountId $MASTER_ACC --amount $BOND_AMOUNT
 
 
 # ## CRONCAT Slot Management proposal
@@ -77,7 +77,10 @@ TREASURY_ACCT=treasury.vaultfactory.testnet
 # near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Request some funds to be slowly released from vanilla stake pool", "kind": {"FunctionCall": {"receiver_id": "'$TREASURY_ACCT'", "actions": [{"method_name": "unstake", "args": "'$FIXED_ARGS'", "deposit": "0", "gas": "180000000000000"}]}}}}' --accountId $MASTER_ACC --amount $BOND_AMOUNT
 
 # Staking: Auto-Stake Retrieve Balances
-# ARGS=`echo "{\"contract_id\": \"$TREASURY_ACCT\",\"function_id\": \"get_staked_balance\",\"cadence\": \"0 0 */1 * * *\",\"recurring\": true,\"deposit\": \"0\",\"gas\": 24000000000000}" | base64`
+# CRONCAT_ARGS=`echo "{\"pool_account_id\": \"meta-v2.pool.testnet\"}" | base64`
+# # CRONCAT_ARGS=`echo "{\"pool_account_id\": \"hotones.pool.f863973.m0\"}" | base64`
+# CRONCAT_FIXED_ARGS=`echo $CRONCAT_ARGS | tr -d '\r' | tr -d ' '`
+# ARGS=`echo "{\"contract_id\": \"$TREASURY_ACCT\",\"function_id\": \"get_staked_balance\",\"cadence\": \"0 0 */1 * * *\",\"recurring\": true,\"deposit\": \"0\",\"gas\": 24000000000000,\"arguments\": \"$CRONCAT_FIXED_ARGS\"}" | base64`
 # FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
 # near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Create cron task to manage staking balance method every day", "kind": {"FunctionCall": {"receiver_id": "'$CRON_ACCOUNT'", "actions": [{"method_name": "create_task", "args": "'$FIXED_ARGS'", "deposit": "5000000000000000000000000", "gas": "50000000000000"}]}}}}' --accountId $MASTER_ACC --amount $BOND_AMOUNT
 
@@ -101,6 +104,6 @@ TREASURY_ACCT=treasury.vaultfactory.testnet
 
 ## NOTE: Examples setup as needed, adjust variables for use cases.
 # near view $DAO_ACCOUNT get_policy
-# near call $DAO_ACCOUNT act_proposal '{"id": 0, "action" :"VoteApprove"}' --accountId $MASTER_ACC  --gas 300000000000000
+near call $DAO_ACCOUNT act_proposal '{"id": 46, "action" :"VoteApprove"}' --accountId $MASTER_ACC  --gas 300000000000000
 # near call $DAO_ACCOUNT act_proposal '{"id": 0, "action" :"VoteReject"}' --accountId $MASTER_ACC  --gas 300000000000000
 # near call $DAO_ACCOUNT act_proposal '{"id": 0, "action" :"VoteRemove"}' --accountId $MASTER_ACC  --gas 300000000000000

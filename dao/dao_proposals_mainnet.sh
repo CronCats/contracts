@@ -46,6 +46,49 @@ export NEAR_ENV=mainnet
 # near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Remove a slot that has missing tasks", "kind": {"FunctionCall": {"receiver_id": "'$CRON_ACCOUNT'", "actions": [{"method_name": "remove_slot", "args": "'$FIXED_ARGS'", "deposit": "0", "gas": "50000000000000"}]}}}}' --accountId $MASTER_ACC --amount 0.1
 
 
+
+## -----------------------------------------------
+## AUTOMATED TREASURY!
+## -----------------------------------------------
+TREASURY_ACCT=treasury.vaultfactory.near
+
+# Send funds to treasury for auto-management
+# near call $DAO_ACCOUNT add_proposal '{"proposal": { "description": "Move near funds to treasury", "kind": { "Transfer": { "token_id": "", "receiver_id": "'$TREASURY_ACCT'", "amount": "1400000000000000000000000000" } } } }' --accountId $MASTER_ACC --amount $BOND_AMOUNT
+# TOKEN_ID=token-v3.cheddar.testnet
+# near call $DAO_ACCOUNT add_proposal '{"proposal": { "description": "Move token funds to treasury", "kind": { "Transfer": { "token_id": "'$TOKEN_ID'", "receiver_id": "'$TREASURY_ACCT'", "amount": "100000000000000000000000000" } } } }' --accountId $MASTER_ACC --amount $BOND_AMOUNT
+
+# Staking: Deposit & Stake (Manual)
+# ARGS=`echo "{\"pool_account_id\": \"meta-v2.pool.testnet\"}" | base64`
+# FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
+# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Send funds to stake with a certain pool", "kind": {"FunctionCall": {"receiver_id": "'$TREASURY_ACCT'", "actions": [{"method_name": "deposit_and_stake", "args": "'$FIXED_ARGS'", "deposit": "100000000000000000000000000", "gas": "180000000000000"}]}}}}' --accountId $MASTER_ACC --amount $BOND_AMOUNT
+# OR 
+# ARGS=`echo "{\"pool_account_id\": \"hotones.pool.f863973.m0\"}" | base64`
+# FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
+# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Send funds to stake with a certain pool", "kind": {"FunctionCall": {"receiver_id": "'$TREASURY_ACCT'", "actions": [{"method_name": "deposit_and_stake", "args": "'$FIXED_ARGS'", "deposit": "100000000000000000000000000", "gas": "180000000000000"}]}}}}' --accountId $MASTER_ACC --amount $BOND_AMOUNT
+
+# Staking: Liquid Unstake (Manual)
+# ARGS=`echo "{\"pool_account_id\": \"meta-v2.pool.testnet\",\"amount\": \"5000000000000000000000000\"}" | base64`
+# FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
+# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Request some funds to be immediately released from liquid stake pool", "kind": {"FunctionCall": {"receiver_id": "'$TREASURY_ACCT'", "actions": [{"method_name": "liquid_unstake", "args": "'$FIXED_ARGS'", "deposit": "0", "gas": "180000000000000"}]}}}}' --accountId $MASTER_ACC --amount $BOND_AMOUNT
+
+# Staking: Unstake (Manual + Autowithdraw)
+# ARGS=`echo "{\"pool_account_id\": \"hotones.pool.f863973.m0\",\"amount\": \"5000000000000000000000000\"}" | base64`
+# FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
+# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Request some funds to be slowly released from vanilla stake pool", "kind": {"FunctionCall": {"receiver_id": "'$TREASURY_ACCT'", "actions": [{"method_name": "unstake", "args": "'$FIXED_ARGS'", "deposit": "0", "gas": "180000000000000"}]}}}}' --accountId $MASTER_ACC --amount $BOND_AMOUNT
+
+# Staking: Auto-Stake Retrieve Balances
+# CRONCAT_ARGS=`echo "{\"pool_account_id\": \"meta-v2.pool.testnet\"}" | base64`
+# # CRONCAT_ARGS=`echo "{\"pool_account_id\": \"hotones.pool.f863973.m0\"}" | base64`
+# CRONCAT_FIXED_ARGS=`echo $CRONCAT_ARGS | tr -d '\r' | tr -d ' '`
+# ARGS=`echo "{\"contract_id\": \"$TREASURY_ACCT\",\"function_id\": \"get_staked_balance\",\"cadence\": \"0 0 */1 * * *\",\"recurring\": true,\"deposit\": \"0\",\"gas\": 24000000000000,\"arguments\": \"$CRONCAT_FIXED_ARGS\"}" | base64`
+# FIXED_ARGS=`echo $ARGS | tr -d '\r' | tr -d ' '`
+# near call $DAO_ACCOUNT add_proposal '{"proposal": {"description": "Create cron task to manage staking balance method every day", "kind": {"FunctionCall": {"receiver_id": "'$CRON_ACCOUNT'", "actions": [{"method_name": "create_task", "args": "'$FIXED_ARGS'", "deposit": "5000000000000000000000000", "gas": "50000000000000"}]}}}}' --accountId $MASTER_ACC --amount $BOND_AMOUNT
+
+## -----------------------------------------------
+## -----------------------------------------------
+
+
+
 ## --------------------------------
 ## METAPOOL STAKING
 ## --------------------------------

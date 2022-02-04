@@ -35,6 +35,8 @@ pub struct TriggerHumanFriendly {
     pub hash: Base64VecU8,
 }
 
+pub type CroncatTriggerResponse = (bool, Option<Base64VecU8>);
+
 #[near_bindgen]
 impl Contract {
     /// !IMPORTANT!:: BETA FEATURE!!!!!!!!!
@@ -60,6 +62,10 @@ impl Contract {
             "Trigger storage payment of {} required",
             self.trigger_storage_usage
         );
+
+        // Confirm owner of task is same
+        let task = self.tasks.get(&task_hash.0).expect("No task found");
+        assert_eq!(task.owner_id, env::predecessor_account_id(), "Must be task owner");
 
         let item = Trigger {
             owner_id: env::predecessor_account_id(),
@@ -239,11 +245,11 @@ impl Contract {
                 unreachable!()
             }
             PromiseResult::Successful(trigger_result) => {
-                let result: bool = serde_json::de::from_slice(&trigger_result)
+                let result: CroncatTriggerResponse = serde_json::de::from_slice(&trigger_result)
                     .expect("Could not get result from trigger");
 
                 // TODO: Refactor to re-used method
-                if result {
+                if result.0 {
                     let mut agent = self.agents.get(&agent_id).expect("Agent not found");
                     let mut task = self
                         .tasks
@@ -288,6 +294,7 @@ impl Contract {
                     let promise_first = env::promise_create(
                         task.contract_id.clone(),
                         &task.function_id.as_bytes(),
+                        // TODO: support CroncatTriggerResponse optional view arguments
                         task.arguments.0.as_slice(),
                         task.deposit.0,
                         task.gas,

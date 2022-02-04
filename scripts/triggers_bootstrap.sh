@@ -12,7 +12,7 @@ export FACTORY=testnet
 export MAX_GAS=300000000000000
 
 if [ -z ${NEAR_ACCT+x} ]; then
-  export NEAR_ACCT=weicat.$FACTORY
+  export NEAR_ACCT=croncat.$FACTORY
 else
   export NEAR_ACCT=$NEAR_ACCT
 fi
@@ -30,23 +30,24 @@ export DAO_ACCOUNT_ID=croncat.sputnikv2.$FACTORY
 # near call $CRON_ACCOUNT_ID register_agent '{"payable_account_id": "'$AGENT_ACCOUNT_ID'"}' --accountId $AGENT_ACCOUNT_ID --amount 0.00484
 
 # Create a task
-# near call $CRON_ACCOUNT_ID create_task '{"contract_id": "counter.weicat.testnet","function_id": "increment","cadence": "0 0 * 12 * *","recurring": true,"deposit": "0","gas": 4000000000000}' --accountId $USER_ACCOUNT_ID --amount 10
+# near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$COUNTER_ACCOUNT_ID'","function_id": "increment","cadence": "0 0 * 12 * *","recurring": true,"deposit": "0","gas": 4000000000000}' --accountId $USER_ACCOUNT_ID --amount 10
 
 # get hash from above
-near call $CRON_ACCOUNT_ID create_trigger '{"contract_id": "views.weicat.testnet","function_id": "get_a_boolean","task_hash":"McJZp4jUfZkwlGGVn0T5wpGVAPvsvMbHmO1R9rv8tco="}' --accountId $USER_ACCOUNT_ID --amount 0.000017
+# near call $CRON_ACCOUNT_ID create_trigger '{"contract_id": "'$VIEWS_ACCOUNT_ID'","function_id": "get_a_boolean","task_hash":"rmBCOb1CyeypKqIu6QIpozATq5zYXAU/KHUVXD6wI14="}' --accountId $USER_ACCOUNT_ID --amount 0.000017
+near call $CRON_ACCOUNT_ID create_trigger '{"contract_id": "'$VIEWS_ACCOUNT_ID'","function_id": "get_a_boolean","task_hash":"or3Wdi4yq2idU90Zrrg3/T0iCogfIBV2O7ruwQSjt/I="}' --accountId $COUNTER_ACCOUNT_ID --amount 0.000017
 
 # VSB8VDqS8QgmTTCTuvt5q9BiXLUnv77AJxwBWZIO7U4=
-near view $CRON_ACCOUNT_ID get_triggers '{"from_index": "0", "limit": "10"}'
+near view $CRON_ACCOUNT_ID get_triggers '{"from_index": "0", "limit": "100"}'
 
-# do a view check
-near view $VIEWS_ACCOUNT_ID get_a_boolean
+# # do a view check
+# near view $VIEWS_ACCOUNT_ID get_a_boolean
 
-# Make the actual proxy view+call
-near call $CRON_ACCOUNT_ID proxy_conditional_call '{"trigger_hash": "VSB8VDqS8QgmTTCTuvt5q9BiXLUnv77AJxwBWZIO7U4"}' --accountId $AGENT_ACCOUNT_ID --gas 300000000000000
+# # Make the actual proxy view+call
+# near call $CRON_ACCOUNT_ID proxy_conditional_call '{"trigger_hash": "VSB8VDqS8QgmTTCTuvt5q9BiXLUnv77AJxwBWZIO7U4"}' --accountId $AGENT_ACCOUNT_ID --gas 300000000000000
 
-sleep 1m
+# sleep 1m
 
-# Do AGAIN just in case we were on odd minute
-near call $CRON_ACCOUNT_ID proxy_conditional_call '{"trigger_hash": "VSB8VDqS8QgmTTCTuvt5q9BiXLUnv77AJxwBWZIO7U4"}' --accountId $AGENT_ACCOUNT_ID --gas 300000000000000
+# # Do AGAIN just in case we were on odd minute
+# near call $CRON_ACCOUNT_ID proxy_conditional_call '{"trigger_hash": "VSB8VDqS8QgmTTCTuvt5q9BiXLUnv77AJxwBWZIO7U4"}' --accountId $AGENT_ACCOUNT_ID --gas 300000000000000
 
 echo "Trigger sample complete"
