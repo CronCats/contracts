@@ -400,7 +400,7 @@ impl Contract {
             log!("No task found by hash, exiting");
             // reward agent for diligence
             self.send_base_agent_reward(agent);
-            
+
             // remove the hash from the slot, by simply returning before the hash gets computed for next slot.
             return;
         }

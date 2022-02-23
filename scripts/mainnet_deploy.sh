@@ -67,6 +67,7 @@ export DAO_ACCOUNT_ID=croncat.sputnik-dao.near
 # near deploy --wasmFile ./res/manager.wasm --accountId $CRON_ACCOUNT_ID
 # near deploy --wasmFile ./res/rewards.wasm --accountId $REWARDS_ACCOUNT_ID
 
+# near call $CRON_ACCOUNT_ID calc_balances --accountId $CRON_ACCOUNT_ID
 
 # Check all configs first
 near view $CRON_ACCOUNT_ID version

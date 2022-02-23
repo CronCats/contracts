@@ -68,8 +68,10 @@ impl Contract {
 
         // Loop all tasks and add
         for (_, t) in self.tasks.iter() {
+            log!("task {:?} {:?}", &t.contract_id, &t.total_deposit.0);
             total_task_balance = total_task_balance.saturating_add(t.total_deposit.0);
         }
+        log!("total_task_balance {:?}", &total_task_balance);
 
         // Loop all agents rewards and add
         for a in self.agent_active_queue.iter() {
@@ -77,17 +79,24 @@ impl Contract {
                 total_reward_balance = total_reward_balance.saturating_add(agent.balance.0);
             }
         }
+        log!("total_reward_balance {:?}", &total_reward_balance);
 
         let total_available_balance: Balance =
             total_task_balance.saturating_add(total_reward_balance);
+        log!("total_available_balance {:?}", &total_available_balance);
 
         // Calculate surplus, which could be used for staking
-        let surplus = u128::max(total_available_balance.saturating_sub(required_balance), 0);
+        // TODO: This would be adjusted by preferences of like 30% of total task deposit or similar
+        let surplus = u128::max(
+            env::account_balance()
+                .saturating_sub(total_available_balance)
+                .saturating_sub(required_balance),
+            0,
+        );
         log!("Stakeable surplus {}", surplus);
 
         // update internal values
-        self.available_balance =
-            u128::max(total_available_balance.saturating_sub(required_balance), 0);
+        self.available_balance = u128::max(total_available_balance, 0);
 
         // Return surplus value in case we want to trigger staking based off outcome
         (U128::from(surplus), U128::from(total_reward_balance))
@@ -157,7 +166,9 @@ impl Contract {
     /// ```
     #[private]
     pub fn remove_trigger_owner(&mut self, trigger_hash: Base64VecU8) {
-        self.triggers.remove(&trigger_hash.0).expect("No trigger found by hash");
+        self.triggers
+            .remove(&trigger_hash.0)
+            .expect("No trigger found by hash");
     }
 }
 
@@ -278,8 +289,8 @@ mod tests {
         // recalc the balances
         let (surplus, rewards) = contract.calc_balances();
         testing_env!(context.is_view(true).build());
-        assert_eq!(contract.available_balance, 0);
-        assert_eq!(surplus.0, 0);
+        assert_eq!(contract.available_balance, 5002260000000000000000000);
+        assert_eq!(surplus.0, 91925740000000000000000000);
         assert_eq!(rewards.0, base_agent_storage);
     }
 

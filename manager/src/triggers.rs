@@ -69,7 +69,11 @@ impl Contract {
 
         // Confirm owner of task is same
         let task = self.tasks.get(&task_hash.0).expect("No task found");
-        assert_eq!(task.owner_id, env::predecessor_account_id(), "Must be task owner");
+        assert_eq!(
+            task.owner_id,
+            env::predecessor_account_id(),
+            "Must be task owner"
+        );
 
         let item = Trigger {
             owner_id: env::predecessor_account_id(),

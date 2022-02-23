@@ -1,7 +1,8 @@
 use near_sdk::{
     borsh::{self, BorshDeserialize, BorshSerialize},
-    env, near_bindgen,
-    json_types::Base64VecU8
+    env,
+    json_types::Base64VecU8,
+    near_bindgen,
 };
 
 near_sdk::setup_alloc!();
