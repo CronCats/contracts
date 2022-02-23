@@ -121,11 +121,14 @@ impl Contract {
         let hash = task_hash.0;
         let task = self.tasks.get(&hash).expect("No task found by hash");
 
-        assert_eq!(
-            task.owner_id,
-            env::predecessor_account_id(),
-            "Only owner can remove their task."
-        );
+        // NOTE: Allows owner to remove a task
+        if env::current_account_id() != env::predecessor_account_id() {
+                assert_eq!(
+                task.owner_id,
+                env::predecessor_account_id(),
+                "Only owner can remove their task."
+            );
+        }
 
         // If owner, allow to remove task
         self.exit_task(hash);
