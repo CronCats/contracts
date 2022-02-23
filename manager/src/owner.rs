@@ -126,46 +126,46 @@ impl Contract {
         Promise::new(account_id).transfer(amount.0)
     }
 
-    /// Allows admin to remove slot data, in case a task gets stuck due to missed exits
-    pub fn remove_slot_owner(&mut self, slot: U128) {
-        // assert_eq!(
-        //     self.owner_id,
-        //     env::predecessor_account_id(),
-        //     "Must be owner"
-        // );
-        assert_eq!(
-            env::current_account_id(),
-            env::predecessor_account_id(),
-            "Must be owner"
-        );
-        self.slots.remove(&slot.0);
-    }
+    // /// Allows admin to remove slot data, in case a task gets stuck due to missed exits
+    // pub fn remove_slot_owner(&mut self, slot: U128) {
+    //     // assert_eq!(
+    //     //     self.owner_id,
+    //     //     env::predecessor_account_id(),
+    //     //     "Must be owner"
+    //     // );
+    //     assert_eq!(
+    //         env::current_account_id(),
+    //         env::predecessor_account_id(),
+    //         "Must be owner"
+    //     );
+    //     self.slots.remove(&slot.0);
+    // }
 
-    /// Deletes a task in its entirety, returning any remaining balance to task owner.
-    ///
-    /// ```bash
-    /// near call manager_v1.croncat.testnet remove_task_owner '{"task_hash": ""}' --accountId YOU.testnet
-    /// ```
-    #[private]
-    pub fn remove_task_owner(&mut self, task_hash: Base64VecU8) {
-        let hash = task_hash.0;
-        self.tasks.get(&hash).expect("No task found by hash");
+    // /// Deletes a task in its entirety, returning any remaining balance to task owner.
+    // ///
+    // /// ```bash
+    // /// near call manager_v1.croncat.testnet remove_task_owner '{"task_hash": ""}' --accountId YOU.testnet
+    // /// ```
+    // #[private]
+    // pub fn remove_task_owner(&mut self, task_hash: Base64VecU8) {
+    //     let hash = task_hash.0;
+    //     self.tasks.get(&hash).expect("No task found by hash");
 
-        // If owner, allow to remove task
-        self.exit_task(hash);
-    }
+    //     // If owner, allow to remove task
+    //     self.exit_task(hash);
+    // }
 
-    /// Deletes a trigger in its entirety, only by owner.
-    ///
-    /// ```bash
-    /// near call manager_v1.croncat.testnet remove_trigger_owner '{"trigger_hash": ""}' --accountId YOU.testnet
-    /// ```
-    #[private]
-    pub fn remove_trigger_owner(&mut self, trigger_hash: Base64VecU8) {
-        self.triggers
-            .remove(&trigger_hash.0)
-            .expect("No trigger found by hash");
-    }
+    // /// Deletes a trigger in its entirety, only by owner.
+    // ///
+    // /// ```bash
+    // /// near call manager_v1.croncat.testnet remove_trigger_owner '{"trigger_hash": ""}' --accountId YOU.testnet
+    // /// ```
+    // #[private]
+    // pub fn remove_trigger_owner(&mut self, trigger_hash: Base64VecU8) {
+    //     self.triggers
+    //         .remove(&trigger_hash.0)
+    //         .expect("No trigger found by hash");
+    // }
 }
 
 #[cfg(test)]

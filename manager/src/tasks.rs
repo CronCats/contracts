@@ -96,6 +96,10 @@ impl Contract {
                 function_id != "callback_for_proxy_call",
                 "Function id invalid"
             );
+            assert!(
+                function_id != "proxy_conditional_callback",
+                "Function id invalid"
+            );
             // cannot be THIS contract id, unless predecessor is owner of THIS contract
             assert_eq!(
                 env::predecessor_account_id(),

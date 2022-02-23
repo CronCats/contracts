@@ -66,6 +66,11 @@ impl Contract {
         assert!(contract_id.to_string().len() > 0, "Contract ID missing");
         assert!(function_id.len() > 0, "Function ID missing");
         assert!(task_hash.0.len() > 0, "Task Hash missing");
+        assert_ne!(
+            contract_id.clone().to_string(),
+            env::current_account_id(),
+            "Trigger cannot call self"
+        );
 
         // Confirm owner of task is same
         let task = self.tasks.get(&task_hash.0).expect("No task found");
@@ -215,6 +220,15 @@ impl Contract {
             .triggers
             .get(&trigger_hash.into())
             .expect("No trigger found by hash");
+
+        // TODO: check the task actually exists
+
+        // Make sure this isnt calling manager
+        assert_ne!(
+            trigger.contract_id.clone().to_string(),
+            env::current_account_id(),
+            "Trigger cannot call self"
+        );
 
         // Call external contract with task variables
         let promise_first = env::promise_create(
