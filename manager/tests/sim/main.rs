@@ -186,18 +186,20 @@ fn simulate_many_tasks() {
         DEFAULT_GAS,
         CryptoHash::default(),
     ));
-    let (_, res_outcome) = res.unwrap();
+    println!("{:?}", res);
+    // NOTE: Disabled because the logic needs to handle failures gracefully to reward agent
+    // let (_, res_outcome) = res.unwrap();
     // Ensure that it panics with a message we expect.
-    match res_outcome.status {
-        ExecutionStatus::Failure(f) => {
-            // Not great to use `contains` but will have to do for now.
-            assert!(
-                f.to_string().contains("No tasks found in slot"),
-                "Should have error that no tasks are available"
-            );
-        }
-        _ => panic!("Expected failure when proxy_call has no tasks to execute"),
-    }
+    // match res_outcome.status {
+    //     ExecutionStatus::Failure(f) => {
+    //         // Not great to use `contains` but will have to do for now.
+    //         assert!(
+    //             f.to_string().contains("No tasks found in slot"),
+    //             "Should have error that no tasks are available"
+    //         );
+    //     }
+    //     _ => panic!("Expected failure when proxy_call has no tasks to execute"),
+    // }
 
     // Go through the remainder of the slots, executing tasks
     let mut nonce = 4;
@@ -250,10 +252,10 @@ fn simulate_many_tasks() {
         "{\"account_id\": \"agent.root\"}".as_bytes(),
     );
     let mut agent_info: Agent = agent_info_result.unwrap_json();
-    // Confirm that the agent has executed 11 tasks
+    // Confirm that the agent has executed 12 tasks
     assert_eq!(
-        agent_info.total_tasks_executed.0, 11,
-        "Expected agent to have completed 11 tasks."
+        agent_info.total_tasks_executed.0, 12,
+        "Expected agent to have completed 12 tasks."
     );
 
     // Agent withdraws balance, claiming rewards

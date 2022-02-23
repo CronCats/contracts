@@ -78,6 +78,9 @@ impl Contract {
             self.validate_cadence(cadence.clone()),
             "Cadence string invalid"
         );
+        // prevent dumb mistakes
+        assert!(contract_id.to_string().len() > 0, "Contract ID missing");
+        assert!(function_id.len() > 0, "Function ID missing");
         // Tasks will fail if they specify more than available gas
         assert!(
             MAX_NEAR_GAS
@@ -212,7 +215,7 @@ impl Contract {
     /// Internal management of finishing a task.
     /// Responsible for cleaning up storage &
     /// returning any remaining balance to task owner.
-    fn exit_task(&mut self, task_hash: Vec<u8>) {
+    pub(crate) fn exit_task(&mut self, task_hash: Vec<u8>) {
         let task = self
             .tasks
             .remove(&task_hash)
@@ -251,6 +254,32 @@ impl Contract {
         }
     }
 
+    /// Internal management of agent reward
+    /// Used in cases where there are empty slots or failed txns
+    /// Keep the agent profitable, as this will be a business expense
+    pub(crate) fn send_base_agent_reward(&mut self, _agent: Agent) {
+        let mut agent = _agent;
+        // reward agent for diligence
+        let agent_base_fee = self.agent_fee;
+        agent.balance = U128::from(agent.balance.0.saturating_add(agent_base_fee));
+        agent.total_tasks_executed = U128::from(agent.total_tasks_executed.0.saturating_add(1));
+        self.available_balance = self.available_balance.saturating_sub(agent_base_fee);
+
+        // Reset missed slot, if any
+        if agent.last_missed_slot != 0 {
+            agent.last_missed_slot = 0;
+        }
+        self.agents.insert(&env::signer_account_id(), &agent);
+    }
+
+    /// Internal management of agent reward
+    /// Used in cases where there are empty slots or failed txns
+    /// Keep the agent profitable, as this will be a business expense
+    fn clean_slot(&mut self, slot: &u128) {
+        self.slots.remove(slot);
+        log!("Slot {} cleaned", slot);
+    }
+
     /// Executes a task based on the current task slot
     /// Computes whether a task should continue further or not
     /// Makes a cross-contract call with the task configuration
@@ -283,12 +312,21 @@ impl Contract {
             (self.slots.get(&current_slot), current_slot)
         };
 
-        let mut slot_data = slot_opt.expect("No tasks found in slot");
+        // let mut slot_data = slot_opt.expect("No tasks found in slot");
+        if slot_opt.is_none() {
+            log!("No tasks found in slot, exiting");
+            self.clean_slot(&slot_ballpark);
+            // reward agent for diligence
+            self.send_base_agent_reward(agent);
+            return;
+        }
+        let mut slot_data = slot_opt.unwrap();
 
         // Clean up slot if no more data
         if slot_data.is_empty() {
-            self.slots.remove(&slot_ballpark);
-            log!("Slot {} cleaned", &slot_ballpark);
+            self.clean_slot(&slot_ballpark);
+            // reward agent for diligence
+            self.send_base_agent_reward(agent);
             return;
         }
 
@@ -338,18 +376,36 @@ impl Contract {
         }
 
         // Get a single task hash, then retrieve task details
-        let hash = slot_data.pop().expect("No tasks available");
+        let some_hash = slot_data.pop();
 
         // After popping, ensure state is rewritten back
         if slot_data.is_empty() {
             // Clean up slot if no more data
-            self.slots.remove(&slot_ballpark);
-            // log!("Slot {} cleaned", &slot_ballpark);
+            self.clean_slot(&slot_ballpark);
         } else {
             self.slots.insert(&slot_ballpark, &slot_data);
         }
 
-        let mut task = self.tasks.get(&hash).expect("No task found by hash");
+        if some_hash.is_none() {
+            log!("No tasks available, exiting");
+            // reward agent for diligence
+            self.send_base_agent_reward(agent);
+            return;
+        }
+        let hash = some_hash.unwrap();
+        let some_task = self.tasks.get(&hash);
+
+        // if no task, exit and reward agent.
+        if some_task.is_none() {
+            log!("No task found by hash, exiting");
+            // reward agent for diligence
+            self.send_base_agent_reward(agent);
+            
+            // remove the hash from the slot, by simply returning before the hash gets computed for next slot.
+            return;
+        }
+
+        let mut task = some_task.unwrap();
 
         // Fee breakdown:
         // - Used Gas: Task Txn Fee Cost
@@ -559,20 +615,6 @@ impl Contract {
     /// NOTE: this is not the final used amount, just the user-specified amount total needed
     pub fn task_balance_uses(&self, task: &Task) -> u128 {
         task.deposit.0 + (u128::from(task.gas) * self.gas_price) + self.agent_fee
-    }
-
-    /// Deletes a task in its entirety, returning any remaining balance to task owner.
-    ///
-    /// ```bash
-    /// near call manager_v1.croncat.testnet remove_task_owner '{"task_hash": ""}' --accountId YOU.testnet
-    /// ```
-    #[private]
-    pub fn remove_task_owner(&mut self, task_hash: Base64VecU8) {
-        let hash = task_hash.0;
-        self.tasks.get(&hash).expect("No task found by hash");
-
-        // If owner, allow to remove task
-        self.exit_task(hash);
     }
 }
 

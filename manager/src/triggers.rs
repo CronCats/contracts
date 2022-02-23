@@ -62,6 +62,10 @@ impl Contract {
             "Trigger storage payment of {} required",
             self.trigger_storage_usage
         );
+        // prevent dumb mistakes
+        assert!(contract_id.to_string().len() > 0, "Contract ID missing");
+        assert!(function_id.len() > 0, "Function ID missing");
+        assert!(task_hash.0.len() > 0, "Task Hash missing");
 
         // Confirm owner of task is same
         let task = self.tasks.get(&task_hash.0).expect("No task found");
@@ -202,6 +206,7 @@ impl Contract {
             env::panic(b"Agent not registered");
         }
 
+        // TODO: Think about agent rewards - as they could pay for a failed CB
         let trigger = self
             .triggers
             .get(&trigger_hash.into())
@@ -240,6 +245,7 @@ impl Contract {
             1,
             "Expected 1 promise result."
         );
+        let mut agent = self.agents.get(&agent_id).expect("Agent not found");
         match env::promise_result(0) {
             PromiseResult::NotReady => {
                 unreachable!()
@@ -250,7 +256,6 @@ impl Contract {
 
                 // TODO: Refactor to re-used method
                 if result.0 {
-                    let mut agent = self.agents.get(&agent_id).expect("Agent not found");
                     let mut task = self
                         .tasks
                         .get(&task_hash.clone().into())
@@ -308,6 +313,7 @@ impl Contract {
             PromiseResult::Failed => {
                 // Problem with the creation transaction, reward money has been returned to this contract.
                 log!("Trigger call failed");
+                self.send_base_agent_reward(agent);
             }
         }
     }
