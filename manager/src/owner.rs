@@ -68,10 +68,8 @@ impl Contract {
 
         // Loop all tasks and add
         for (_, t) in self.tasks.iter() {
-            log!("task {:?} {:?}", &t.contract_id, &t.total_deposit.0);
             total_task_balance = total_task_balance.saturating_add(t.total_deposit.0);
         }
-        log!("total_task_balance {:?}", &total_task_balance);
 
         // Loop all agents rewards and add
         for a in self.agent_active_queue.iter() {
@@ -79,11 +77,9 @@ impl Contract {
                 total_reward_balance = total_reward_balance.saturating_add(agent.balance.0);
             }
         }
-        log!("total_reward_balance {:?}", &total_reward_balance);
 
         let total_available_balance: Balance =
             total_task_balance.saturating_add(total_reward_balance);
-        log!("total_available_balance {:?}", &total_available_balance);
 
         // Calculate surplus, which could be used for staking
         // TODO: This would be adjusted by preferences of like 30% of total task deposit or similar

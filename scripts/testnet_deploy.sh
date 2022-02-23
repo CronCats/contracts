@@ -51,7 +51,7 @@ export DAO_ACCOUNT_ID=dao.sputnikv2.$FACTORY
 # near delete $AGENT_ACCOUNT_ID $NEAR_ACCT
 # near delete $USER_ACCOUNT_ID $NEAR_ACCT
 # near delete $CRUD_ACCOUNT_ID $NEAR_ACCT
-near delete $VIEWS_ACCOUNT_ID $NEAR_ACCT
+# near delete $VIEWS_ACCOUNT_ID $NEAR_ACCT
 
 
 ## create all accounts
@@ -60,14 +60,14 @@ near delete $VIEWS_ACCOUNT_ID $NEAR_ACCT
 # near create-account $AGENT_ACCOUNT_ID --masterAccount $NEAR_ACCT
 # near create-account $USER_ACCOUNT_ID --masterAccount $NEAR_ACCT
 # near create-account $CRUD_ACCOUNT_ID --masterAccount $NEAR_ACCT
-near create-account $VIEWS_ACCOUNT_ID --masterAccount $NEAR_ACCT
+# near create-account $VIEWS_ACCOUNT_ID --masterAccount $NEAR_ACCT
 
 
 # Deploy all the contracts to their rightful places
 # near deploy --wasmFile ./res/manager.wasm --accountId $CRON_ACCOUNT_ID --initFunction new --initArgs '{}'
 # near deploy --wasmFile ./res/rust_counter_tutorial.wasm --accountId $COUNTER_ACCOUNT_ID
 # near deploy --wasmFile ./res/cross_contract.wasm --accountId $CRUD_ACCOUNT_ID --initFunction new --initArgs '{"cron": "'$CRON_ACCOUNT_ID'"}'
-near deploy --wasmFile ./res/views.wasm --accountId $VIEWS_ACCOUNT_ID
+# near deploy --wasmFile ./res/views.wasm --accountId $VIEWS_ACCOUNT_ID
 
 
 # RE:Deploy all the contracts to their rightful places
@@ -75,6 +75,8 @@ near deploy --wasmFile ./res/views.wasm --accountId $VIEWS_ACCOUNT_ID
 # near deploy --wasmFile ./res/rust_counter_tutorial.wasm --accountId $COUNTER_ACCOUNT_ID
 # near deploy --wasmFile ./res/cross_contract.wasm --accountId $CRUD_ACCOUNT_ID
 # near deploy --wasmFile ./res/rewards.wasm --accountId $REWARDS_ACCOUNT_ID
+
+# near call $CRON_ACCOUNT_ID calc_balances --accountId $CRON_ACCOUNT_ID --gas 300000000000000
 
 near view $CRON_ACCOUNT_ID version
 near view $CRON_ACCOUNT_ID get_info
