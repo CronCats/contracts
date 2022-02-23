@@ -33,16 +33,16 @@ near view $CRON_ACCOUNT_ID get_info
 # near call $CRON_ACCOUNT_ID update_settings '{ "paused": false }' --accountId $CRON_ACCOUNT_ID --gas $MAX_GAS
 
 # # Assign ownership to the DAO
-near call $CRON_ACCOUNT_ID update_settings '{ "owner_id": "'$DAO_ACCOUNT_ID'", "paused": false }' --accountId $CRON_ACCOUNT_ID --gas $MAX_GAS
+# near call $CRON_ACCOUNT_ID update_settings '{ "owner_id": "'$DAO_ACCOUNT_ID'", "paused": false }' --accountId $CRON_ACCOUNT_ID --gas $MAX_GAS
 
-# Register the "tick" task, as the base for regulating BPS
-near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$CRON_ACCOUNT_ID'","function_id": "tick","cadence": "0 0 * * * *","recurring": true,"deposit": "0","gas": 9000000000000}' --accountId $CRON_ACCOUNT_ID --amount 10
+# # Register the "tick" task, as the base for regulating BPS
+# near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$CRON_ACCOUNT_ID'","function_id": "tick","cadence": "0 0 * * * *","recurring": true,"deposit": "0","gas": 9000000000000}' --accountId $CRON_ACCOUNT_ID --amount 10
 
 # Register "increment" task, for doing basic cross-contract test
-near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$COUNTER_ACCOUNT_ID'","function_id": "increment","cadence": "0 */1 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId $COUNTER_ACCOUNT_ID --amount 10
+near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$COUNTER_ACCOUNT_ID'","function_id": "increment","cadence": "0 */1 * * * *","recurring": true,"deposit": "0","gas": 5000000000000}' --accountId $COUNTER_ACCOUNT_ID --amount 10
 
-# Register "tick" from crud example
-near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$CRUD_ACCOUNT_ID'","function_id": "tick","cadence": "0 */5 * * * *","recurring": true,"deposit": "0","gas": 10000000000000}' --accountId $CRUD_ACCOUNT_ID --amount 10
+# # Register "tick" from crud example
+# near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$CRUD_ACCOUNT_ID'","function_id": "tick","cadence": "0 */5 * * * *","recurring": true,"deposit": "0","gas": 10000000000000}' --accountId $CRUD_ACCOUNT_ID --amount 10
 
 # Check the tasks were setup right:
 near view $CRON_ACCOUNT_ID get_tasks
@@ -73,11 +73,11 @@ near view $CRON_ACCOUNT_ID get_tasks
 # near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$COUNTER_ACCOUNT_ID'","function_id": "increment","cadence": "0 */8 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId $COUNTER_ACCOUNT_ID --amount 0.5
 # near call $CRON_ACCOUNT_ID create_task '{"contract_id": "'$COUNTER_ACCOUNT_ID'","function_id": "increment","cadence": "0 */9 * * * *","recurring": true,"deposit": "0","gas": 2400000000000}' --accountId $COUNTER_ACCOUNT_ID --amount 0.5
 
-echo ""
-echo "Start your agents, waiting 1m to onboard another agent..."
-echo ""
+# echo ""
+# echo "Start your agents, waiting 1m to onboard another agent..."
+# echo ""
 
-sleep 1m
-near call $CRON_ACCOUNT_ID tick --accountId $CRON_ACCOUNT_ID
+# sleep 1m
+# near call $CRON_ACCOUNT_ID tick --accountId $CRON_ACCOUNT_ID
 
 echo "Cron $NEAR_ENV Bootstrap Complete"

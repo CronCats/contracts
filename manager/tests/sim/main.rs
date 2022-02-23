@@ -5,7 +5,7 @@ use crate::test_utils::{
     sim_helper_create_agent_user, sim_helper_init, sim_helper_init_counter,
     sim_helper_init_sputnikv2,
 };
-use manager::{Agent, Task};
+use manager::{Agent, TaskHumanFriendly};
 use near_sdk::json_types::{Base64VecU8, U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::serde_json;
@@ -28,7 +28,7 @@ const SPUTNIKV2_ID: &str = "sputnikv2.sim";
 const AGENT_ID: &str = "agent.sim";
 const USER_ID: &str = "user.sim";
 const NEW_NAME_ID: &str = "newname.sim";
-const TASK_BASE64: &str = "QgpuCtvr2ZRq87F8FG9qKaiKA400LXBOut5WohwCTxI=";
+const TASK_BASE64: &str = "BBcr1GdY4iSMebFavu7yz4daPDDrlmxTf5ftC0RB8mQ=";
 const AGENT_REGISTRATION_COST: u128 = 2_260_000_000_000_000_000_000;
 const AGENT_FEE: u128 = 60_000_000_000_000_000_000_000u128;
 
@@ -104,15 +104,15 @@ fn simulate_many_tasks() {
     // Should find a task
     let mut get_tasks_view_res =
         root_runtime.view_method_call("cron.root", "get_slot_tasks", "{\"offset\": 1}".as_bytes());
-    println!("get_tasks_view_res {:?}", get_tasks_view_res);
+    // println!("get_tasks_view_res {:?}", get_tasks_view_res);
     // let mut success_val = r#"
     //     [["xdnWQtc0KAq2i+/vyFQSHGvr5K0DPgyVUYfE8886qMs="],"240000000000"]
     // "#;
     let success_vecs: Vec<u8> = vec![
-        91, 91, 34, 120, 100, 110, 87, 81, 116, 99, 48, 75, 65, 113, 50, 105, 43, 47, 118, 121, 70,
-        81, 83, 72, 71, 118, 114, 53, 75, 48, 68, 80, 103, 121, 86, 85, 89, 102, 69, 56, 56, 56,
-        54, 113, 77, 115, 61, 34, 93, 44, 34, 51, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 34,
-        93,
+        91, 91, 34, 50, 50, 71, 50, 90, 108, 84, 111, 119, 47, 52, 86, 105, 70, 68, 119, 70, 98,
+        72, 109, 97, 49, 51, 112, 87, 120, 118, 52, 111, 66, 122, 111, 114, 68, 111, 88, 112, 72,
+        53, 79, 97, 120, 56, 61, 34, 93, 44, 34, 51, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48, 48,
+        34, 93,
     ];
     assert_eq!(
         get_tasks_view_res.unwrap(),
@@ -186,18 +186,20 @@ fn simulate_many_tasks() {
         DEFAULT_GAS,
         CryptoHash::default(),
     ));
-    let (_, res_outcome) = res.unwrap();
+    println!("{:?}", res);
+    // NOTE: Disabled because the logic needs to handle failures gracefully to reward agent
+    // let (_, res_outcome) = res.unwrap();
     // Ensure that it panics with a message we expect.
-    match res_outcome.status {
-        ExecutionStatus::Failure(f) => {
-            // Not great to use `contains` but will have to do for now.
-            assert!(
-                f.to_string().contains("No tasks found in slot"),
-                "Should have error that no tasks are available"
-            );
-        }
-        _ => panic!("Expected failure when proxy_call has no tasks to execute"),
-    }
+    // match res_outcome.status {
+    //     ExecutionStatus::Failure(f) => {
+    //         // Not great to use `contains` but will have to do for now.
+    //         assert!(
+    //             f.to_string().contains("No tasks found in slot"),
+    //             "Should have error that no tasks are available"
+    //         );
+    //     }
+    //     _ => panic!("Expected failure when proxy_call has no tasks to execute"),
+    // }
 
     // Go through the remainder of the slots, executing tasks
     let mut nonce = 4;
@@ -250,10 +252,10 @@ fn simulate_many_tasks() {
         "{\"account_id\": \"agent.root\"}".as_bytes(),
     );
     let mut agent_info: Agent = agent_info_result.unwrap_json();
-    // Confirm that the agent has executed 11 tasks
+    // Confirm that the agent has executed 12 tasks
     assert_eq!(
-        agent_info.total_tasks_executed.0, 11,
-        "Expected agent to have completed 11 tasks."
+        agent_info.total_tasks_executed.0, 12,
+        "Expected agent to have completed 12 tasks."
     );
 
     // Agent withdraws balance, claiming rewards
@@ -367,6 +369,7 @@ fn simulate_basic_task_checks() {
         .to_string()
         .into_bytes(),
     );
+    // println!("task_view_result {:?}", task_view_result);
     assert!(
         task_view_result.is_err(),
         "Expected nonexistent task to throw error."
@@ -381,13 +384,14 @@ fn simulate_basic_task_checks() {
         "get_task",
         &json!({ "task_hash": TASK_BASE64 }).to_string().into_bytes(),
     );
+    // println!("task_view_result {:?}", task_view_result);
     assert!(
         task_view_result.is_ok(),
         "Expected to find hash of task just added."
     );
-    let returned_task: Task = task_view_result.unwrap_json();
+    let returned_task: TaskHumanFriendly = task_view_result.unwrap_json();
 
-    let expected_task = Task {
+    let expected_task = TaskHumanFriendly {
         owner_id: COUNTER_ID.to_string(),
         contract_id: COUNTER_ID.to_string(),
         function_id: "increment".to_string(),
@@ -397,6 +401,10 @@ fn simulate_basic_task_checks() {
         deposit: U128::from(12000000000000),
         gas: 3000000000000,
         arguments: Base64VecU8::from(vec![]),
+        hash: Base64VecU8::from(vec![
+            4, 23, 43, 212, 103, 88, 226, 36, 140, 121, 177, 90, 190, 238, 242, 207, 135, 90, 60,
+            48, 235, 150, 108, 83, 127, 151, 237, 11, 68, 65, 242, 100,
+        ]),
     };
     assert_eq!(
         expected_task, returned_task,

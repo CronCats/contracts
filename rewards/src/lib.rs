@@ -92,7 +92,7 @@ pub struct Contract {
 #[near_bindgen]
 impl Contract {
     /// ```bash
-    /// near call rewards.cron.testnet --initFunction new --initArgs '{"cron_account_id": "manager.cron.testnet", "dao_account_id": "dao.sputnikv2.testnet"}' --accountId cron.testnet
+    /// near call rewards.cron.testnet --initFunction new --initArgs '{"cron_account_id": "manager.cron.testnet", "dao_account_id": "dao.sputnikv2.testnet"}' --accountId manager_v1.croncat.testnet
     /// ```
     #[init]
     pub fn new(cron_account_id: ValidAccountId, dao_account_id: ValidAccountId) -> Self {
@@ -134,7 +134,7 @@ impl Contract {
 
     /// Settings changes
     /// ```bash
-    /// near call rewards.cron.testnet update_settings '{"pixelpet_account_id": "pixeltoken.near"}' --accountId cron.testnet
+    /// near call rewards.cron.testnet update_settings '{"pixelpet_account_id": "pixeltoken.near"}' --accountId manager_v1.croncat.testnet
     /// ```
     #[private]
     pub fn update_settings(&mut self, pixelpet_account_id: Option<AccountId>) {
@@ -145,7 +145,7 @@ impl Contract {
 
     /// Check a cron task, then grant owner a pet
     /// ```bash
-    /// near call rewards.cron.testnet pet_check_task_ownership '{"task_hash": "r2Jv…T4U4="}' --accountId cron.testnet
+    /// near call rewards.cron.testnet pet_check_task_ownership '{"task_hash": "r2Jv…T4U4="}' --accountId manager_v1.croncat.testnet
     /// ```
     pub fn pet_check_task_ownership(&mut self, task_hash: String) -> Promise {
         let owner_id = env::predecessor_account_id();
@@ -240,7 +240,7 @@ impl Contract {
 
     /// Remove stale distributions (to correct released pets)
     /// ```bash
-    /// near call rewards.cron.near pet_clear_owner '{"account_id": "someone.near"}' --accountId cron.testnet
+    /// near call rewards.cron.near pet_clear_owner '{"account_id": "someone.near"}' --accountId manager_v1.croncat.testnet
     /// ```
     #[private]
     pub fn pet_clear_owner(&mut self, account_id: AccountId) {

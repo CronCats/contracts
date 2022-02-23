@@ -38,6 +38,7 @@ export COUNTER_ACCOUNT_ID=counter.$NEAR_ACCT
 export AGENT_ACCOUNT_ID=agent.$NEAR_ACCT
 export USER_ACCOUNT_ID=user.$NEAR_ACCT
 export CRUD_ACCOUNT_ID=crud.$NEAR_ACCT
+export VIEWS_ACCOUNT_ID=views.$NEAR_ACCT
 export DAO_ACCOUNT_ID=dao.sputnikv2.$FACTORY
 
 ######
@@ -50,6 +51,7 @@ export DAO_ACCOUNT_ID=dao.sputnikv2.$FACTORY
 # near delete $AGENT_ACCOUNT_ID $NEAR_ACCT
 # near delete $USER_ACCOUNT_ID $NEAR_ACCT
 # near delete $CRUD_ACCOUNT_ID $NEAR_ACCT
+near delete $VIEWS_ACCOUNT_ID $NEAR_ACCT
 
 
 ## create all accounts
@@ -58,12 +60,14 @@ export DAO_ACCOUNT_ID=dao.sputnikv2.$FACTORY
 # near create-account $AGENT_ACCOUNT_ID --masterAccount $NEAR_ACCT
 # near create-account $USER_ACCOUNT_ID --masterAccount $NEAR_ACCT
 # near create-account $CRUD_ACCOUNT_ID --masterAccount $NEAR_ACCT
+near create-account $VIEWS_ACCOUNT_ID --masterAccount $NEAR_ACCT
 
 
 # Deploy all the contracts to their rightful places
 # near deploy --wasmFile ./res/manager.wasm --accountId $CRON_ACCOUNT_ID --initFunction new --initArgs '{}'
 # near deploy --wasmFile ./res/rust_counter_tutorial.wasm --accountId $COUNTER_ACCOUNT_ID
 # near deploy --wasmFile ./res/cross_contract.wasm --accountId $CRUD_ACCOUNT_ID --initFunction new --initArgs '{"cron": "'$CRON_ACCOUNT_ID'"}'
+near deploy --wasmFile ./res/views.wasm --accountId $VIEWS_ACCOUNT_ID
 
 
 # RE:Deploy all the contracts to their rightful places

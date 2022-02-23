@@ -9,15 +9,18 @@ use near_sdk::{
     log, near_bindgen,
     serde::{Deserialize, Serialize},
     serde_json::json,
-    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, StorageUsage,
+    AccountId, Balance, BorshStorageKey, Gas, PanicOnDefault, Promise, PromiseResult, StorageUsage,
 };
 use std::str::FromStr;
 pub use tasks::Task;
+pub use tasks::TaskHumanFriendly;
+pub use triggers::Trigger;
 
 mod agent;
 mod owner;
 mod storage_impl;
 mod tasks;
+mod triggers;
 mod utils;
 mod views;
 
@@ -46,10 +49,14 @@ pub enum StorageKeys {
     Slots,
     AgentsActive,
     AgentsPending,
+    Triggers,
+    TaskOwners,
 }
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize, PanicOnDefault)]
+// #[derive(BorshDeserialize, BorshSerialize, Deserialize, Serialize, PanicOnDefault)]
+// #[serde(crate = "near_sdk::serde")]
 pub struct Contract {
     // Runtime
     paused: bool,
@@ -66,12 +73,14 @@ pub struct Contract {
     // NOTE: Caveat, when there are odd number of tasks or agents, the overflow will be available to first-come first-serve. This doesnt negate the possibility of a failed txn from race case choosing winner inside a block.
     // NOTE: The overflow will be adjusted to be handled by sweeper in next implementation.
     agent_task_ratio: [u64; 2],
-    agent_active_index: u16,
+    agent_active_index: u64,
     agents_eject_threshold: u128,
 
     // Basic management
     slots: TreeMap<u128, Vec<Vec<u8>>>,
     tasks: UnorderedMap<Vec<u8>, Task>,
+    task_owners: UnorderedMap<AccountId, Vec<Vec<u8>>>,
+    triggers: UnorderedMap<Vec<u8>, Trigger>,
 
     // Economics
     available_balance: Balance, // tasks + rewards balance
@@ -83,12 +92,14 @@ pub struct Contract {
 
     // Storage
     agent_storage_usage: StorageUsage,
+    trigger_storage_usage: StorageUsage,
 }
 
+// TODO: Setup state migration for tasks/triggers, including initial storage calculation
 #[near_bindgen]
 impl Contract {
     /// ```bash
-    /// near call cron.testnet new --accountId cron.testnet
+    /// near call manager_v1.croncat.testnet new --accountId manager_v1.croncat.testnet
     /// ```
     #[init]
     pub fn new() -> Self {
@@ -97,6 +108,8 @@ impl Contract {
             owner_id: env::signer_account_id(),
             treasury_id: None,
             tasks: UnorderedMap::new(StorageKeys::Tasks),
+            task_owners: UnorderedMap::new(StorageKeys::TaskOwners),
+            triggers: UnorderedMap::new(StorageKeys::Triggers),
             agents: LookupMap::new(StorageKeys::Agents),
             agent_active_queue: Vector::new(StorageKeys::AgentsActive),
             agent_pending_queue: Vector::new(StorageKeys::AgentsPending),
@@ -111,6 +124,7 @@ impl Contract {
             proxy_callback_gas: GAS_FOR_CALLBACK,
             slot_granularity: SLOT_GRANULARITY,
             agent_storage_usage: 0,
+            trigger_storage_usage: 0,
         };
         this.measure_account_storage_usage();
         this
@@ -119,19 +133,34 @@ impl Contract {
     /// Measure the storage an agent will take and need to provide
     fn measure_account_storage_usage(&mut self) {
         let initial_storage_usage = env::storage_usage();
+        let max_len_string = "a".repeat(64);
+
         // Create a temporary, dummy entry and measure the storage used.
-        let tmp_account_id = "a".repeat(64);
         let tmp_agent = Agent {
             status: agent::AgentStatus::Pending,
-            payable_account_id: tmp_account_id.clone(),
+            payable_account_id: max_len_string.clone(),
             balance: U128::from(0),
             total_tasks_executed: U128::from(0),
             last_missed_slot: 0,
         };
-        self.agents.insert(&tmp_account_id, &tmp_agent);
+        self.agents.insert(&max_len_string, &tmp_agent);
         self.agent_storage_usage = env::storage_usage() - initial_storage_usage;
         // Remove the temporary entry.
-        self.agents.remove(&tmp_account_id);
+        self.agents.remove(&max_len_string);
+
+        // Calc the trigger storage needs
+        let tmp_hash = max_len_string.clone().try_to_vec().unwrap();
+        let tmp_trigger = Trigger {
+            owner_id: max_len_string.clone(),
+            contract_id: max_len_string.clone(),
+            function_id: max_len_string.clone(),
+            task_hash: Base64VecU8::from(tmp_hash.clone()),
+            arguments: Base64VecU8::from("a".repeat(1024).try_to_vec().unwrap()),
+        };
+        self.triggers.insert(&tmp_hash, &tmp_trigger);
+        self.trigger_storage_usage = env::storage_usage() - initial_storage_usage;
+        // Remove the temporary entry.
+        self.triggers.remove(&tmp_hash);
     }
 
     /// Takes an optional `offset`: the number of seconds to offset from now (current block timestamp)

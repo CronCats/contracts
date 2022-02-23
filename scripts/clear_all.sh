@@ -22,6 +22,7 @@ export COUNTER_ACCOUNT_ID=counter.$NEAR_ACCT
 export AGENT_ACCOUNT_ID=agent.$NEAR_ACCT
 export USER_ACCOUNT_ID=user.$NEAR_ACCT
 export CRUD_ACCOUNT_ID=crudcross.$NEAR_ACCT
+export VIEWS_ACCOUNT_ID=views.$NEAR_ACCT
 export DAO_ACCOUNT_ID=croncat.sputnikv2.$FACTORY
 
 # clear and recreate all accounts
@@ -32,5 +33,6 @@ near delete $COUNTER_ACCOUNT_ID $NEAR_ACCT
 near delete $AGENT_ACCOUNT_ID $NEAR_ACCT
 near delete $USER_ACCOUNT_ID $NEAR_ACCT
 near delete $CRUD_ACCOUNT_ID $NEAR_ACCT
+near delete $VIEWS_ACCOUNT_ID $NEAR_ACCT
 
 echo "Clear Complete"

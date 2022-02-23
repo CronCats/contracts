@@ -7,7 +7,7 @@ impl Contract {
     ///
     /// Return operations balances, for external on-chain contract monitoring
     ///
-    /// near call cron.testnet tick '{}'
+    /// near call manager_v1.croncat.testnet tick '{}'
     pub fn tick(&mut self) {
         // TBD: Internal staking management
         log!(
